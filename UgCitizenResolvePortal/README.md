@@ -7,7 +7,7 @@
 As highlighted by the Ministry of ICT and National Guidance, there is a need to improve transparency and citizen access to Government services. Currently, Ugandan citizens lack a unified, transparent, and easy-to-use platform to report local issues (such as broken infrastructure, water leaks, or public service failures) to the relevant authorities. Complaints are often made through fragmented channels (paper forms, isolated phone lines, social media), leading to lost data, lack of accountability, and citizen frustration. Government MDAs (Ministries, Departments, and Agencies) correspondingly lack a structured system to triage, assign, and track the resolution of these civic issues.
 
 ## The Solution
-**UgCitizenResolvePortal** is a responsive web and mobile-friendly complaint management system. 
+**UgCitizen Resolve Portal** is a responsive web and mobile-friendly complaint management system. 
 
 It provides a two-part solution:
 1. **Citizen Portal:** Allows citizens to easily submit reports by dropping a geographic pin, uploading photographic evidence, and selecting the issue category. Citizens receive a tracking number to monitor the status of their report in real-time.

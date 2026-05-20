@@ -1,0 +1,9 @@
+{
+  "name": "ugcitizen-resolve-portal",
+  "version": "1.0.0",
+  "description": "Unified prototype of the UgCitizen Resolve Portal",
+  "scripts": {
+    "start": "node backend/server.js",
+    "backend-install": "cd backend && npm install"
+  }
+}
