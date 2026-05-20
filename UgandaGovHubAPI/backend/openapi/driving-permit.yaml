@@ -1,0 +1,122 @@
+openapi: 3.1.0
+info:
+  title: Driving Permit Verification API
+  version: 1.0.0
+  description: |
+    Verify driving permit validity, status, and class. 
+    This API provides verification details for drivers to ensure compliance with the Traffic and Road Safety Act 1998. It does not return the full personal details or history of the driver.
+  contact:
+    name: MoWT IT Team
+    email: permits.support@works.go.ug
+servers:
+  - url: https://sandbox.govhub.go.ug/api/v1/transport/driving-permit
+    description: Sandbox Environment
+security:
+  - ApiKeyAuth: []
+paths:
+  /status/{permitNumber}:
+    get:
+      summary: Check Driving Permit Status
+      operationId: getPermitStatus
+      tags:
+        - Status
+      parameters:
+        - name: permitNumber
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The driving permit number to verify
+      responses:
+        '200':
+          description: Status retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermitStatusResponse'
+              examples:
+                Valid Permit:
+                  value:
+                    status: "ACTIVE"
+                    card_valid_until: "2029-08-15"
+                    permit_class: "Group B"
+                Suspended Permit:
+                  value:
+                    status: "SUSPENDED"
+                    card_valid_until: "2028-11-20"
+                    permit_class: "Group DL"
+        '401':
+          description: Missing or invalid API key.
+        '403':
+          description: Unauthorized to access this endpoint.
+        '404':
+          description: Permit number not found.
+  /verify:
+    post:
+      summary: Verify Driving Permit Details
+      operationId: verifyPermit
+      tags:
+        - Verification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationRequest'
+            example:
+              permit_number: "WP30219"
+              surname: "MUGISHA"
+              class: "Group B"
+      responses:
+        '200':
+          description: Verification check complete.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResponse'
+              example:
+                verified: true
+                remarks: "Permit details match successfully."
+                status: "ACTIVE"
+        '401':
+          description: Missing or invalid API key.
+        '403':
+          description: Unauthorized to access this endpoint.
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-GovHub-API-Key
+  schemas:
+    PermitStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, SUSPENDED, REVOKED]
+        card_valid_until:
+          type: string
+          format: date
+        permit_class:
+          type: string
+    VerificationRequest:
+      type: object
+      required:
+        - permit_number
+      properties:
+        permit_number:
+          type: string
+        surname:
+          type: string
+        class:
+          type: string
+    VerificationResponse:
+      type: object
+      properties:
+        verified:
+          type: boolean
+        remarks:
+          type: string
+        status:
+          type: string

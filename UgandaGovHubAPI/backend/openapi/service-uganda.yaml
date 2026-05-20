@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  title: Service Uganda Composite Eligibility Check API
+  version: 1.0.0
+  description: |
+    Perform citizen eligibility check by orchestrating lookups to NIRA (identity), URA (tax compliance), and MoWT (driving permit status) in a single API call.
+    This composite endpoint acts as a single-window gateway for frontend government service delivery centers.
+  contact:
+    name: GovHub Integration Team
+    email: support@ict.go.ug
+servers:
+  - url: https://sandbox.govhub.go.ug/api/v1/service-uganda
+    description: Sandbox Environment
+security:
+  - ApiKeyAuth: []
+paths:
+  /eligibility-check:
+    post:
+      summary: Perform composite eligibility check
+      operationId: checkEligibility
+      tags:
+        - Eligibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EligibilityRequest'
+            example:
+              nin: "CM99021234567X"
+              tin: "1000123456"
+              permit_number: "WP30219"
+      responses:
+        '200':
+          description: Composite check performed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EligibilityResponse'
+              example:
+                overall_eligible: true
+                details:
+                  identity:
+                    status: "MATCH"
+                    remarks: "NIN registry matches successfully."
+                    source: "NIRA"
+                  tax:
+                    status: "COMPLIANT"
+                    remarks: "Tax clearance is up to date."
+                    source: "URA"
+                  permit:
+                    status: "ACTIVE"
+                    remarks: "Driving permit is valid."
+                    source: "MoWT"
+        '401':
+          description: Missing or invalid API key.
+        '403':
+          description: Unauthorized to access this endpoint.
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-GovHub-API-Key
+  schemas:
+    EligibilityRequest:
+      type: object
+      required:
+        - nin
+        - tin
+      properties:
+        nin:
+          type: string
+          description: National Identification Number to verify
+        tin:
+          type: string
+          description: Taxpayer Identification Number to verify
+        permit_number:
+          type: string
+          description: Optional Driving Permit number to verify
+    EligibilityResponse:
+      type: object
+      properties:
+        overall_eligible:
+          type: boolean
+        details:
+          type: object
+          properties:
+            identity:
+              type: object
+              properties:
+                status:
+                  type: string
+                remarks:
+                  type: string
+                source:
+                  type: string
+            tax:
+              type: object
+              properties:
+                status:
+                  type: string
+                remarks:
+                  type: string
+                source:
+                  type: string
+            permit:
+              type: object
+              properties:
+                status:
+                  type: string
+                remarks:
+                  type: string
+                source:
+                  type: string

@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: hsl(var(--background-default));
+  --color-foreground: hsl(var(--foreground-default));
+
+  --color-canvas: hsl(var(--background-canvas));
+  --color-sidebar: hsl(var(--background-sidebar));
+  --color-surface-100: hsl(var(--background-surface-100));
+  --color-surface-200: hsl(var(--background-surface-200));
+  --color-surface-300: hsl(var(--background-surface-300));
+  --color-selection: hsl(var(--background-selection));
+
+  --color-foreground-light: hsl(var(--foreground-light));
+  --color-foreground-lighter: hsl(var(--foreground-lighter));
+  --color-foreground-muted: hsl(var(--foreground-muted));
+  --color-foreground-contrast: hsl(var(--foreground-contrast));
+
+  --color-border-default: hsl(var(--border-default));
+  --color-border-muted: hsl(var(--border-muted));
+  --color-border-strong: hsl(var(--border-strong));
+  --color-border-stronger: hsl(var(--border-stronger));
+
+  --color-brand-default: hsl(var(--brand-default));
+  --color-brand-muted: hsl(var(--brand-muted));
+  --color-warning-default: hsl(var(--warning-default));
+  --color-destructive-default: hsl(var(--destructive-default));
+
+  --color-primary: hsl(var(--brand-default));
+  --color-primary-foreground: hsl(var(--foreground-contrast));
+  
+  --color-muted: hsl(var(--background-surface-200));
+  --color-muted-foreground: hsl(var(--foreground-muted));
+
+  --color-card: hsl(var(--background-surface-100));
+  --color-card-foreground: hsl(var(--foreground-default));
+
+  --color-popover: hsl(var(--background-surface-100));
+  --color-popover-foreground: hsl(var(--foreground-default));
+
+  --color-secondary: hsl(var(--background-surface-200));
+  --color-secondary-foreground: hsl(var(--foreground-default));
+
+  --color-accent: hsl(var(--background-surface-200));
+  --color-accent-foreground: hsl(var(--foreground-default));
+
+  --color-destructive: hsl(var(--destructive-default));
+  --color-destructive-foreground: hsl(var(--foreground-contrast));
+
+  --color-border: hsl(var(--border-default));
+  --color-input: hsl(var(--border-default));
+  --color-ring: hsl(var(--border-stronger));
+
+  --radius-lg: var(--radius-panel);
+  --radius-md: var(--radius-panel);
+  --radius-sm: calc(var(--radius-panel) - 2px);
+  
+  --color-sidebar-ring: hsl(var(--border-stronger));
+  --color-sidebar-border: hsl(var(--border-default));
+  --color-sidebar-accent: hsl(var(--background-surface-200));
+  --color-sidebar-accent-foreground: hsl(var(--foreground-default));
+  --color-sidebar-primary: hsl(var(--foreground-default));
+  --color-sidebar-primary-foreground: hsl(var(--background-default));
+  --color-sidebar-foreground: hsl(var(--foreground-light));
+  --color-sidebar: hsl(var(--background-sidebar));
+}
+
+@layer base {
+  :root {
+    --background-default: 0 0% 100%;
+    --background-canvas: 210 20% 98%;
+    --background-sidebar: 210 16% 96%;
+    --background-surface-100: 0 0% 100%;
+    --background-surface-200: 210 16% 96%;
+    --background-surface-300: 210 12% 93%;
+    --background-selection: 210 12% 90%;
+
+    --foreground-default: 206 24% 9%;
+    --foreground-light: 206 6% 43%;
+    --foreground-lighter: 206 6% 56%;
+    --foreground-muted: 206 11% 72%;
+    --foreground-contrast: 0 0% 100%;
+
+    --border-default: 208 11% 88%;
+    --border-muted: 208 11% 91%;
+    --border-strong: 207 11% 86%;
+    --border-stronger: 205 11% 78%;
+
+    --brand-default: 153 60% 53%;
+    --brand-muted: 153 44% 18%;
+    --warning-default: 39 100% 57%;
+    --destructive-default: 10 78% 54%;
+
+    --radius-panel: 6px;
+    --radius-control: 6px;
+    --card-padding-x: 1rem;
+    
+    --font-custom: 'Ubuntu', Circular, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  .dark {
+    --background-default: 0 0% 8%;
+    --background-canvas: 0 0% 8%;
+    --background-sidebar: 0 0% 11%;
+    --background-surface-100: 0 0% 12%;
+    --background-surface-200: 0 0% 14%;
+    --background-surface-300: 0 0% 17%;
+    --background-selection: 0 0% 20%;
+
+    --foreground-default: 0 0% 93%;
+    --foreground-light: 0 0% 73%;
+    --foreground-lighter: 0 0% 56%;
+    --foreground-muted: 0 0% 38%;
+    --foreground-contrast: 0 0% 11%;
+
+    --border-default: 0 0% 22%;
+    --border-muted: 0 0% 18%;
+    --border-strong: 0 0% 26%;
+    --border-stronger: 0 0% 32%;
+
+    --brand-default: 153 60% 53%;
+    --brand-muted: 153 62% 22%;
+    --warning-default: 39 100% 57%;
+    --destructive-default: 10 78% 54%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-canvas text-foreground;
+    font-family: var(--font-custom);
+  }
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}

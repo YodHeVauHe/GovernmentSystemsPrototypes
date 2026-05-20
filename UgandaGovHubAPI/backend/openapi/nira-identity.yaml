@@ -1,0 +1,136 @@
+openapi: 3.1.0
+info:
+  title: NIRA Identity Verification API
+  version: 1.0.0
+  description: |
+    Verify citizen identity using the National Identification Number (NIN). 
+    This API returns a match confidence score and basic verification status to comply with the Data Protection and Privacy Act, 2019. It does not return the full citizen profile.
+  contact:
+    name: NIRA API Support
+    email: data.protection@nira.go.ug
+servers:
+  - url: https://sandbox.govhub.go.ug/api/v1/identity
+    description: Sandbox Environment
+  - url: https://api.govhub.go.ug/api/v1/identity
+    description: Production Environment (Requires formal MDA approval)
+security:
+  - ApiKeyAuth: []
+paths:
+  /verify-nin:
+    post:
+      summary: Verify identity by NIN
+      operationId: verifyNin
+      tags:
+        - Verification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationRequest'
+            example:
+              nin: "CM99021234567X"
+              given_name: "JOHN"
+              surname: "DOE"
+              date_of_birth: "1990-01-01"
+      responses:
+        '200':
+          description: Verification result returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResponse'
+              examples:
+                Exact Match:
+                  value:
+                    status: "MATCH"
+                    confidence_score: 1.0
+                    remarks: "All provided fields matched the registry."
+                    transaction_id: "tx-88f9b9a1"
+                Partial Match:
+                  value:
+                    status: "PARTIAL_MATCH"
+                    confidence_score: 0.75
+                    remarks: "Name match fuzzy. DOB verified."
+                    transaction_id: "tx-88f9b9a2"
+        '400':
+          description: Invalid request payload.
+        '401':
+          description: Missing or invalid API key.
+        '403':
+          description: Unauthorized to access this endpoint.
+        '404':
+          description: NIN not found in the registry.
+  /status/{nin}:
+    get:
+      summary: Check ID Document Status
+      operationId: checkNinStatus
+      tags:
+        - Status
+      parameters:
+        - name: nin
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The 14-character National Identification Number
+      responses:
+        '200':
+          description: Status retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+              example:
+                status: "ACTIVE"
+                card_valid_until: "2030-12-31"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-GovHub-API-Key
+      description: API Key issued via GovHub Developer Portal
+  schemas:
+    VerificationRequest:
+      type: object
+      required:
+        - nin
+      properties:
+        nin:
+          type: string
+          pattern: '^[A-Z0-9]{14}$'
+          description: National Identification Number
+        given_name:
+          type: string
+          description: Citizen's given name to verify
+        surname:
+          type: string
+          description: Citizen's surname to verify
+        date_of_birth:
+          type: string
+          format: date
+          description: YYYY-MM-DD
+    VerificationResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [MATCH, PARTIAL_MATCH, NO_MATCH]
+        confidence_score:
+          type: number
+          format: float
+          description: Score from 0.0 to 1.0
+        remarks:
+          type: string
+        transaction_id:
+          type: string
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, REVOKED, DECEASED]
+        card_valid_until:
+          type: string
+          format: date

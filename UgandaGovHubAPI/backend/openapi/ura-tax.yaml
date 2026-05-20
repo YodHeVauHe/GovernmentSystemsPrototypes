@@ -1,0 +1,121 @@
+openapi: 3.1.0
+info:
+  title: URA Tax Compliance Status API
+  version: 1.0.0
+  description: |
+    Verify tax compliance status and retrieve tax clearance status for individuals and entities.
+    Aligned with URA guidelines under the Tax Procedures Code Act 2014.
+  contact:
+    name: URA API Support
+    email: api.support@ura.go.ug
+servers:
+  - url: https://sandbox.govhub.go.ug/api/v1/tax
+    description: Sandbox Environment
+security:
+  - ApiKeyAuth: []
+paths:
+  /tin-status:
+    post:
+      summary: Check TIN status
+      operationId: checkTinStatus
+      tags:
+        - Compliance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tin
+              properties:
+                tin:
+                  type: string
+                  description: Taxpayer Identification Number (10 digits)
+            example:
+              tin: "1000123456"
+      responses:
+        '200':
+          description: Clearance check result returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceResponse'
+              examples:
+                Compliant:
+                  value:
+                    status: "COMPLIANT"
+                    issuing_authority: "Uganda Revenue Authority"
+                    valid_until: "2027-05-20"
+                    reference_id: "cl-99a9b9a1"
+                Non Compliant:
+                  value:
+                    status: "NON_COMPLIANT"
+                    issuing_authority: "Uganda Revenue Authority"
+                    remarks: "Outstanding tax returns detected for FY2025."
+                    reference_id: "cl-99a9b9a2"
+        '400':
+          description: Invalid request parameter.
+        '401':
+          description: Missing or invalid API key.
+        '403':
+          description: Unauthorized to access this endpoint.
+  /clearance/{tin}:
+    get:
+      summary: Get Tax Clearance Status
+      operationId: getTaxClearance
+      tags:
+        - Clearance
+      parameters:
+        - name: tin
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Taxpayer Identification Number
+      responses:
+        '200':
+          description: Status retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearanceResponse'
+              example:
+                clearance_status: "CLEARED"
+                issued_date: "2026-05-20"
+        '401':
+          description: Missing or invalid API key.
+        '403':
+          description: Unauthorized to access this endpoint.
+        '404':
+          description: TIN not found or clearance not found.
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-GovHub-API-Key
+  schemas:
+    ComplianceResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [COMPLIANT, NON_COMPLIANT]
+        issuing_authority:
+          type: string
+        valid_until:
+          type: string
+          format: date
+        remarks:
+          type: string
+        reference_id:
+          type: string
+    ClearanceResponse:
+      type: object
+      properties:
+        clearance_status:
+          type: string
+        issued_date:
+          type: string
+          format: date
