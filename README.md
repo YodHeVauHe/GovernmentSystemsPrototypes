@@ -17,11 +17,15 @@ The Ministry is seeking to identify and register Ugandan tech innovators capable
 
 ## Prototypes in this Repository
 
-To answer this call, this repository contains a functional prototype.
+To answer this call, this repository contains two functional prototypes.
 
 ### 1. [UgCitizen Resolve Portal](./UgCitizenResolvePortal/)
 * **Thematic Area 11: Citizen Engagement & Service Delivery**
 * **Focus:** A complaint management and issue-tracking platform bridging the gap between citizens and local government responders.
+
+### 2. [Uganda GovHub API](./UgandaGovHubAPI/)
+* **Thematic Area 10: Interoperability & Data Exchange**
+* **Focus:** A developer portal and API gateway demonstrating secure, standardized data exchange between isolated Government Ministries, Departments, and Agencies (MDAs).
 
 ---
 *For detailed problem statements and solutions, please see the `README.md` file located inside each prototype's respective folder.*
