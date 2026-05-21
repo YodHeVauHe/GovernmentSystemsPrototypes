@@ -15,7 +15,7 @@ function App() {
         <SidebarProvider
           style={
             {
-              "--sidebar-width": "260px",
+              "--sidebar-width": "224px",
               "--sidebar-width-icon": "56px",
               "--header-height": "48px",
             } as React.CSSProperties
