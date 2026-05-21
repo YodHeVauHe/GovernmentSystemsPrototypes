@@ -31,7 +31,6 @@ function App() {
                 <Route path="/catalog/add" element={<AddApiPage />} />
                 <Route path="/api/:id" element={<ApiDetail />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/health" element={<div className="p-6 text-gray-500">Health checks coming soon...</div>} />
                 </Routes>
               </div>
             </div>

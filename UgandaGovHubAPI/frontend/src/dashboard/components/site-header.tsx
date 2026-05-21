@@ -10,7 +10,6 @@ export function SiteHeader() {
   
   let title = "API Catalog"
   if (location.pathname === "/dashboard") title = "Dashboard"
-  else if (location.pathname === "/health") title = "Health & Status"
   else if (location.pathname === "/catalog/add") title = "Add API"
   else if (location.pathname.startsWith("/api/")) title = "API Details"
 

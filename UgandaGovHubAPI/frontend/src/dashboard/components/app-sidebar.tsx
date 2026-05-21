@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import {
-  IconChartBar,
+  IconCircleCheck,
   IconDashboard,
   IconDatabase,
   IconHelp,
@@ -40,11 +40,6 @@ const data = {
       title: "Dashboard",
       url: "/dashboard",
       icon: IconDashboard,
-    },
-    {
-      title: "Health & Status",
-      url: "/health",
-      icon: IconChartBar,
     }
   ],
   navSecondary: [
@@ -60,6 +55,21 @@ const data = {
     }
   ],
   documents: [],
+}
+
+function SystemHealthIndicator() {
+  return (
+    <div className="mx-2 mt-auto mb-1 flex h-9 items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-[#8b8b8b] group-data-[collapsible=icon]:mx-0 group-data-[collapsible=icon]:w-9 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+      <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#3ecf8e]/25 bg-[#3ecf8e]/10 text-[#3ecf8e]">
+        <span className="absolute inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-[#3ecf8e]/25" />
+        <IconCircleCheck className="relative h-4 w-4" stroke={2} />
+      </span>
+      <div className="min-w-0 group-data-[collapsible=icon]:hidden">
+        <div className="truncate font-medium text-[#ededed]">System Healthy</div>
+        <div className="truncate text-[10px] font-mono uppercase tracking-wider text-[#3ecf8e]">All services online</div>
+      </div>
+    </div>
+  )
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -88,7 +98,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent className="group-data-[collapsible=icon]:items-center">
         <NavMain items={data.navMain} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <SystemHealthIndicator />
+        <NavSecondary items={data.navSecondary} />
       </SidebarContent>
       <SidebarFooter className="group-data-[collapsible=icon]:items-center">
         <NavUser user={data.user} />
