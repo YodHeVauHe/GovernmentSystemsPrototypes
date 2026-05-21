@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconArrowLeft, IconCheck, IconCode, IconLink, IconLoader, IconUpload } from '@tabler/icons-react';
+import { IconArrowLeft, IconCheck, IconCircleCheck, IconCode, IconLink, IconLoader, IconUpload } from '@tabler/icons-react';
 import { toast } from 'sonner';
 
 const slugify = (text: string) => {
@@ -154,16 +154,23 @@ export function AddApiPage() {
   const publishPreview = `govhub.go.ug/${getMdaShortName(owningMdaId)}/${slug || 'pets-api'}@${parsedSpec?.metadata?.version || '1.0.0'}`;
 
   return (
-    <div className="w-full max-w-[1280px] mx-auto p-4 lg:p-8 text-[#ededed]">
-      <div className="bg-[#1c1c1c] border border-[#2e2e2e] rounded-lg w-full shadow-2xl p-5 lg:p-7">
+    <div className="h-full overflow-hidden">
+      <div className="w-full max-w-[1280px] h-full mx-auto p-4 lg:p-8 text-[#ededed] flex flex-col">
+      <div className="mb-3 flex shrink-0 items-center justify-between">
+        <Link to="/" className="inline-flex items-center gap-1.5 text-[12px] text-[#8b8b8b] hover:text-white transition-colors">
+          <IconArrowLeft className="w-3.5 h-3.5" />
+          Back to API Catalog
+        </Link>
+        <Link to="/" className="h-[32px] px-3 border border-[#2e2e2e] hover:bg-[#2e2e2e] text-[#ededed] rounded-md text-[13px] transition-colors inline-flex items-center justify-center">
+          Cancel
+        </Link>
+      </div>
+
+      <div className="bg-[#1c1c1c] border border-[#2e2e2e] rounded-lg w-full shadow-2xl p-5 lg:p-7 flex min-h-0 flex-1 flex-col overflow-hidden">
         
         {/* Title */}
-        <div className="flex flex-col gap-4 border-b border-[#2e2e2e] pb-5 mb-6 sm:flex-row sm:items-start sm:justify-between">
+        <div className="shrink-0 border-b border-[#2e2e2e] pb-5 mb-6">
           <div>
-            <Link to="/" className="inline-flex items-center gap-1.5 text-[12px] text-[#8b8b8b] hover:text-white transition-colors mb-3">
-              <IconArrowLeft className="w-3.5 h-3.5" />
-              Back to API Catalog
-            </Link>
             <h1 className="text-[24px] font-semibold tracking-tight text-white">
               Register New API
             </h1>
@@ -171,12 +178,9 @@ export function AddApiPage() {
               Import an OpenAPI document, validate it, then complete the governance metadata for registry activation.
             </p>
           </div>
-          <Link to="/" className="h-[34px] px-3 border border-[#2e2e2e] hover:bg-[#2e2e2e] text-[#ededed] rounded-md text-[13px] transition-colors inline-flex items-center justify-center">
-            Cancel
-          </Link>
         </div>
 
-        <div className="space-y-5">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
           {!parsedSpec ? (
             /* PHASE 1: LOAD & VALIDATE */
             <div className="space-y-4">
@@ -278,42 +282,43 @@ export function AddApiPage() {
           ) : (
             /* PHASE 2: METADATA & COMPLIANCE REGISTRATION FORM */
             <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-6 items-start">
-              <aside className="lg:sticky lg:top-20 rounded-lg border border-[#2e2e2e] bg-[#141414] p-4 space-y-4">
-                <div>
-                  <div className="text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider mb-1">Validated Document</div>
-                  <div className="text-[15px] font-semibold text-white break-words">{parsedSpec.metadata.title}</div>
-                  <div className="text-[12px] text-[#8b8b8b] mt-1">OpenAPI {parsedSpec.metadata.version}</div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-md border border-[#2e2e2e] bg-[#1c1c1c] p-3">
-                    <div className="text-[11px] text-[#8b8b8b] font-mono uppercase tracking-wider">Endpoints</div>
-                    <div className="text-[20px] font-semibold text-[#3ecf8e] mt-1">{parsedSpec.metadata.endpointsCount}</div>
+              <div className="space-y-3 lg:sticky lg:top-0 self-start">
+                {/* Checked Banner */}
+                <div className="px-3 py-2 bg-[#3ecf8e]/10 border border-[#3ecf8e]/20 text-[#3ecf8e] rounded-lg text-[12px] flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <IconCircleCheck className="h-4 w-4 shrink-0" />
+                    <span className="font-semibold">OpenAPI Validated</span>
+                    <span className="text-[#3ecf8e]/80">v{parsedSpec.metadata.version}</span>
                   </div>
-                  <div className="rounded-md border border-[#2e2e2e] bg-[#1c1c1c] p-3">
-                    <div className="text-[11px] text-[#8b8b8b] font-mono uppercase tracking-wider">Status</div>
-                    <div className="text-[13px] font-semibold text-white mt-2">{complianceStatus}</div>
-                  </div>
+                  <span className="shrink-0 font-semibold bg-[#3ecf8e]/20 px-2 py-0.5 rounded-full">
+                    {parsedSpec.metadata.endpointsCount} endpoints
+                  </span>
                 </div>
-                <div>
-                  <div className="text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider mb-1">Registry Coordinate</div>
-                  <div className="text-[12px] font-mono text-[#3ecf8e] break-all">{publishPreview}</div>
-                </div>
-              </aside>
 
-              <div className="space-y-4 min-w-0">
-              {/* Checked Banner */}
-              <div className="p-3.5 bg-[#3ecf8e]/10 border border-[#3ecf8e]/20 text-[#3ecf8e] rounded-lg text-[13px] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <IconCheck className="w-4.5 h-4.5" />
+                <aside className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-4 space-y-4">
                   <div>
-                    <span className="font-semibold">OpenAPI Validated</span>: Version {parsedSpec.metadata.version}
+                    <div className="text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider mb-1">Validated Document</div>
+                    <div className="text-[15px] font-semibold text-white break-words">{parsedSpec.metadata.title}</div>
+                    <div className="text-[12px] text-[#8b8b8b] mt-1">OpenAPI {parsedSpec.metadata.version}</div>
                   </div>
-                </div>
-                <div className="text-[12px] font-semibold bg-[#3ecf8e]/20 px-2 py-0.5 rounded-full">
-                  {parsedSpec.metadata.endpointsCount} Endpoints Found
-                </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-md border border-[#2e2e2e] bg-[#1c1c1c] p-3">
+                      <div className="text-[11px] text-[#8b8b8b] font-mono uppercase tracking-wider">Endpoints</div>
+                      <div className="text-[20px] font-semibold text-[#3ecf8e] mt-1">{parsedSpec.metadata.endpointsCount}</div>
+                    </div>
+                    <div className="rounded-md border border-[#2e2e2e] bg-[#1c1c1c] p-3">
+                      <div className="text-[11px] text-[#8b8b8b] font-mono uppercase tracking-wider">Status</div>
+                      <div className="text-[13px] font-semibold text-white mt-2">{complianceStatus}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider mb-1">Registry Coordinate</div>
+                    <div className="text-[12px] font-mono text-[#3ecf8e] break-all">{publishPreview}</div>
+                  </div>
+                </aside>
               </div>
 
+              <div className="space-y-4 min-w-0">
               {/* Form Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
                 
@@ -389,7 +394,7 @@ export function AddApiPage() {
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    rows={2}
+                    rows={4}
                     className="w-full p-2.5 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
                   />
                 </div>
@@ -603,6 +608,7 @@ export function AddApiPage() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

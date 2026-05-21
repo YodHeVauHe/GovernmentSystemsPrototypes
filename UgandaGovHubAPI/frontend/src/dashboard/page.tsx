@@ -103,7 +103,8 @@ export default function DashboardPage() {
     : 100;
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 lg:p-8 text-left max-w-[1400px] mx-auto w-full text-[#ededed] relative">
+    <div className="h-full overflow-y-auto">
+      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-8 text-left max-w-[1400px] mx-auto w-full text-[#ededed] relative">
       
       {/* Stats Summary Panel */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -704,6 +705,7 @@ export default function DashboardPage() {
         </div>
       )}
       
+      </div>
     </div>
   );
 }

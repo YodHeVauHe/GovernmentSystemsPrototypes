@@ -13,17 +13,26 @@ import { businessRouter } from './routes/business';
 import { accessRouter } from './routes/access';
 import { drivingPermitRouter } from './routes/driving-permit';
 import { compositeRouter } from './routes/composite';
+import { ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 4000;
 
-app.use(cors());
+app.use(cors({
+  exposedHeaders: [
+    'X-Correlation-ID',
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-RateLimit-Reset',
+  ],
+}));
 app.use(express.json());
 
 // Initialize SQLite Database
 export const db = new Database(path.join(__dirname, '../data/govhub.db'));
+ensureApiVersionSchema(db);
 
 // Serve static OpenAPI files
 app.use('/openapi', express.static(path.join(__dirname, '../openapi')));
@@ -55,10 +64,156 @@ app.get('/api/catalog/:id', (req, res) => {
   }
 });
 
+app.get('/api/catalog/:id/versions', (req, res) => {
+  try {
+    const current = db.prepare('SELECT spec_sha FROM api_versions WHERE api_id = ? AND is_current = 1').get(req.params.id) as any;
+    const versions = db.prepare(`
+      SELECT
+        id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
+        openapi_version, status, is_current, notes, created_at
+      FROM api_versions
+      WHERE api_id = ?
+      ORDER BY is_current DESC, created_at DESC
+    `).all(req.params.id) as any[];
+
+    res.json(versions.map(version => ({
+      ...version,
+      is_current: Boolean(version.is_current),
+      sync_status: current?.spec_sha === version.spec_sha ? 'current' : 'available'
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch API versions' });
+  }
+});
+
+app.post('/api/catalog/:id/versions', (req, res) => {
+  const { openapi_spec, status, notes, make_current } = req.body;
+
+  if (!openapi_spec || !openapi_spec.trim()) {
+    return res.status(400).json({ error: 'openapi_spec is required.' });
+  }
+
+  try {
+    const api = db.prepare('SELECT id FROM apis WHERE id = ?').get(req.params.id) as any;
+    if (!api) {
+      return res.status(404).json({ error: 'API not found' });
+    }
+
+    const metadata = parseSpecMetadata(openapi_spec);
+    const version = metadata.version;
+    const existing = db.prepare('SELECT id FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, version);
+    if (existing) {
+      return res.status(409).json({ error: `Version ${version} already exists for this API.` });
+    }
+
+    const versionId = `${req.params.id}-${slugifyVersion(version)}`;
+    const specFilename = `${versionId}.yaml`;
+    const relativeSpecPath = `/openapi/${specFilename}`;
+    const absoluteSpecPath = path.join(__dirname, '../openapi', specFilename);
+    fs.writeFileSync(absoluteSpecPath, openapi_spec, 'utf8');
+
+    const insertVersion = db.prepare(`
+      INSERT INTO api_versions (
+        id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
+        openapi_version, status, is_current, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const shouldMakeCurrent = Boolean(make_current);
+    const transaction = db.transaction(() => {
+      if (shouldMakeCurrent) {
+        db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
+        db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(relativeSpecPath, req.params.id);
+      }
+
+      insertVersion.run(
+        versionId,
+        req.params.id,
+        version,
+        relativeSpecPath,
+        getSpecSha(openapi_spec),
+        metadata.endpointsCount,
+        metadata.openapiVersion,
+        status || 'Published',
+        shouldMakeCurrent ? 1 : 0,
+        notes || null
+      );
+
+      db.prepare(`
+        INSERT INTO audit_logs (id, event_type, api_id, details)
+        VALUES (?, ?, ?, ?)
+      `).run(
+        `audit-${Date.now()}`,
+        'API_VERSION_PUBLISHED',
+        req.params.id,
+        JSON.stringify({ version, make_current: shouldMakeCurrent, endpoints_count: metadata.endpointsCount })
+      );
+    });
+
+    transaction();
+    res.status(201).json({ success: true, versionId, version, is_current: shouldMakeCurrent });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: `Failed to publish version: ${err.message}` });
+  }
+});
+
+app.post('/api/catalog/:id/versions/:version/current', (req, res) => {
+  try {
+    const version = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, req.params.version) as any;
+    if (!version) {
+      return res.status(404).json({ error: 'Version not found' });
+    }
+
+    const transaction = db.transaction(() => {
+      db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
+      db.prepare('UPDATE api_versions SET is_current = 1 WHERE id = ?').run(version.id);
+      db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(version.openapi_spec_path, req.params.id);
+      db.prepare(`
+        INSERT INTO audit_logs (id, event_type, api_id, details)
+        VALUES (?, ?, ?, ?)
+      `).run(`audit-${Date.now()}`, 'API_VERSION_PROMOTED', req.params.id, JSON.stringify({ version: req.params.version }));
+    });
+
+    transaction();
+    res.json({ success: true, version: req.params.version });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: `Failed to promote version: ${err.message}` });
+  }
+});
+
+app.delete('/api/catalog/:id/versions/:version', (req, res) => {
+  try {
+    const version = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, req.params.version) as any;
+    if (!version) {
+      return res.status(404).json({ error: 'Version not found' });
+    }
+    if (version.is_current) {
+      return res.status(409).json({ error: 'Cannot delete the current version. Promote another version first.' });
+    }
+
+    db.prepare('DELETE FROM api_versions WHERE id = ?').run(version.id);
+    db.prepare(`
+      INSERT INTO audit_logs (id, event_type, api_id, details)
+      VALUES (?, ?, ?, ?)
+    `).run(`audit-${Date.now()}`, 'API_VERSION_DELETED', req.params.id, JSON.stringify({ version: req.params.version }));
+
+    res.json({ success: true, version: req.params.version });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: `Failed to delete version: ${err.message}` });
+  }
+});
+
 // Get parsed OpenAPI spec by API ID
 app.get('/api/catalog/:id/spec', (req, res) => {
   try {
-    const api = db.prepare('SELECT openapi_spec_path FROM apis WHERE id = ?').get(req.params.id) as any;
+    const requestedVersion = typeof req.query.version === 'string' ? req.query.version : null;
+    const api = requestedVersion
+      ? db.prepare('SELECT openapi_spec_path FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, requestedVersion) as any
+      : db.prepare('SELECT openapi_spec_path FROM apis WHERE id = ?').get(req.params.id) as any;
     if (!api || !api.openapi_spec_path) {
       return res.status(404).json({ error: 'API spec not found' });
     }
@@ -176,6 +331,7 @@ app.post('/api/catalog', (req, res) => {
   const absoluteSpecPath = path.join(__dirname, '../openapi', specFilename);
 
   try {
+    const metadata = parseSpecMetadata(openapi_spec);
     // Write OpenAPI file to disk
     fs.writeFileSync(absoluteSpecPath, openapi_spec, 'utf8');
 
@@ -210,6 +366,25 @@ app.post('/api/catalog', (req, res) => {
       security_classification || 'Official',
       sla_target || '99.5%',
       compliance_status || 'Draft'
+    );
+
+    const versionId = `${id}-${slugifyVersion(metadata.version)}`;
+    db.prepare(`
+      INSERT INTO api_versions (
+        id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
+        openapi_version, status, is_current, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      versionId,
+      id,
+      metadata.version,
+      relativeSpecPath,
+      getSpecSha(openapi_spec),
+      metadata.endpointsCount,
+      metadata.openapiVersion,
+      'Published',
+      1,
+      'Initial registry version'
     );
 
     // Log the API registration event in audit log
