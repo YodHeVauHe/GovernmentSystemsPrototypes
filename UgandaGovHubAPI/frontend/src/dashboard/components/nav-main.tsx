@@ -34,7 +34,7 @@ export function NavMain({
                 isActive={location.pathname === item.url}
               >
                 <Link to={item.url}>
-                  {item.icon && <item.icon className="size-5 shrink-0" />}
+                  {item.icon && <item.icon className="size-5! shrink-0" />}
                   <span>{item.title}</span>
                 </Link>
               </SidebarMenuButton>
