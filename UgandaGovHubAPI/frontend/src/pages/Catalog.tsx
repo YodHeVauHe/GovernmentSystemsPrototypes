@@ -1312,9 +1312,9 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 items-start text-left w-full">
+    <div className="flex flex-col lg:flex-row gap-6 items-start text-left w-full">
       {/* Controls Column */}
-      <div className="flex-1 w-full lg:w-1/2 flex flex-col gap-6">
+      <div className="flex-1 w-full lg:basis-1/2 lg:min-w-0 flex flex-col gap-6">
         {/* Compact Authentication */}
         <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] shadow-md">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2e2e2e] bg-[#1c1c1c]">
@@ -1470,7 +1470,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
       </div>
 
       {/* Response Column */}
-      <div className="w-full lg:w-[450px] xl:w-[500px] flex flex-col gap-4 flex-shrink-0 sticky top-6">
+      <div className="w-full lg:basis-1/2 lg:min-w-0 flex flex-col gap-4 lg:sticky lg:top-0">
         <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] overflow-hidden shadow-lg min-h-[300px] flex flex-col">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2e2e2e] bg-[#1c1c1c]">
             <span className="flex items-center gap-1.5 text-[12px] font-medium text-white">
@@ -1485,7 +1485,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
             )}
           </div>
           
-          <div className="p-4 bg-[#0a0a0a] flex-1 font-mono text-[13px] overflow-auto max-h-[480px] flex flex-col">
+          <div className="p-4 bg-[#0a0a0a] flex-1 font-mono text-[13px] overflow-auto max-h-[calc(100dvh-210px)] flex flex-col">
             {loading ? (
               <div className="flex flex-col items-center justify-center m-auto gap-3 text-[#8b8b8b]">
                 <IconRefresh className="w-8 h-8 animate-spin text-[#3ecf8e]" />
