@@ -18,7 +18,15 @@ import {
   IconGitBranch,
   IconBuildingBank,
   IconFileCertificate,
-  IconPlus
+  IconPlus,
+  IconEdit,
+  IconTrash,
+  IconDeviceFloppy,
+  IconLink,
+  IconUpload,
+  IconCode,
+  IconLoader,
+  IconCheck
 } from '@tabler/icons-react';
 import { useUser } from '../context/UserContext';
 
@@ -192,6 +200,458 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
   );
 }
 
+function AdminApiEditorModal({
+  api,
+  spec,
+  onClose,
+  onSaved,
+}: {
+  api: any;
+  spec: any;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: api.name || '',
+    sector: api.sector || '',
+    description: api.description || '',
+    lifecycle_status: api.lifecycle_status || 'Draft',
+    sensitivity_level: api.sensitivity_level || 'Medium',
+    compliance_status: api.compliance_status || 'Draft',
+    contact_office: api.contact_office || '',
+    technical_owner: api.technical_owner || '',
+    sla_target: api.sla_target || '',
+  });
+  const [specText, setSpecText] = useState(JSON.stringify(spec, null, 2));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const updateField = (key: keyof typeof form, value: string) => {
+    setForm(current => ({ ...current, [key]: value }));
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/catalog/${api.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, openapi_spec: specText }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update API');
+      }
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update API');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+      <form onSubmit={handleSubmit} className="bg-[#1c1c1c] border border-[#2e2e2e] rounded-xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-left">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2e2e2e]">
+          <div>
+            <h2 className="text-[16px] font-medium text-white">Edit API</h2>
+            <p className="text-[12px] text-[#8b8b8b] mt-0.5">Update registry metadata and the current OpenAPI document.</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-[#8b8b8b] hover:text-white transition-colors">
+            <IconX className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-5 p-6 overflow-y-auto">
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Name</label>
+              <input value={form.name} onChange={e => updateField('name', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Sector</label>
+                <input value={form.sector} onChange={e => updateField('sector', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]" />
+              </div>
+              <div>
+                <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Lifecycle</label>
+                <select value={form.lifecycle_status} onChange={e => updateField('lifecycle_status', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]">
+                  <option>Draft</option>
+                  <option>Beta</option>
+                  <option>Production</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Sensitivity</label>
+                <select value={form.sensitivity_level} onChange={e => updateField('sensitivity_level', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]">
+                  <option>Low</option>
+                  <option>Medium</option>
+                  <option>High</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Compliance</label>
+                <select value={form.compliance_status} onChange={e => updateField('compliance_status', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]">
+                  <option>Draft</option>
+                  <option>Under Review</option>
+                  <option>Approved for Sandbox</option>
+                  <option>Approved for Production</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Description</label>
+              <textarea value={form.description} onChange={e => updateField('description', e.target.value)} className="w-full h-24 p-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px] resize-none" />
+            </div>
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Contact Office</label>
+              <input value={form.contact_office} onChange={e => updateField('contact_office', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]" />
+            </div>
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Technical Owner</label>
+              <input value={form.technical_owner} onChange={e => updateField('technical_owner', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]" />
+            </div>
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">SLA Target</label>
+              <input value={form.sla_target} onChange={e => updateField('sla_target', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]" />
+            </div>
+          </div>
+
+          <div className="flex min-h-[560px] flex-col">
+            <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">OpenAPI Document</label>
+            <textarea
+              value={specText}
+              onChange={e => setSpecText(e.target.value)}
+              spellCheck={false}
+              className="min-h-[520px] flex-1 rounded-md bg-[#0a0a0a] border border-[#2e2e2e] p-4 font-mono text-[12px] leading-relaxed text-[#ededed] resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-[#2e2e2e]">
+          <p className="text-[12px] text-red-400">{error}</p>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={onClose} className="h-9 px-4 border border-[#2e2e2e] hover:bg-[#2e2e2e] text-[#ededed] rounded-md text-[13px]">
+              Cancel
+            </button>
+            <button disabled={saving} type="submit" className="h-9 px-4 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-md text-[13px] flex items-center gap-2 disabled:opacity-50">
+              <IconDeviceFloppy className="h-4 w-4" />
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PublishVersionModal({
+  apiId,
+  onClose,
+  onPublished,
+}: {
+  apiId: string;
+  onClose: () => void;
+  onPublished: (version: string) => void;
+}) {
+  const [sourceTab, setSourceTab] = useState<'url' | 'file' | 'text'>('url');
+  const [specUrl, setSpecUrl] = useState('');
+  const [specText, setSpecText] = useState('');
+  const [notes, setNotes] = useState('');
+  const [makeCurrent, setMakeCurrent] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState('');
+  const [loadedFileName, setLoadedFileName] = useState('');
+
+  const loadFile = async (file?: File) => {
+    if (!file) return;
+    setLoadedFileName(file.name);
+    setSpecText(await file.text());
+    setNotes(`Published from ${file.name}`);
+  };
+
+  const publish = async () => {
+    setPublishing(true);
+    setError('');
+
+    try {
+      const validateResponse = await fetch('http://localhost:4000/api/catalog/validate-spec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          specUrl: sourceTab === 'url' ? specUrl : undefined,
+          specText: sourceTab === 'url' ? undefined : specText,
+        }),
+      });
+      const parsed = await validateResponse.json();
+      if (!validateResponse.ok || !parsed.valid) {
+        throw new Error(parsed.error || 'Failed to validate OpenAPI document.');
+      }
+
+      const response = await fetch(`http://localhost:4000/api/catalog/${apiId}/versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          openapi_spec: parsed.rawSpec,
+          status: 'Published',
+          make_current: makeCurrent,
+          notes: notes || (sourceTab === 'url' ? `Published from ${specUrl}` : 'Published from inline OpenAPI source'),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to publish version.');
+      }
+
+      onPublished(result.version);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to publish version.');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const canPublish = sourceTab === 'url' ? Boolean(specUrl.trim()) : Boolean(specText.trim());
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+      <div className="bg-[#1c1c1c] border border-[#2e2e2e] rounded-xl w-full max-w-2xl shadow-2xl flex max-h-[90vh] flex-col overflow-hidden text-left">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2e2e2e]">
+          <div>
+            <h2 className="text-[16px] font-medium text-white">Publish API Version</h2>
+            <p className="text-[12px] text-[#8b8b8b] mt-0.5">Load an OpenAPI document from a URL, upload, or raw source.</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-[#8b8b8b] hover:text-white transition-colors">
+            <IconX className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
+          <div className="flex bg-[#141414] p-1 rounded-lg border border-[#2e2e2e] text-[13px]">
+            <button
+              type="button"
+              onClick={() => { setSourceTab('url'); setError(''); }}
+              className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${sourceTab === 'url' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
+            >
+              <IconLink className="w-3.5 h-3.5" /> URL
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSourceTab('file'); setError(''); }}
+              className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${sourceTab === 'file' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
+            >
+              <IconUpload className="w-3.5 h-3.5" /> Upload
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSourceTab('text'); setError(''); }}
+              className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${sourceTab === 'text' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
+            >
+              <IconCode className="w-3.5 h-3.5" /> Raw
+            </button>
+          </div>
+
+          {sourceTab === 'url' && (
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">OpenAPI URL</label>
+              <input
+                type="url"
+                value={specUrl}
+                onChange={event => setSpecUrl(event.target.value)}
+                placeholder="https://example.go.ug/openapi.yaml"
+                className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px] focus:outline-none focus:border-[#3ecf8e]"
+              />
+            </div>
+          )}
+
+          {sourceTab === 'file' && (
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">OpenAPI Upload</label>
+              <label
+                onDragOver={event => event.preventDefault()}
+                onDrop={event => {
+                  event.preventDefault();
+                  loadFile(event.dataTransfer.files?.[0]);
+                }}
+                className="relative flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#2e2e2e] bg-[#141414] p-7 text-center transition-colors hover:border-[#3ecf8e]"
+              >
+                <input
+                  type="file"
+                  accept=".yaml,.yml,.json"
+                  onChange={event => loadFile(event.target.files?.[0])}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+                <IconUpload className="mb-2 h-8 w-8 text-[#8b8b8b]" />
+                <span className="text-[13px] font-medium text-white">Drop YAML/JSON here or choose a file</span>
+                <span className="mt-1 text-[11px] text-[#8b8b8b]">Scalar-style source import, validated before publishing</span>
+              </label>
+              {loadedFileName && (
+                <div className="mt-2 flex items-center gap-1.5 rounded-md border border-[#2e2e2e] bg-[#141414] p-2 text-[11px] font-mono text-[#3ecf8e]">
+                  <IconCheck className="h-3.5 w-3.5" /> {loadedFileName} loaded ({specText.length} characters)
+                </div>
+              )}
+            </div>
+          )}
+
+          {sourceTab === 'text' && (
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Raw OpenAPI Source</label>
+              <textarea
+                value={specText}
+                onChange={event => setSpecText(event.target.value)}
+                placeholder="openapi: 3.0.3&#10;info:&#10;  title: Updated API&#10;  version: 1.1.0"
+                spellCheck={false}
+                className="h-56 w-full resize-none rounded-md border border-[#2e2e2e] bg-[#0a0a0a] p-3 font-mono text-[12px] leading-relaxed text-[#ededed] focus:outline-none focus:border-[#3ecf8e]"
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Release Notes</label>
+              <input
+                value={notes}
+                onChange={event => setNotes(event.target.value)}
+                placeholder="What changed in this version?"
+                className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px] focus:outline-none focus:border-[#3ecf8e]"
+              />
+            </div>
+            <label className="flex items-end gap-2 pb-2 text-[12px] text-[#ededed]">
+              <input
+                type="checkbox"
+                checked={makeCurrent}
+                onChange={event => setMakeCurrent(event.target.checked)}
+                className="rounded border-[#2e2e2e] bg-[#141414] text-[#3ecf8e]"
+              />
+              Make current
+            </label>
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-red-500/30 bg-red-950/20 p-3 text-[12px] text-red-400">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-[#2e2e2e] px-6 py-4">
+          <button type="button" onClick={onClose} className="h-9 px-4 border border-[#2e2e2e] hover:bg-[#2e2e2e] text-[#ededed] rounded-md text-[13px]">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={publish}
+            disabled={!canPublish || publishing}
+            className="h-9 px-4 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[13px] flex items-center gap-2 disabled:opacity-50"
+          >
+            {publishing ? <IconLoader className="h-4 w-4 animate-spin" /> : <IconGitBranch className="h-4 w-4" />}
+            {publishing ? 'Publishing...' : 'Validate & Publish'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeleteApiModal({ api, onClose }: { api: any; onClose: () => void }) {
+  const [status, setStatus] = useState<'confirming' | 'deleting' | 'success'>('confirming');
+  const [error, setError] = useState('');
+
+  const deleteApi = async () => {
+    setStatus('deleting');
+    setError('');
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/catalog/${api.id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete API');
+      }
+      setStatus('success');
+    } catch (err) {
+      setStatus('confirming');
+      setError(err instanceof Error ? err.message : 'Failed to delete API');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+      <div className="bg-[#1c1c1c] border border-[#2e2e2e] rounded-xl w-full max-w-md shadow-2xl flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2e2e2e]">
+          <div>
+            <h2 className="text-[16px] font-medium text-white">Delete API</h2>
+            <p className="text-[12px] text-[#8b8b8b] mt-0.5">This action removes the registry entry and access requests.</p>
+          </div>
+          {status !== 'success' && (
+            <button onClick={onClose} className="text-[#8b8b8b] hover:text-white transition-colors">
+              <IconX className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {status === 'success' ? (
+          <div className="p-8 text-center">
+            <div className="w-12 h-12 bg-green-500/20 text-[#3ecf8e] rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h3 className="text-[16px] font-medium text-white mb-2">API Deleted</h3>
+            <p className="text-[14px] text-[#8b8b8b] mb-6">
+              <span className="text-white font-medium">{api.name}</span> has been removed from the GovHub API catalog.
+            </p>
+            <button onClick={() => { window.location.href = '/'; }} className="w-full h-[36px] bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-md text-[13px] transition-all">
+              Done
+            </button>
+          </div>
+        ) : (
+          <div className="p-6 text-left">
+            <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-md bg-red-500/10 p-2 text-red-300">
+                  <IconTrash className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-[14px] font-semibold text-white">{api.name}</h3>
+                  <p className="mt-1 text-[13px] leading-relaxed text-[#8b8b8b]">
+                    Deleting this API also removes its versions and access requests. Audit logs remain for governance history.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div className="mt-4 rounded-md border border-red-500/30 bg-red-950/20 p-3 text-[12px] text-red-400">
+                {error}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-5">
+              <button type="button" onClick={onClose} className="flex-1 h-[36px] border border-[#2e2e2e] hover:bg-[#2e2e2e] text-[#ededed] font-medium rounded-md text-[13px] transition-colors">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={status === 'deleting'}
+                onClick={deleteApi}
+                className="flex-1 h-[36px] bg-red-500/15 border border-red-500/30 hover:bg-red-500/25 text-red-200 font-medium rounded-md text-[13px] transition-colors disabled:opacity-50"
+              >
+                {status === 'deleting' ? 'Deleting...' : 'Delete API'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Catalog() {
   const { role } = useUser();
   const [apis, setApis] = useState<any[]>([]);
@@ -217,10 +677,10 @@ export function Catalog() {
   });
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="w-full p-4 lg:p-8 max-w-[1200px] mx-auto text-[#ededed]">
+    <div className="h-full overflow-hidden">
+      <div className="w-full h-full p-4 lg:p-8 max-w-[1200px] mx-auto text-[#ededed] flex min-h-0 flex-col">
       {/* Header Info */}
-      <div className="text-left mb-8">
+      <div className="shrink-0 text-left mb-8">
         <h1 className="text-[26px] font-semibold tracking-tight mb-2 text-white">Interoperability Catalog</h1>
         <p className="text-[14px] text-[#8b8b8b] max-w-2xl">
           Discover, test, and request lawful access to secure data sharing APIs owned by Ugandan Ministries, Departments, and Agencies (MDAs).
@@ -228,7 +688,7 @@ export function Catalog() {
       </div>
       
       {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">
+      <div className="flex shrink-0 flex-col sm:flex-row items-center justify-between mb-6 gap-4">
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative w-full sm:w-[280px]">
             <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8b8b8b] w-[18px] h-[18px]" />
@@ -290,10 +750,11 @@ export function Catalog() {
       </div>
       
       {/* Main Content Area */}
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
       {viewMode === 'list' ? (
         <div className="rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] overflow-hidden">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10">
               <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
                 <TableHead className="text-[11px] uppercase font-mono text-[#8b8b8b] h-10 tracking-widest px-4">API Name</TableHead>
                 <TableHead className="text-[11px] uppercase font-mono text-[#8b8b8b] h-10 tracking-widest px-4">Lifecycle</TableHead>
@@ -393,6 +854,7 @@ export function Catalog() {
           ))}
         </div>
       )}
+      </div>
       </div>
     </div>
   );
@@ -525,7 +987,12 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
       .then(data => {
         // Filter approved for active representing MDA and current API
         const approved = data.filter((r: any) => 
-          r.api_id === api.id && r.consumer_mda_id === mdaId && r.status === 'APPROVED'
+          r.api_id === api.id &&
+          r.consumer_mda_id === mdaId &&
+          r.status === 'APPROVED' &&
+          r.api_key &&
+          (r.api_key_status || 'ACTIVE') === 'ACTIVE' &&
+          (!r.api_key_expires_at || new Date(r.api_key_expires_at).getTime() > Date.now())
         );
         setApprovedRequests(approved);
       })
@@ -1310,9 +1777,11 @@ export function ApiDetail() {
   const [selectedVersion, setSelectedVersion] = useState('');
   const [publishingVersion, setPublishingVersion] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isPublishOpen, setIsPublishOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'docs' | 'gov' | 'try'>('docs');
   const [showPrintView, setShowPrintView] = useState(false);
-  const versionFileInputRef = useRef<HTMLInputElement>(null);
 
   const logAuditEvent = useCallback((eventType: string, mdaId: string | null, apiId: string | null, requestId: string, details: any) => {
     fetch('http://localhost:4000/api/access/audit-logs', {
@@ -1339,7 +1808,7 @@ export function ApiDetail() {
       .catch(err => console.error(err));
   }, [id]);
 
-  useEffect(() => {
+  const fetchApi = useCallback(() => {
     fetch(`http://localhost:4000/api/catalog/${id}`)
       .then(res => res.json())
       .then(data => {
@@ -1347,9 +1816,12 @@ export function ApiDetail() {
         logAuditEvent('API_VIEWED', null, id || null, `tx-view-${Date.now()}`, { api_name: data.name });
       })
       .catch(err => console.error(err));
+  }, [id, logAuditEvent]);
 
+  useEffect(() => {
+    fetchApi();
     fetchVersions();
-  }, [id, logAuditEvent, fetchVersions]);
+  }, [fetchApi, fetchVersions]);
 
   useEffect(() => {
     if (!id) return;
@@ -1367,36 +1839,24 @@ export function ApiDetail() {
 
   const activeVersion = versions.find(version => version.version === selectedVersion);
   const specUrl = `http://localhost:4000${activeVersion?.openapi_spec_path || api.openapi_spec_path}`;
-  const handlePublishVersion = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || !id) return;
-
-    setPublishingVersion(true);
-    try {
-      const openapi_spec = await file.text();
-      const response = await fetch(`http://localhost:4000/api/catalog/${id}/versions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          openapi_spec,
-          status: 'Published',
-          make_current: false,
-          notes: `Uploaded from ${file.name}`,
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to publish version');
-      }
-      await fetchVersions();
-      setSelectedVersion(result.version);
-    } catch (err) {
-      console.error(err);
-      alert(err instanceof Error ? err.message : 'Failed to publish version');
-    } finally {
-      setPublishingVersion(false);
+  const refreshDetail = () => {
+    setIsEditOpen(false);
+    fetchApi();
+    fetchVersions();
+    if (id) {
+      const params = selectedVersion ? `?version=${encodeURIComponent(selectedVersion)}` : '';
+      fetch(`http://localhost:4000/api/catalog/${id}/spec${params}`)
+        .then(res => res.json())
+        .then(data => setSpec(data))
+        .catch(err => console.error(err));
     }
+  };
+  const handleVersionPublished = async (version: string) => {
+    setPublishingVersion(true);
+    setIsPublishOpen(false);
+    await fetchVersions();
+    setSelectedVersion(version);
+    setPublishingVersion(false);
   };
   const endpoints: any[] = [];
   
@@ -1438,6 +1898,9 @@ export function ApiDetail() {
   return (
     <div className="text-left w-full max-w-[1400px] mx-auto text-[#ededed] flex h-full min-h-0 flex-col overflow-hidden">
       {isModalOpen && <RequestAccessModal api={api} onClose={() => setIsModalOpen(false)} />}
+      {isEditOpen && <AdminApiEditorModal api={api} spec={spec} onClose={() => setIsEditOpen(false)} onSaved={refreshDetail} />}
+      {isPublishOpen && id && <PublishVersionModal apiId={id} onClose={() => setIsPublishOpen(false)} onPublished={handleVersionPublished} />}
+      {isDeleteOpen && <DeleteApiModal api={api} onClose={() => setIsDeleteOpen(false)} />}
       
       {/* Header Area */}
       <div className="shrink-0 px-4 lg:px-8 py-4 border-b border-[#2e2e2e] bg-[#1c1c1c]">
@@ -1449,21 +1912,30 @@ export function ApiDetail() {
           <div className="flex items-center gap-3">
             {role === 'admin' && (
               <>
-                <input
-                  ref={versionFileInputRef}
-                  type="file"
-                  accept=".yaml,.yml,.json"
-                  onChange={handlePublishVersion}
-                  className="hidden"
-                />
                 <button
                   type="button"
                   disabled={publishingVersion}
-                  onClick={() => versionFileInputRef.current?.click()}
+                  onClick={() => setIsPublishOpen(true)}
                   className="h-[30px] px-3 flex items-center gap-2 border border-[#2e2e2e] bg-[#1c1c1c] hover:bg-[#2e2e2e] rounded-[6px] text-[12.5px] font-medium text-[#ededed] transition-colors disabled:opacity-50"
                 >
                   <IconGitBranch className="w-4 h-4 text-[#8b8b8b]" />
                   {publishingVersion ? 'Publishing...' : 'Publish Version'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditOpen(true)}
+                  className="h-[30px] px-3 flex items-center gap-2 border border-[#2e2e2e] bg-[#1c1c1c] hover:bg-[#2e2e2e] rounded-[6px] text-[12.5px] font-medium text-[#ededed] transition-colors"
+                >
+                  <IconEdit className="w-4 h-4 text-[#8b8b8b]" />
+                  Edit API
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteOpen(true)}
+                  className="h-[30px] px-3 flex items-center gap-2 border border-red-500/30 bg-red-500/5 hover:bg-red-500/10 rounded-[6px] text-[12.5px] font-medium text-red-300 transition-colors disabled:opacity-50"
+                >
+                  <IconTrash className="w-4 h-4" />
+                  Delete API
                 </button>
               </>
             )}
@@ -1563,23 +2035,28 @@ export function ApiDetail() {
       </div>
 
       {/* Tab Contents */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 lg:px-5 py-5 bg-[#181818]/30">
+      <div className="min-h-0 flex-1 overflow-hidden bg-[#181818]/30">
         {activeTab === 'docs' && (
-          <div className="flex flex-col gap-12">
-            <div>
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="shrink-0 px-4 lg:px-8 py-5">
               <h2 className="text-[18px] font-semibold text-white mb-2">Endpoint Contracts</h2>
-              <p className="text-[13px] text-[#8b8b8b] mb-6">Review parameters and examples validated against machine-readable contracts.</p>
+              <p className="text-[13px] text-[#8b8b8b]">Review parameters and examples validated against machine-readable contracts.</p>
             </div>
-            
-            {endpoints.map((ep, idx) => (
-              <EndpointBlock key={idx} ep={ep} spec={spec} />
-            ))}
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 lg:px-8 pb-5 pt-10">
+              <div className="flex flex-col gap-12">
+                {endpoints.map((ep, idx) => (
+                  <EndpointBlock key={idx} ep={ep} spec={spec} />
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         {activeTab === 'gov' && (
-          <div className="w-full flex flex-col gap-6">
-            <div className="flex justify-between items-center border-b border-[#2e2e2e] pb-4 mb-2">
+          <div className="flex h-full min-h-0 w-full flex-col">
+            <div className="shrink-0 px-4 lg:px-8 py-5">
+              <div className="flex justify-between items-center border-b border-[#2e2e2e] pb-4">
               <div>
                 <h2 className="text-[18px] font-semibold text-white">Interoperability & Data Protection Compliance</h2>
                 <p className="text-[13px] text-[#8b8b8b] mt-0.5">Formal statements aligning sharing with the Data Protection and Privacy Act, 2019.</p>
@@ -1599,7 +2076,9 @@ export function ApiDetail() {
                 </button>
               </div>
             </div>
+            </div>
 
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 lg:px-8 pb-5 pt-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Card 1: Authority & Scope */}
               <div className="p-6 border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl flex flex-col gap-4">
@@ -1691,17 +2170,20 @@ export function ApiDetail() {
                 </div>
               </div>
             </div>
+            </div>
           </div>
         )}
 
         {activeTab === 'try' && (
-          <div className="flex flex-col gap-4">
-            <div>
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="shrink-0 px-4 lg:px-8 py-5">
               <h2 className="text-[18px] font-semibold text-white mb-1">Sandbox Console Simulator</h2>
               <p className="text-[13px] text-[#8b8b8b]">Interact with mock endpoints in real-time. Use generated key tokens or trigger anonymous request errors.</p>
             </div>
-            
-            <SandboxTryItConsole api={api} endpoints={endpoints} spec={spec} />
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 lg:px-8 pb-5 pt-1">
+              <SandboxTryItConsole api={api} endpoints={endpoints} spec={spec} />
+            </div>
           </div>
         )}
       </div>

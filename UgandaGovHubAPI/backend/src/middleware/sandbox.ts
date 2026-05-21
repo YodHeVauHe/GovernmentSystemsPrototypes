@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { db } from '../index';
+import { computeApiKeyAccess } from '../admin';
 
 function getApiIdFromPath(url: string): string | null {
   if (url.includes('/identity')) return 'api-nira-01';
@@ -55,26 +56,31 @@ export function sandboxMiddleware(req: Request, res: Response, next: NextFunctio
   }
 
   // Look up API Key in database
-  const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, status FROM access_requests WHERE api_key = ?').get(apiKey) as any;
-  if (!requestRecord || requestRecord.status !== 'APPROVED') {
+  const requestRecord = db.prepare(`
+    SELECT consumer_mda_id, api_id, status, api_key_status, api_key_expires_at, api_key_revoked_at
+    FROM access_requests
+    WHERE api_key = ?
+  `).get(apiKey) as any;
+  const accessDecision = computeApiKeyAccess(requestRecord, apiId);
+  if (!accessDecision.allowed && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
     logAuditEvent('SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
-      reason: 'The provided API key is invalid, revoked, or not approved.',
+      reason: accessDecision.message,
       path: req.originalUrl,
       method: req.method,
       provided_key: apiKey.substring(0, 15) + '...'
     });
-    return sendSandboxError(res, 'INVALID_API_KEY', 'The provided API key is invalid, revoked, or not approved.', 403);
+    return sendSandboxError(res, accessDecision.code, accessDecision.message, 403);
   }
 
   // Enforce endpoint/scope verification
-  if (requestRecord.api_id !== apiId) {
+  if (!accessDecision.allowed && accessDecision.code === 'UNAUTHORIZED_ENDPOINT') {
     logAuditEvent('SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
-      reason: 'The API key is not authorized for this API endpoint.',
+      reason: accessDecision.message,
       path: req.originalUrl,
       method: req.method,
       authorized_api: requestRecord.api_id
     });
-    return sendSandboxError(res, 'UNAUTHORIZED_ENDPOINT', 'The provided API key is not authorized to access this API.', 403);
+    return sendSandboxError(res, accessDecision.code, accessDecision.message, 403);
   }
 
   // Key is valid and authorized

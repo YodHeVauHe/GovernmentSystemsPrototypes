@@ -14,6 +14,7 @@ import { accessRouter } from './routes/access';
 import { drivingPermitRouter } from './routes/driving-permit';
 import { compositeRouter } from './routes/composite';
 import { ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
+import { deleteSpecFiles, ensureAdminSchema, removeExistingSpecFiles } from './admin';
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use(express.json());
 
 // Initialize SQLite Database
 export const db = new Database(path.join(__dirname, '../data/govhub.db'));
+ensureAdminSchema(db);
 ensureApiVersionSchema(db);
 
 // Serve static OpenAPI files
@@ -229,6 +231,183 @@ app.get('/api/catalog/:id/spec', (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to parse spec' });
+  }
+});
+
+app.patch('/api/catalog/:id', (req, res) => {
+  const {
+    name,
+    owning_mda_id,
+    sector,
+    description,
+    lifecycle_status,
+    sensitivity_level,
+    sandbox_available,
+    openapi_spec,
+    required_approval_level,
+    contact_office,
+    technical_owner,
+    personal_data_categories,
+    purpose_limitation,
+    data_minimization_note,
+    retention_class,
+    statutory_basis,
+    security_classification,
+    sla_target,
+    compliance_status,
+  } = req.body;
+
+  try {
+    const existing = db.prepare('SELECT * FROM apis WHERE id = ?').get(req.params.id) as any;
+    if (!existing) {
+      return res.status(404).json({ error: 'API not found' });
+    }
+
+    let specPath = existing.openapi_spec_path;
+    let versionPatch: any = null;
+    if (typeof openapi_spec === 'string' && openapi_spec.trim()) {
+      const metadata = parseSpecMetadata(openapi_spec);
+      const currentVersion = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND is_current = 1').get(req.params.id) as any;
+      const specFilename = currentVersion?.openapi_spec_path
+        ? path.basename(currentVersion.openapi_spec_path)
+        : `${req.params.id}-${slugifyVersion(metadata.version)}.yaml`;
+      const absoluteSpecPath = path.join(__dirname, '../openapi', specFilename);
+      specPath = `/openapi/${specFilename}`;
+      fs.writeFileSync(absoluteSpecPath, openapi_spec, 'utf8');
+      versionPatch = {
+        versionId: currentVersion?.id || `${req.params.id}-${slugifyVersion(metadata.version)}`,
+        version: metadata.version,
+        specPath,
+        specSha: getSpecSha(openapi_spec),
+        endpointsCount: metadata.endpointsCount,
+        openapiVersion: metadata.openapiVersion,
+      };
+    }
+
+    const transaction = db.transaction(() => {
+      db.prepare(`
+        UPDATE apis SET
+          name = ?, owning_mda_id = ?, sector = ?, description = ?, lifecycle_status = ?,
+          sensitivity_level = ?, sandbox_available = ?, openapi_spec_path = ?, required_approval_level = ?,
+          contact_office = ?, technical_owner = ?, personal_data_categories = ?, purpose_limitation = ?,
+          data_minimization_note = ?, retention_class = ?, statutory_basis = ?, security_classification = ?,
+          sla_target = ?, compliance_status = ?
+        WHERE id = ?
+      `).run(
+        name ?? existing.name,
+        owning_mda_id ?? existing.owning_mda_id,
+        sector ?? existing.sector,
+        description ?? existing.description,
+        lifecycle_status ?? existing.lifecycle_status,
+        sensitivity_level ?? existing.sensitivity_level,
+        typeof sandbox_available === 'boolean' ? (sandbox_available ? 1 : 0) : existing.sandbox_available,
+        specPath,
+        required_approval_level ?? existing.required_approval_level,
+        contact_office ?? existing.contact_office,
+        technical_owner ?? existing.technical_owner,
+        personal_data_categories ?? existing.personal_data_categories,
+        purpose_limitation ?? existing.purpose_limitation,
+        data_minimization_note ?? existing.data_minimization_note,
+        retention_class ?? existing.retention_class,
+        statutory_basis ?? existing.statutory_basis,
+        security_classification ?? existing.security_classification,
+        sla_target ?? existing.sla_target,
+        compliance_status ?? existing.compliance_status,
+        req.params.id
+      );
+
+      if (versionPatch) {
+        const currentVersion = db.prepare('SELECT id FROM api_versions WHERE id = ?').get(versionPatch.versionId);
+        if (currentVersion) {
+          db.prepare(`
+            UPDATE api_versions SET
+              version = ?, openapi_spec_path = ?, spec_sha = ?, endpoints_count = ?, openapi_version = ?, notes = ?
+            WHERE id = ?
+          `).run(
+            versionPatch.version,
+            versionPatch.specPath,
+            versionPatch.specSha,
+            versionPatch.endpointsCount,
+            versionPatch.openapiVersion,
+            'Edited by platform administrator',
+            versionPatch.versionId
+          );
+        } else {
+          db.prepare(`
+            INSERT INTO api_versions (
+              id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
+              openapi_version, status, is_current, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            versionPatch.versionId,
+            req.params.id,
+            versionPatch.version,
+            versionPatch.specPath,
+            versionPatch.specSha,
+            versionPatch.endpointsCount,
+            versionPatch.openapiVersion,
+            'Published',
+            1,
+            'Edited by platform administrator'
+          );
+        }
+      }
+
+      db.prepare(`
+        INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        `audit-${Date.now()}`,
+        'API_UPDATED',
+        owning_mda_id ?? existing.owning_mda_id,
+        req.params.id,
+        JSON.stringify({ api_name: name ?? existing.name, spec_updated: Boolean(versionPatch) })
+      );
+    });
+
+    transaction();
+    res.json({ success: true, apiId: req.params.id });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: `Failed to update API: ${err.message}` });
+  }
+});
+
+app.delete('/api/catalog/:id', (req, res) => {
+  try {
+    const api = db.prepare('SELECT * FROM apis WHERE id = ?').get(req.params.id) as any;
+    if (!api) {
+      return res.status(404).json({ error: 'API not found' });
+    }
+
+    const versionSpecs = db.prepare('SELECT openapi_spec_path FROM api_versions WHERE api_id = ?').all(req.params.id) as any[];
+    const specPaths = removeExistingSpecFiles([
+      api.openapi_spec_path,
+      ...versionSpecs.map(version => version.openapi_spec_path),
+    ]);
+
+    const transaction = db.transaction(() => {
+      db.prepare('DELETE FROM access_requests WHERE api_id = ?').run(req.params.id);
+      db.prepare('DELETE FROM api_versions WHERE api_id = ?').run(req.params.id);
+      db.prepare('DELETE FROM apis WHERE id = ?').run(req.params.id);
+      db.prepare(`
+        INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        `audit-${Date.now()}`,
+        'API_DELETED',
+        api.owning_mda_id,
+        req.params.id,
+        JSON.stringify({ api_name: api.name, removed_spec_files: specPaths })
+      );
+    });
+
+    transaction();
+    deleteSpecFiles(specPaths, path.join(__dirname, '../openapi'));
+    res.json({ success: true, apiId: req.params.id });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: `Failed to delete API: ${err.message}` });
   }
 });
 

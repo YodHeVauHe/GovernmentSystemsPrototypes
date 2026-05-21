@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../index';
 import crypto from 'crypto';
 import { logAuditEvent } from '../middleware/sandbox';
+import { normalizeExpiryInput } from '../admin';
 
 export const accessRouter = Router();
 
@@ -57,9 +58,11 @@ accessRouter.get('/', (req, res) => {
 // Approve an access request (Simulates Admin action)
 accessRouter.post('/:id/approve', (req, res) => {
   const { id } = req.params;
+  const { api_key_expires_at } = req.body || {};
   const apiKey = `govhub_test_${crypto.randomBytes(12).toString('hex')}`;
 
   try {
+    const expiresAt = normalizeExpiryInput(api_key_expires_at);
     // Get the request details first for logging
     const requestRecord = db.prepare('SELECT consumer_mda_id, api_id FROM access_requests WHERE id = ?').get(id) as any;
     if (!requestRecord) {
@@ -68,23 +71,93 @@ accessRouter.post('/:id/approve', (req, res) => {
 
     const stmt = db.prepare(`
       UPDATE access_requests 
-      SET status = 'APPROVED', api_key = ? 
+      SET status = 'APPROVED', api_key = ?, api_key_status = 'ACTIVE', api_key_expires_at = ?, api_key_revoked_at = NULL
       WHERE id = ?
     `);
-    stmt.run(apiKey, id);
+    stmt.run(apiKey, expiresAt, id);
     
     // Log audit events
     logAuditEvent('ACCESS_APPROVED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
       request_id: id
     });
     logAuditEvent('API_KEY_GENERATED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
-      api_key_preview: apiKey.substring(0, 15) + '...'
+      api_key_preview: apiKey.substring(0, 15) + '...',
+      api_key_expires_at: expiresAt
     });
 
-    res.json({ id, status: 'APPROVED', api_key: apiKey });
-  } catch (err) {
+    res.json({ id, status: 'APPROVED', api_key: apiKey, api_key_status: 'ACTIVE', api_key_expires_at: expiresAt });
+  } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to approve request' });
+    res.status(500).json({ error: `Failed to approve request: ${err.message}` });
+  }
+});
+
+accessRouter.patch('/:id/key-expiry', (req, res) => {
+  const { id } = req.params;
+  const { api_key_expires_at } = req.body || {};
+
+  try {
+    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key FROM access_requests WHERE id = ?').get(id) as any;
+    if (!requestRecord || !requestRecord.api_key) {
+      return res.status(404).json({ error: 'API key not found' });
+    }
+
+    const expiresAt = normalizeExpiryInput(api_key_expires_at);
+    db.prepare('UPDATE access_requests SET api_key_expires_at = ?, api_key_status = ? WHERE id = ?')
+      .run(expiresAt, 'ACTIVE', id);
+    logAuditEvent('API_KEY_EXPIRY_UPDATED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+      api_key_expires_at: expiresAt
+    });
+
+    res.json({ id, api_key_status: 'ACTIVE', api_key_expires_at: expiresAt });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: `Failed to update API key expiry: ${err.message}` });
+  }
+});
+
+accessRouter.post('/:id/revoke-key', (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key FROM access_requests WHERE id = ?').get(id) as any;
+    if (!requestRecord || !requestRecord.api_key) {
+      return res.status(404).json({ error: 'API key not found' });
+    }
+
+    const revokedAt = new Date().toISOString();
+    db.prepare("UPDATE access_requests SET api_key_status = 'REVOKED', api_key_revoked_at = ? WHERE id = ?").run(revokedAt, id);
+    logAuditEvent('API_KEY_REVOKED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+      api_key_preview: requestRecord.api_key.substring(0, 15) + '...',
+      api_key_revoked_at: revokedAt
+    });
+
+    res.json({ id, api_key_status: 'REVOKED', api_key_revoked_at: revokedAt });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: `Failed to revoke API key: ${err.message}` });
+  }
+});
+
+accessRouter.delete('/:id/key', (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key FROM access_requests WHERE id = ?').get(id) as any;
+    if (!requestRecord || !requestRecord.api_key) {
+      return res.status(404).json({ error: 'API key not found' });
+    }
+
+    db.prepare("UPDATE access_requests SET api_key = NULL, api_key_status = 'DELETED', api_key_revoked_at = ?, api_key_expires_at = NULL WHERE id = ?")
+      .run(new Date().toISOString(), id);
+    logAuditEvent('API_KEY_DELETED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+      api_key_preview: requestRecord.api_key.substring(0, 15) + '...'
+    });
+
+    res.json({ id, api_key_status: 'DELETED' });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: `Failed to delete API key: ${err.message}` });
   }
 });
 
@@ -124,7 +197,10 @@ accessRouter.get('/matrix', (req, res) => {
       SELECT consumer_mda_id, api_id, status 
       FROM access_requests 
       WHERE status = 'APPROVED'
-    `).all();
+        AND api_key IS NOT NULL
+        AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
+        AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
+    `).all(new Date().toISOString());
     res.json(permissions);
   } catch (err) {
     console.error(err);

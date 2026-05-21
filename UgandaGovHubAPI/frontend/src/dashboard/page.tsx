@@ -14,6 +14,17 @@ import {
   IconX
 } from '@tabler/icons-react';
 
+function toDateTimeLocalValue(value?: string) {
+  const date = value ? new Date(value) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  if (Number.isNaN(date.getTime())) return '';
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocalValue(value: string) {
+  return value ? new Date(value).toISOString() : undefined;
+}
+
 export default function DashboardPage() {
   const { role, mdaId, mdas } = useUser();
   const [requests, setRequests] = useState<any[]>([]);
@@ -25,6 +36,7 @@ export default function DashboardPage() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [filterMda, setFilterMda] = useState<string>('ALL');
   const [timeRange, setTimeRange] = useState('7d');
+  const [keyExpiryInputs, setKeyExpiryInputs] = useState<Record<string, string>>({});
 
   const fetchDashboardData = () => {
     fetch('http://localhost:4000/api/access')
@@ -57,12 +69,52 @@ export default function DashboardPage() {
 
   const handleApprove = (id: string) => {
     setApproving(id);
-    fetch(`http://localhost:4000/api/access/${id}/approve`, { method: 'POST' })
+    fetch(`http://localhost:4000/api/access/${id}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key_expires_at: fromDateTimeLocalValue(keyExpiryInputs[id]) })
+    })
       .then(res => res.json())
       .then(() => {
         fetchDashboardData();
       })
       .finally(() => setApproving(null));
+  };
+
+  const handleUpdateExpiry = (id: string) => {
+    fetch(`http://localhost:4000/api/access/${id}/key-expiry`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key_expires_at: fromDateTimeLocalValue(keyExpiryInputs[id]) })
+    })
+      .then(res => res.json())
+      .then(result => {
+        if (result.error) throw new Error(result.error);
+        fetchDashboardData();
+      })
+      .catch(err => alert(err instanceof Error ? err.message : 'Failed to update key expiry'));
+  };
+
+  const handleRevokeKey = (id: string) => {
+    if (!confirm('Revoke this API key? Existing clients will be blocked immediately.')) return;
+    fetch(`http://localhost:4000/api/access/${id}/revoke-key`, { method: 'POST' })
+      .then(res => res.json())
+      .then(result => {
+        if (result.error) throw new Error(result.error);
+        fetchDashboardData();
+      })
+      .catch(err => alert(err instanceof Error ? err.message : 'Failed to revoke key'));
+  };
+
+  const handleDeleteKey = (id: string) => {
+    if (!confirm('Delete this API key? The access request remains for audit, but the token will no longer be visible or usable.')) return;
+    fetch(`http://localhost:4000/api/access/${id}/key`, { method: 'DELETE' })
+      .then(res => res.json())
+      .then(result => {
+        if (result.error) throw new Error(result.error);
+        fetchDashboardData();
+      })
+      .catch(err => alert(err instanceof Error ? err.message : 'Failed to delete key'));
   };
 
   const copyToClipboard = (key: string) => {
@@ -262,29 +314,69 @@ export default function DashboardPage() {
                       </TableCell>
                       <TableCell className="py-3.5 px-4 text-[13px]">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono border uppercase
-                          ${req.status === 'APPROVED' ? 'text-[#3ecf8e] border-[#3ecf8e]/20 bg-[#3ecf8e]/5' : 'text-orange-400 border-orange-400/20 bg-orange-400/5'}
+                          ${req.status === 'APPROVED' && (req.api_key_status || 'ACTIVE') === 'ACTIVE' ? 'text-[#3ecf8e] border-[#3ecf8e]/20 bg-[#3ecf8e]/5' :
+                            req.status === 'APPROVED' ? 'text-red-300 border-red-400/20 bg-red-400/5' :
+                            'text-orange-400 border-orange-400/20 bg-orange-400/5'}
                         `}>
-                          {req.status}
+                          {req.status === 'APPROVED' ? (req.api_key_status || 'ACTIVE') : req.status}
                         </span>
+                        {req.api_key_expires_at && (
+                          <div className="mt-1 text-[11px] text-[#8b8b8b]">
+                            Expires {new Date(req.api_key_expires_at).toLocaleString()}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="py-3.5 px-4 text-right">
                         {req.status === 'PENDING' ? (
-                          <button
-                            onClick={() => handleApprove(req.id)}
-                            disabled={approving === req.id}
-                            className="h-[28px] px-3 bg-[#3ecf8e] hover:bg-[#3ecf8e]/95 text-black font-semibold rounded-md text-[12px] transition-all disabled:opacity-50"
-                          >
-                            {approving === req.id ? 'Approving...' : 'Approve & Issue Key'}
-                          </button>
-                        ) : (
-                          <div className="flex items-center justify-end gap-1.5 font-mono text-[12px] text-[#8b8b8b]">
-                            <span>Issued: {req.api_key.substring(0, 12)}...</span>
-                            <button 
-                              onClick={() => copyToClipboard(req.api_key)}
-                              className="text-[#8b8b8b] hover:text-white transition-colors"
+                          <div className="flex flex-col items-end gap-2">
+                            <input
+                              type="datetime-local"
+                              value={keyExpiryInputs[req.id] ?? toDateTimeLocalValue()}
+                              onChange={event => setKeyExpiryInputs(current => ({ ...current, [req.id]: event.target.value }))}
+                              className="h-[28px] w-[180px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] text-[#ededed] focus:outline-none"
+                            />
+                            <button
+                              onClick={() => handleApprove(req.id)}
+                              disabled={approving === req.id}
+                              className="h-[28px] px-3 bg-[#3ecf8e] hover:bg-[#3ecf8e]/95 text-black font-semibold rounded-md text-[12px] transition-all disabled:opacity-50"
                             >
-                              <IconCopy className="w-4 h-4" />
+                              {approving === req.id ? 'Approving...' : 'Approve & Issue Key'}
                             </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center justify-end gap-1.5 font-mono text-[12px] text-[#8b8b8b]">
+                              <span>
+                                {req.api_key ? `Issued: ${req.api_key.substring(0, 12)}...` : 'Key deleted'}
+                              </span>
+                              {req.api_key && (
+                                <button 
+                                  onClick={() => copyToClipboard(req.api_key)}
+                                  className="text-[#8b8b8b] hover:text-white transition-colors"
+                                >
+                                  <IconCopy className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                            {req.api_key && (
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                <input
+                                  type="datetime-local"
+                                  value={keyExpiryInputs[req.id] ?? toDateTimeLocalValue(req.api_key_expires_at)}
+                                  onChange={event => setKeyExpiryInputs(current => ({ ...current, [req.id]: event.target.value }))}
+                                  className="h-[26px] w-[172px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] text-[#ededed] focus:outline-none"
+                                />
+                                <button onClick={() => handleUpdateExpiry(req.id)} className="h-[26px] px-2 rounded-md border border-[#2e2e2e] text-[11px] text-[#ededed] hover:bg-[#2e2e2e]">
+                                  Update
+                                </button>
+                                <button onClick={() => handleRevokeKey(req.id)} className="h-[26px] px-2 rounded-md border border-orange-400/30 text-[11px] text-orange-300 hover:bg-orange-400/10">
+                                  Revoke
+                                </button>
+                                <button onClick={() => handleDeleteKey(req.id)} className="h-[26px] px-2 rounded-md border border-red-400/30 text-[11px] text-red-300 hover:bg-red-400/10">
+                                  Delete
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </TableCell>
@@ -315,20 +407,25 @@ export default function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {requests.filter(r => r.consumer_mda_id === mdaId && r.status === 'APPROVED').length === 0 ? (
+                  {requests.filter(r => r.consumer_mda_id === mdaId && r.status === 'APPROVED' && r.api_key && (r.api_key_status || 'ACTIVE') === 'ACTIVE').length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="h-28 text-center text-[#8b8b8b] text-[13px]">
                         No approved API keys found for your agency. Go to the Catalog to submit a request.
                       </TableCell>
                     </TableRow>
-                  ) : requests.filter(r => r.consumer_mda_id === mdaId && r.status === 'APPROVED').map(req => (
+                  ) : requests.filter(r => r.consumer_mda_id === mdaId && r.status === 'APPROVED' && r.api_key && (r.api_key_status || 'ACTIVE') === 'ACTIVE').map(req => (
                     <TableRow key={req.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
                       <TableCell className="py-3.5 px-4 font-semibold text-[13.5px] text-white">{req.api_name}</TableCell>
                       <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] max-w-xs truncate">{req.purpose}</TableCell>
                       <TableCell className="py-3.5 px-4 text-[13px]">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono border border-[#3ecf8e]/20 text-[#3ecf8e] bg-[#3ecf8e]/5 uppercase">
-                          APPROVED
+                          ACTIVE
                         </span>
+                        {req.api_key_expires_at && (
+                          <div className="mt-1 text-[11px] text-[#8b8b8b]">
+                            Expires {new Date(req.api_key_expires_at).toLocaleString()}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="py-3.5 px-4 font-mono text-[12.5px] text-[#3ecf8e]">
                         <div className="flex items-center gap-2">

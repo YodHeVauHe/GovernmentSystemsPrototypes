@@ -55,6 +55,9 @@ db.exec(`
     purpose TEXT,
     status TEXT,
     api_key TEXT,
+    api_key_status TEXT DEFAULT 'ACTIVE',
+    api_key_expires_at TEXT,
+    api_key_revoked_at TEXT,
     requested_fields TEXT,
     volume_tier TEXT,
     legal_basis TEXT,
@@ -156,4 +159,3 @@ apis.forEach(a => insertApi.run(a));
 
 console.log('Seed data inserted successfully.');
 db.close();
-
