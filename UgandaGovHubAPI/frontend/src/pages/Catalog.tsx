@@ -196,6 +196,18 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
   );
 }
 
+const slugify = (text: string) => {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-') // Replace spaces with -
+    .replace(/[^\w\-]+/g, '') // Remove all non-word chars
+    .replace(/\-\-+/g, '-') // Replace multiple - with single -
+    .replace(/^-+/, '') // Trim - from start of text
+    .replace(/-+$/, ''); // Trim - from end of text
+};
+
 function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded: () => void }) {
   const [activeSourceTab, setActiveSourceTab] = useState<'url' | 'file' | 'text'>('url');
   const [specUrl, setSpecUrl] = useState('');
@@ -206,6 +218,8 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
   
   // Governance Form Fields
   const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [accessLevel, setAccessLevel] = useState<'Public' | 'Restricted' | 'Private'>('Restricted');
   const [owningMdaId, setOwningMdaId] = useState('mda-01');
   const [sector, setSector] = useState('Identity');
   const [description, setDescription] = useState('');
@@ -223,6 +237,18 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
   const [securityClassification, setSecurityClassification] = useState('Restricted');
   const [slaTarget, setSlaTarget] = useState('99.9% Uptime, <200ms latency');
   const [complianceStatus, setComplianceStatus] = useState('Draft');
+
+  const getMdaShortName = (id: string) => {
+    const mdaMap: Record<string, string> = {
+      'mda-01': 'nira',
+      'mda-02': 'ura',
+      'mda-03': 'ursb',
+      'mda-04': 'mowt',
+      'mda-05': 'moict',
+      'mda-06': 'moh'
+    };
+    return mdaMap[id] || 'mda';
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -253,6 +279,7 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
 
       setParsedSpec(data);
       setName(data.metadata.title);
+      setSlug(slugify(data.metadata.title));
       setDescription(data.metadata.description);
     } catch (err: any) {
       setValidationError(err.message || 'Validation failed. Ensure YAML/JSON is syntactically valid.');
@@ -263,6 +290,20 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
 
   const handleRegisterApi = async () => {
     setLoading(true);
+    // Resolve dynamic access override mappings matching Scalar
+    let finalSecurity = securityClassification;
+    let finalApproval = requiredApprovalLevel;
+    if (accessLevel === 'Public') {
+      finalSecurity = 'Public';
+      finalApproval = 'None';
+    } else if (accessLevel === 'Restricted') {
+      finalSecurity = 'Official';
+      finalApproval = 'Director General';
+    } else if (accessLevel === 'Private') {
+      finalSecurity = 'Restricted';
+      finalApproval = 'Cabinet';
+    }
+
     try {
       const response = await fetch('http://localhost:4000/api/catalog', {
         method: 'POST',
@@ -276,7 +317,7 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
           sensitivity_level: sensitivityLevel,
           sandbox_available: sandboxAvailable,
           openapi_spec: parsedSpec.rawSpec,
-          required_approval_level: requiredApprovalLevel,
+          required_approval_level: finalApproval,
           contact_office: contactOffice,
           technical_owner: technicalOwner,
           personal_data_categories: personalDataCategories,
@@ -284,7 +325,7 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
           data_minimization_note: dataMinimizationNote,
           retention_class: retentionClass,
           statutory_basis: statutoryBasis,
-          security_classification: securityClassification,
+          security_classification: finalSecurity,
           sla_target: slaTarget,
           compliance_status: complianceStatus
         })
@@ -302,6 +343,8 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
       setLoading(false);
     }
   };
+
+  const publishPreview = `govhub.go.ug/${getMdaShortName(owningMdaId)}/${slug || 'pets-api'}@${parsedSpec?.metadata?.version || '1.0.0'}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 overflow-y-auto">
@@ -443,14 +486,28 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
                   <input
                     type="text"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      setSlug(slugify(e.target.value));
+                    }}
+                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none focus:border-[#3ecf8e]"
+                  />
+                </div>
+
+                {/* Slug */}
+                <div className="space-y-1.5">
+                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Slug Coordinate</label>
+                  <input
+                    type="text"
+                    value={slug}
+                    onChange={(e) => setSlug(slugify(e.target.value))}
                     className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none focus:border-[#3ecf8e]"
                   />
                 </div>
 
                 {/* Owning MDA */}
                 <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Owning MDA</label>
+                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Owning MDA Namespace</label>
                   <select
                     value={owningMdaId}
                     onChange={(e) => setOwningMdaId(e.target.value)}
@@ -463,6 +520,30 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
                     <option value="mda-05">MoICT (Ministry of ICT)</option>
                     <option value="mda-06">MoH (Ministry of Health)</option>
                   </select>
+                </div>
+
+                {/* Access Level Selector */}
+                <div className="space-y-1.5">
+                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Access Control Level</label>
+                  <select
+                    value={accessLevel}
+                    onChange={(e) => setAccessLevel(e.target.value as any)}
+                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
+                  >
+                    <option value="Public">Public (Open Registry Access)</option>
+                    <option value="Restricted">Restricted (Legal Mandate Approval)</option>
+                    <option value="Private">Private (Internal MDA Lock)</option>
+                  </select>
+                </div>
+
+                {/* Coordinate Preview Banner */}
+                <div className="md:col-span-2 p-3 bg-[#141414] border border-[#2e2e2e] rounded-lg">
+                  <span className="text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider block mb-1">
+                    Publishing Registry Coordinate Preview
+                  </span>
+                  <span className="text-[13px] font-mono text-[#3ecf8e] break-all">
+                    {publishPreview}
+                  </span>
                 </div>
 
                 {/* Description */}
@@ -683,6 +764,11 @@ function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded:
 
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
         </div>
       </div>
     </div>
