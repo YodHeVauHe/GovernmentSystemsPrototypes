@@ -1,6 +1,19 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useUser } from '../context/UserContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { 
   IconShield, 
   IconKey, 
@@ -11,18 +24,181 @@ import {
   IconExternalLink,
   IconActivity,
   IconClock,
+  IconCalendarTime,
+  IconChevronLeft,
+  IconChevronRight,
+  IconDotsVertical,
   IconX
 } from '@tabler/icons-react';
 
-function toDateTimeLocalValue(value?: string) {
-  const date = value ? new Date(value) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  if (Number.isNaN(date.getTime())) return '';
+function dateToDateTimeLocalValue(date: Date) {
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
+function toDateTimeLocalValue(value?: string) {
+  const date = value ? new Date(value) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  if (Number.isNaN(date.getTime())) return '';
+  return dateToDateTimeLocalValue(date);
+}
+
 function fromDateTimeLocalValue(value: string) {
   return value ? new Date(value).toISOString() : undefined;
+}
+
+function formatExpiryLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Set expiry';
+
+  const datePart = date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timePart = date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  return `${datePart}, ${timePart}`;
+}
+
+function ExpiryDatePicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const selectedDate = value ? new Date(value) : null;
+  const [viewDate, setViewDate] = useState(selectedDate || new Date());
+
+  useEffect(() => {
+    if (selectedDate && !Number.isNaN(selectedDate.getTime())) {
+      setViewDate(selectedDate);
+    }
+  }, [value]);
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingBlankDays = new Date(year, month, 1).getDay();
+  const currentTime = value?.slice(11, 16) || '09:00';
+
+  const setDatePart = (day: number) => {
+    const [hours, minutes] = currentTime.split(':').map(Number);
+    onChange(dateToDateTimeLocalValue(new Date(year, month, day, hours || 0, minutes || 0)));
+  };
+
+  const setTimePart = (time: string) => {
+    const base = selectedDate && !Number.isNaN(selectedDate.getTime()) ? selectedDate : new Date();
+    const [hours, minutes] = time.split(':').map(Number);
+    onChange(dateToDateTimeLocalValue(new Date(
+      base.getFullYear(),
+      base.getMonth(),
+      base.getDate(),
+      hours || 0,
+      minutes || 0,
+    )));
+  };
+
+  const setQuickExpiry = (days: number) => {
+    onChange(dateToDateTimeLocalValue(new Date(Date.now() + days * 24 * 60 * 60 * 1000)));
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-[28px] w-[170px] items-center justify-between gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-left text-[11px] text-[#ededed] transition-colors hover:border-[#3ecf8e]/40 hover:bg-[#191919]"
+        >
+          <span className="min-w-0 truncate">{formatExpiryLabel(value)}</span>
+          <IconCalendarTime className="h-3.5 w-3.5 shrink-0 text-[#8b8b8b]" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-[274px] border-[#2e2e2e] bg-[#1c1c1c] p-3 text-[#ededed]"
+      >
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setViewDate(new Date(year, month - 1, 1))}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[#2e2e2e] text-[#8b8b8b] hover:bg-[#2e2e2e] hover:text-white"
+          >
+            <IconChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="text-[12px] font-semibold text-white">
+            {viewDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+          </div>
+          <button
+            type="button"
+            onClick={() => setViewDate(new Date(year, month + 1, 1))}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[#2e2e2e] text-[#8b8b8b] hover:bg-[#2e2e2e] hover:text-white"
+          >
+            <IconChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-mono uppercase text-[#8b8b8b]">
+          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+            <span key={`${day}-${index}`}>{day}</span>
+          ))}
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {Array.from({ length: leadingBlankDays }).map((_, index) => (
+            <span key={`blank-${index}`} className="h-7" />
+          ))}
+          {Array.from({ length: daysInMonth }, (_, index) => {
+            const day = index + 1;
+            const isSelected =
+              selectedDate?.getFullYear() === year &&
+              selectedDate?.getMonth() === month &&
+              selectedDate?.getDate() === day;
+
+            return (
+              <button
+                key={day}
+                type="button"
+                onClick={() => setDatePart(day)}
+                className={`h-7 rounded-md text-[11px] transition-colors ${
+                  isSelected
+                    ? 'bg-[#3ecf8e] text-black font-semibold'
+                    : 'text-[#ededed] hover:bg-[#2e2e2e]'
+                }`}
+              >
+                {day}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#2e2e2e] pt-3">
+          <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Time</span>
+          <input
+            type="time"
+            value={currentTime}
+            onChange={event => setTimePart(event.target.value)}
+            className="h-8 rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-[#ededed] focus:outline-none"
+          />
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-1.5">
+          {[30, 60, 90].map(days => (
+            <button
+              key={days}
+              type="button"
+              onClick={() => setQuickExpiry(days)}
+              className="h-7 rounded-md border border-[#2e2e2e] text-[11px] text-[#8b8b8b] hover:bg-[#2e2e2e] hover:text-white"
+            >
+              {days}d
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export default function DashboardPage() {
@@ -74,9 +250,21 @@ export default function DashboardPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key_expires_at: fromDateTimeLocalValue(keyExpiryInputs[id]) })
     })
-      .then(res => res.json())
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to approve access request');
+        return result;
+      })
       .then(() => {
+        toast.success('API key generated', {
+          description: 'The access request was approved and a sandbox key was generated.',
+        });
         fetchDashboardData();
+      })
+      .catch(err => {
+        toast.error('Approval failed', {
+          description: err instanceof Error ? err.message : 'Failed to approve access request',
+        });
       })
       .finally(() => setApproving(null));
   };
@@ -87,40 +275,92 @@ export default function DashboardPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key_expires_at: fromDateTimeLocalValue(keyExpiryInputs[id]) })
     })
-      .then(res => res.json())
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to update key expiry');
+        return result;
+      })
       .then(result => {
-        if (result.error) throw new Error(result.error);
+        toast.success('API key expiry updated', {
+          description: result.api_key_expires_at
+            ? `New expiry: ${new Date(result.api_key_expires_at).toLocaleString()}`
+            : 'The key no longer has an expiry date.',
+        });
         fetchDashboardData();
       })
-      .catch(err => alert(err instanceof Error ? err.message : 'Failed to update key expiry'));
+      .catch(err => {
+        toast.error('Update failed', {
+          description: err instanceof Error ? err.message : 'Failed to update key expiry',
+        });
+      });
   };
 
   const handleRevokeKey = (id: string) => {
     if (!confirm('Revoke this API key? Existing clients will be blocked immediately.')) return;
     fetch(`http://localhost:4000/api/access/${id}/revoke-key`, { method: 'POST' })
-      .then(res => res.json())
-      .then(result => {
-        if (result.error) throw new Error(result.error);
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to revoke key');
+        return result;
+      })
+      .then(() => {
+        toast.success('API key revoked', {
+          description: 'Existing clients using this key are blocked immediately.',
+        });
         fetchDashboardData();
       })
-      .catch(err => alert(err instanceof Error ? err.message : 'Failed to revoke key'));
+      .catch(err => {
+        toast.error('Revoke failed', {
+          description: err instanceof Error ? err.message : 'Failed to revoke key',
+        });
+      });
   };
 
   const handleDeleteKey = (id: string) => {
     if (!confirm('Delete this API key? The access request remains for audit, but the token will no longer be visible or usable.')) return;
     fetch(`http://localhost:4000/api/access/${id}/key`, { method: 'DELETE' })
-      .then(res => res.json())
-      .then(result => {
-        if (result.error) throw new Error(result.error);
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to delete key');
+        return result;
+      })
+      .then(() => {
+        toast.success('API key deleted', {
+          description: 'The access record remains available for audit review.',
+        });
         fetchDashboardData();
       })
-      .catch(err => alert(err instanceof Error ? err.message : 'Failed to delete key'));
+      .catch(err => {
+        toast.error('Delete failed', {
+          description: err instanceof Error ? err.message : 'Failed to delete key',
+        });
+      });
   };
 
-  const copyToClipboard = (key: string) => {
-    navigator.clipboard.writeText(key);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
+  const copyToClipboard = async (key: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(key);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = key;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+
+      setCopiedKey(key);
+      toast.success('API key copied');
+      setTimeout(() => setCopiedKey(null), 2000);
+    } catch {
+      toast.error('Copy failed', {
+        description: 'The API key could not be copied to the clipboard.',
+      });
+    }
   };
 
   // Filter requests depending on role
@@ -280,10 +520,11 @@ export default function DashboardPage() {
               <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex justify-between items-center">
                 <div>
                   <h2 className="text-[15px] font-semibold text-white">Active Access Requests</h2>
-                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Evaluate legal mandate alignment and issue cryptographically bound sandbox API keys.</p>
+                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Evaluate legal mandate alignment and manage cryptographically bound sandbox API keys.</p>
                 </div>
               </div>
-              <Table>
+              <div className="overflow-x-auto">
+              <Table className="min-w-[1060px]">
                 <TableHeader>
                   <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
                     <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Consumer MDA</TableHead>
@@ -320,34 +561,27 @@ export default function DashboardPage() {
                         `}>
                           {req.status === 'APPROVED' ? (req.api_key_status || 'ACTIVE') : req.status}
                         </span>
-                        {req.api_key_expires_at && (
-                          <div className="mt-1 text-[11px] text-[#8b8b8b]">
-                            Expires {new Date(req.api_key_expires_at).toLocaleString()}
-                          </div>
-                        )}
                       </TableCell>
                       <TableCell className="py-3.5 px-4 text-right">
                         {req.status === 'PENDING' ? (
                           <div className="flex flex-col items-end gap-2">
-                            <input
-                              type="datetime-local"
+                            <ExpiryDatePicker
                               value={keyExpiryInputs[req.id] ?? toDateTimeLocalValue()}
-                              onChange={event => setKeyExpiryInputs(current => ({ ...current, [req.id]: event.target.value }))}
-                              className="h-[28px] w-[180px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] text-[#ededed] focus:outline-none"
+                              onChange={value => setKeyExpiryInputs(current => ({ ...current, [req.id]: value }))}
                             />
                             <button
                               onClick={() => handleApprove(req.id)}
                               disabled={approving === req.id}
                               className="h-[28px] px-3 bg-[#3ecf8e] hover:bg-[#3ecf8e]/95 text-black font-semibold rounded-md text-[12px] transition-all disabled:opacity-50"
                             >
-                              {approving === req.id ? 'Approving...' : 'Approve & Issue Key'}
+                              {approving === req.id ? 'Approving...' : 'Approve key'}
                             </button>
                           </div>
                         ) : (
                           <div className="flex flex-col items-end gap-2">
                             <div className="flex items-center justify-end gap-1.5 font-mono text-[12px] text-[#8b8b8b]">
                               <span>
-                                {req.api_key ? `Issued: ${req.api_key.substring(0, 12)}...` : 'Key deleted'}
+                                {req.api_key ? `${req.api_key.substring(0, 12)}...` : 'Key deleted'}
                               </span>
                               {req.api_key && (
                                 <button 
@@ -359,22 +593,52 @@ export default function DashboardPage() {
                               )}
                             </div>
                             {req.api_key && (
-                              <div className="flex flex-wrap justify-end gap-1.5">
-                                <input
-                                  type="datetime-local"
+                              <div className="flex items-center justify-end gap-1.5">
+                                <ExpiryDatePicker
                                   value={keyExpiryInputs[req.id] ?? toDateTimeLocalValue(req.api_key_expires_at)}
-                                  onChange={event => setKeyExpiryInputs(current => ({ ...current, [req.id]: event.target.value }))}
-                                  className="h-[26px] w-[172px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] text-[#ededed] focus:outline-none"
+                                  onChange={value => setKeyExpiryInputs(current => ({ ...current, [req.id]: value }))}
                                 />
-                                <button onClick={() => handleUpdateExpiry(req.id)} className="h-[26px] px-2 rounded-md border border-[#2e2e2e] text-[11px] text-[#ededed] hover:bg-[#2e2e2e]">
-                                  Update
-                                </button>
-                                <button onClick={() => handleRevokeKey(req.id)} className="h-[26px] px-2 rounded-md border border-orange-400/30 text-[11px] text-orange-300 hover:bg-orange-400/10">
-                                  Revoke
-                                </button>
-                                <button onClick={() => handleDeleteKey(req.id)} className="h-[26px] px-2 rounded-md border border-red-400/30 text-[11px] text-red-300 hover:bg-red-400/10">
-                                  Delete
-                                </button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      type="button"
+                                      aria-label="API key actions"
+                                      className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border border-[#2e2e2e] text-[#8b8b8b] transition-colors hover:bg-[#2e2e2e] hover:text-white"
+                                    >
+                                      <IconDotsVertical className="h-4 w-4" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    className="w-44 border-[#2e2e2e] bg-[#1c1c1c] text-[#ededed]"
+                                  >
+                                    <DropdownMenuItem
+                                      onClick={() => handleUpdateExpiry(req.id)}
+                                      className="cursor-pointer text-[12px] focus:bg-[#2e2e2e] focus:text-white"
+                                    >
+                                      Update expiry
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => copyToClipboard(req.api_key)}
+                                      className="cursor-pointer text-[12px] focus:bg-[#2e2e2e] focus:text-white"
+                                    >
+                                      Copy key
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator className="bg-[#2e2e2e]" />
+                                    <DropdownMenuItem
+                                      onClick={() => handleRevokeKey(req.id)}
+                                      className="cursor-pointer text-[12px] text-orange-300 focus:bg-orange-400/10 focus:text-orange-200"
+                                    >
+                                      Revoke key
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleDeleteKey(req.id)}
+                                      className="cursor-pointer text-[12px] text-red-300 focus:bg-red-400/10 focus:text-red-200"
+                                    >
+                                      Delete key
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
                             )}
                           </div>
@@ -384,6 +648,7 @@ export default function DashboardPage() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </div>
           </div>
         )}

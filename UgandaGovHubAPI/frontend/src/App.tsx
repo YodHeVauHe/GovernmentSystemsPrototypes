@@ -6,6 +6,7 @@ import DashboardPage from '@/dashboard/page';
 import { Catalog, ApiDetail } from './pages/Catalog';
 import { AddApiPage } from './pages/AddApiPage';
 import { UserProvider } from './context/UserContext';
+import { Toaster } from '@/components/ui/sonner';
 
 function App() {
   return (
@@ -37,6 +38,7 @@ function App() {
           </SidebarInset>
         </SidebarProvider>
       </BrowserRouter>
+      <Toaster position="bottom-right" richColors />
     </UserProvider>
   );
 }
