@@ -27,6 +27,7 @@ import {
   IconCalendarTime,
   IconChevronLeft,
   IconChevronRight,
+  IconCircleCheck,
   IconDotsVertical,
   IconX
 } from '@tabler/icons-react';
@@ -969,7 +970,7 @@ export default function DashboardPage() {
                           {/* NIRA */}
                           <TableCell className="py-3 px-4 text-center">
                             {checkAccess('api-nira-01') ? (
-                              <span className="inline-flex h-6 w-6 rounded-full bg-green-500/10 border border-green-500/20 text-[#3ecf8e] items-center justify-center m-auto font-bold text-[11px]">✓</span>
+                              <IconCircleCheck className="m-auto h-5 w-5 text-[#3ecf8e]" stroke={1.8} />
                             ) : (
                               <span className="text-[#333] font-bold text-[12px]">-</span>
                             )}
@@ -978,7 +979,7 @@ export default function DashboardPage() {
                           {/* URA */}
                           <TableCell className="py-3 px-4 text-center">
                             {checkAccess('api-ura-01') ? (
-                              <span className="inline-flex h-6 w-6 rounded-full bg-green-500/10 border border-green-500/20 text-[#3ecf8e] items-center justify-center m-auto font-bold text-[11px]">✓</span>
+                              <IconCircleCheck className="m-auto h-5 w-5 text-[#3ecf8e]" stroke={1.8} />
                             ) : (
                               <span className="text-[#333] font-bold text-[12px]">-</span>
                             )}
@@ -987,7 +988,7 @@ export default function DashboardPage() {
                           {/* URSB */}
                           <TableCell className="py-3 px-4 text-center">
                             {checkAccess('api-ursb-01') ? (
-                              <span className="inline-flex h-6 w-6 rounded-full bg-green-500/10 border border-green-500/20 text-[#3ecf8e] items-center justify-center m-auto font-bold text-[11px]">✓</span>
+                              <IconCircleCheck className="m-auto h-5 w-5 text-[#3ecf8e]" stroke={1.8} />
                             ) : (
                               <span className="text-[#333] font-bold text-[12px]">-</span>
                             )}
@@ -996,7 +997,7 @@ export default function DashboardPage() {
                           {/* MoWT */}
                           <TableCell className="py-3 px-4 text-center">
                             {checkAccess('api-mowt-01') ? (
-                              <span className="inline-flex h-6 w-6 rounded-full bg-green-500/10 border border-green-500/20 text-[#3ecf8e] items-center justify-center m-auto font-bold text-[11px]">✓</span>
+                              <IconCircleCheck className="m-auto h-5 w-5 text-[#3ecf8e]" stroke={1.8} />
                             ) : (
                               <span className="text-[#333] font-bold text-[12px]">-</span>
                             )}
@@ -1005,7 +1006,7 @@ export default function DashboardPage() {
                           {/* MoICT */}
                           <TableCell className="py-3 px-4 text-center">
                             {checkAccess('api-moict-01') ? (
-                              <span className="inline-flex h-6 w-6 rounded-full bg-green-500/10 border border-green-500/20 text-[#3ecf8e] items-center justify-center m-auto font-bold text-[11px]">✓</span>
+                              <IconCircleCheck className="m-auto h-5 w-5 text-[#3ecf8e]" stroke={1.8} />
                             ) : (
                               <span className="text-[#333] font-bold text-[12px]">-</span>
                             )}
