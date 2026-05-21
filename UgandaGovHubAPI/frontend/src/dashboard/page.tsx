@@ -46,6 +46,111 @@ function fromDateTimeLocalValue(value: string) {
   return value ? new Date(value).toISOString() : undefined;
 }
 
+type TrafficBucket = {
+  key: string;
+  label: string;
+  count: number;
+};
+
+type DistributionRow = {
+  id: string;
+  label: string;
+  count: number;
+  percentage: number;
+};
+
+function parseAuditDate(value?: string) {
+  if (!value) return null;
+  const direct = new Date(value);
+  if (!Number.isNaN(direct.getTime())) return direct;
+  const normalized = new Date(value.replace(' ', 'T'));
+  return Number.isNaN(normalized.getTime()) ? null : normalized;
+}
+
+function getAnalyticsStart(range: string) {
+  const hours = range === '24h' ? 24 : range === '30d' ? 24 * 30 : 24 * 7;
+  return new Date(Date.now() - hours * 60 * 60 * 1000);
+}
+
+function getTimeRangeLabel(range: string) {
+  if (range === '24h') return 'Last 24 Hours';
+  if (range === '30d') return 'Last 30 Days';
+  return 'Last 7 Days';
+}
+
+function getSandboxLogsInRange(logs: any[], range: string) {
+  const start = getAnalyticsStart(range).getTime();
+  return logs.filter(log => {
+    if (!String(log.event_type || '').startsWith('SANDBOX_CALL')) return false;
+    const createdAt = parseAuditDate(log.created_at);
+    return createdAt ? createdAt.getTime() >= start : false;
+  });
+}
+
+function buildTrafficBuckets(logs: any[], range: string): TrafficBucket[] {
+  if (range === '24h') {
+    const bucketHours = 4;
+    return Array.from({ length: 6 }, (_, index) => {
+      const start = new Date(Date.now() - (6 - index) * bucketHours * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + bucketHours * 60 * 60 * 1000);
+      const count = logs.filter(log => {
+        const createdAt = parseAuditDate(log.created_at);
+        return createdAt && createdAt >= start && createdAt < end;
+      }).length;
+
+      return {
+        key: start.toISOString(),
+        label: start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+        count,
+      };
+    });
+  }
+
+  const days = range === '30d' ? 30 : 7;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return Array.from({ length: days }, (_, index) => {
+    const day = new Date(today);
+    day.setDate(today.getDate() - (days - 1 - index));
+    const nextDay = new Date(day);
+    nextDay.setDate(day.getDate() + 1);
+    const count = logs.filter(log => {
+      const createdAt = parseAuditDate(log.created_at);
+      return createdAt && createdAt >= day && createdAt < nextDay;
+    }).length;
+
+    const isToday = day.toDateString() === today.toDateString();
+    return {
+      key: day.toISOString(),
+      label: isToday
+        ? 'Today'
+        : day.toLocaleDateString(undefined, days > 7 ? { month: 'short', day: 'numeric' } : { weekday: 'short' }),
+      count,
+    };
+  });
+}
+
+function buildDistributionRows(logs: any[]): DistributionRow[] {
+  const counts = logs.reduce<Record<string, { label: string; count: number }>>((acc, log) => {
+    const id = log.api_id || 'unknown';
+    const label = log.api_name || log.api_id || 'Unknown Registry';
+    acc[id] = acc[id] || { label, count: 0 };
+    acc[id].count += 1;
+    return acc;
+  }, {});
+
+  const total = logs.length || 1;
+  return Object.entries(counts)
+    .map(([id, row]) => ({
+      id,
+      label: row.label,
+      count: row.count,
+      percentage: Math.round((row.count / total) * 100),
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
 function formatExpiryLabel(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Set expiry';
@@ -393,6 +498,16 @@ export default function DashboardPage() {
   const successRate = totalCallsCount > 0 
     ? Math.round(((totalCallsCount - deniedCallsCount) / totalCallsCount) * 100) 
     : 100;
+  const analyticsLogs = getSandboxLogsInRange(auditLogs, timeRange);
+  const analyticsTraffic = buildTrafficBuckets(analyticsLogs, timeRange);
+  const analyticsDistribution = buildDistributionRows(analyticsLogs);
+  const analyticsAllowed = analyticsLogs.filter(log => log.event_type === 'SANDBOX_CALL_ALLOWED').length;
+  const analyticsDenied = analyticsLogs.filter(log => log.event_type === 'SANDBOX_CALL_DENIED').length;
+  const analyticsSuccessRate = analyticsLogs.length > 0
+    ? Math.round((analyticsAllowed / analyticsLogs.length) * 100)
+    : 0;
+  const maxTrafficCount = Math.max(1, ...analyticsTraffic.map(bucket => bucket.count));
+  const distributionColors = ['bg-[#3ecf8e]', 'bg-blue-500', 'bg-orange-400', 'bg-purple-400', 'bg-yellow-400', 'bg-red-400'];
 
   return (
     <div className="h-full overflow-y-auto">
@@ -908,104 +1023,95 @@ export default function DashboardPage() {
         {/* Tab 5: Usage Analytics */}
         {activeTab === 'analytics' && (
           <div className="flex flex-col gap-6 text-left">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-[18px] font-semibold text-white">Usage Analytics</h2>
+                <p className="mt-0.5 text-[13px] text-[#8b8b8b]">
+                  Real sandbox traffic derived from audit logs and API key enforcement outcomes.
+                </p>
+              </div>
+              <select
+                value={timeRange}
+                onChange={event => setTimeRange(event.target.value)}
+                className="h-[34px] w-fit rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none"
+              >
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] p-4">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Sandbox Hits</span>
+                <div className="mt-1 text-[26px] font-bold text-white">{analyticsLogs.length}</div>
+                <div className="mt-1 text-[11px] text-[#8b8b8b]">{getTimeRangeLabel(timeRange)}</div>
+              </div>
+              <div className="rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] p-4">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Allowed Calls</span>
+                <div className="mt-1 text-[26px] font-bold text-[#3ecf8e]">{analyticsAllowed}</div>
+                <div className="mt-1 text-[11px] text-[#8b8b8b]">Authorized sandbox requests</div>
+              </div>
+              <div className="rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] p-4">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Denied Calls</span>
+                <div className="mt-1 text-[26px] font-bold text-red-300">{analyticsDenied}</div>
+                <div className="mt-1 text-[11px] text-[#8b8b8b]">{analyticsSuccessRate}% success rate</div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* Traffic Chart */}
               <div className="border border-[#2e2e2e] bg-[#1c1c1c] p-6 rounded-xl shadow-lg">
-                <h3 className="text-[14px] font-semibold text-white mb-6">Audited Sandboxed Hits (Last 7 Days)</h3>
+                <div className="mb-6 flex items-center justify-between gap-3">
+                  <h3 className="text-[14px] font-semibold text-white">Audited Sandbox Hits</h3>
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">{getTimeRangeLabel(timeRange)}</span>
+                </div>
                 
-                {/* Custom SVG Bar Chart */}
-                <div className="h-64 flex items-end justify-between gap-3 pt-6 border-b border-[#2e2e2e] pb-1.5 font-mono text-[11px] text-[#8b8b8b]">
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-gradient-to-t from-[#3ecf8e]/10 to-[#3ecf8e]/40 rounded-t-sm border-t border-[#3ecf8e]/30" style={{ height: '35%' }}></div>
-                    <span>Thu</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-gradient-to-t from-[#3ecf8e]/10 to-[#3ecf8e]/40 rounded-t-sm border-t border-[#3ecf8e]/30" style={{ height: '48%' }}></div>
-                    <span>Fri</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-gradient-to-t from-[#3ecf8e]/10 to-[#3ecf8e]/40 rounded-t-sm border-t border-[#3ecf8e]/30" style={{ height: '20%' }}></div>
-                    <span>Sat</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-gradient-to-t from-[#3ecf8e]/10 to-[#3ecf8e]/40 rounded-t-sm border-t border-[#3ecf8e]/30" style={{ height: '15%' }}></div>
-                    <span>Sun</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-gradient-to-t from-[#3ecf8e]/10 to-[#3ecf8e]/60 rounded-t-sm border-t border-[#3ecf8e]/50" style={{ height: '72%' }}></div>
-                    <span>Mon</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-gradient-to-t from-[#3ecf8e]/10 to-[#3ecf8e]/60 rounded-t-sm border-t border-[#3ecf8e]/50" style={{ height: '88%' }}></div>
-                    <span>Tue</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-gradient-to-t from-[#3ecf8e] to-[#3ecf8e]/80 rounded-t-sm border-t border-[#3ecf8e]" style={{ height: '95%' }}></div>
-                    <span className="text-[#3ecf8e] font-bold">Today</span>
-                  </div>
+                <div className="h-64 flex items-end justify-between gap-2 overflow-x-auto border-b border-[#2e2e2e] pb-1.5 pt-6 font-mono text-[11px] text-[#8b8b8b]">
+                  {analyticsTraffic.map(bucket => (
+                    <div key={bucket.key} className="flex min-w-[28px] flex-1 flex-col items-center gap-2">
+                      <span className="text-[10px] text-[#ededed]">{bucket.count}</span>
+                      <div
+                        className={`w-full min-w-[22px] rounded-t-sm border-t transition-all ${
+                          bucket.count > 0
+                            ? 'border-[#3ecf8e] bg-gradient-to-t from-[#3ecf8e]/20 to-[#3ecf8e]/80'
+                            : 'border-[#2e2e2e] bg-[#141414]'
+                        }`}
+                        style={{ height: `${Math.max(6, (bucket.count / maxTrafficCount) * 92)}%` }}
+                      />
+                      <span className={bucket.label === 'Today' ? 'font-bold text-[#3ecf8e]' : ''}>{bucket.label}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
               {/* Endpoint Distribution */}
               <div className="border border-[#2e2e2e] bg-[#1c1c1c] p-6 rounded-xl shadow-lg flex flex-col">
-                <h3 className="text-[14px] font-semibold text-white mb-6">Request Distribution by Registry</h3>
+                <div className="mb-6 flex items-center justify-between gap-3">
+                  <h3 className="text-[14px] font-semibold text-white">Request Distribution by Registry</h3>
+                  <span className="text-[11px] font-mono text-[#8b8b8b]">{analyticsDistribution.length} registries</span>
+                </div>
                 
                 <div className="flex flex-col gap-4 mt-2">
-                  {/* NIRA */}
-                  <div>
-                    <div className="flex justify-between text-[12px] mb-1 font-medium text-white">
-                      <span>NIRA Identity API</span>
-                      <span>42%</span>
+                  {analyticsDistribution.length === 0 ? (
+                    <div className="flex min-h-[190px] items-center justify-center rounded-lg border border-dashed border-[#2e2e2e] bg-[#141414] px-4 text-center text-[13px] text-[#8b8b8b]">
+                      No sandbox traffic has been audited for {getTimeRangeLabel(timeRange).toLowerCase()}.
                     </div>
-                    <div className="h-2 w-full bg-[#141414] rounded-full overflow-hidden border border-[#2e2e2e]">
-                      <div className="h-full bg-blue-500 rounded-full" style={{ width: '42%' }}></div>
+                  ) : analyticsDistribution.map((row, index) => (
+                    <div key={row.id}>
+                      <div className="flex justify-between gap-4 text-[12px] mb-1 font-medium text-white">
+                        <span className="min-w-0 truncate" title={row.label}>{row.label}</span>
+                        <span className="shrink-0 font-mono text-[#8b8b8b]">{row.count} / {row.percentage}%</span>
+                      </div>
+                      <div className="h-2 w-full bg-[#141414] rounded-full overflow-hidden border border-[#2e2e2e]">
+                        <div
+                          className={`h-full rounded-full ${distributionColors[index % distributionColors.length]}`}
+                          style={{ width: `${Math.max(2, row.percentage)}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-
-                  {/* URA */}
-                  <div>
-                    <div className="flex justify-between text-[12px] mb-1 font-medium text-white">
-                      <span>URA Tax Compliance API</span>
-                      <span>28%</span>
-                    </div>
-                    <div className="h-2 w-full bg-[#141414] rounded-full overflow-hidden border border-[#2e2e2e]">
-                      <div className="h-full bg-[#3ecf8e] rounded-full" style={{ width: '28%' }}></div>
-                    </div>
-                  </div>
-
-                  {/* URSB */}
-                  <div>
-                    <div className="flex justify-between text-[12px] mb-1 font-medium text-white">
-                      <span>URSB Registry API</span>
-                      <span>15%</span>
-                    </div>
-                    <div className="h-2 w-full bg-[#141414] rounded-full overflow-hidden border border-[#2e2e2e]">
-                      <div className="h-full bg-orange-400 rounded-full" style={{ width: '15%' }}></div>
-                    </div>
-                  </div>
-
-                  {/* MoWT */}
-                  <div>
-                    <div className="flex justify-between text-[12px] mb-1 font-medium text-white">
-                      <span>MoWT Driving Permit API</span>
-                      <span>10%</span>
-                    </div>
-                    <div className="h-2 w-full bg-[#141414] rounded-full overflow-hidden border border-[#2e2e2e]">
-                      <div className="h-full bg-purple-400 rounded-full" style={{ width: '10%' }}></div>
-                    </div>
-                  </div>
-
-                  {/* Composite */}
-                  <div>
-                    <div className="flex justify-between text-[12px] mb-1 font-medium text-white">
-                      <span>Service Uganda Composite API</span>
-                      <span>5%</span>
-                    </div>
-                    <div className="h-2 w-full bg-[#141414] rounded-full overflow-hidden border border-[#2e2e2e]">
-                      <div className="h-full bg-yellow-400 rounded-full" style={{ width: '5%' }}></div>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </div>
 
