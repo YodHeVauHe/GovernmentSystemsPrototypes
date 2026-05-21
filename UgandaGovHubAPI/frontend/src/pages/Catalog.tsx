@@ -606,9 +606,9 @@ function DeleteApiModal({ api, onClose }: { api: any; onClose: () => void }) {
             <p className="text-[14px] text-[#8b8b8b] mb-6">
               <span className="text-white font-medium">{api.name}</span> has been removed from the GovHub API catalog.
             </p>
-            <button onClick={() => { window.location.href = '/'; }} className="w-full h-[36px] bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-md text-[13px] transition-all">
+            <Link to="/" className="flex w-full h-[36px] items-center justify-center bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-md text-[13px] transition-all">
               Done
-            </button>
+            </Link>
           </div>
         ) : (
           <div className="p-6 text-left">
@@ -659,12 +659,20 @@ export function Catalog() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [complianceFilter, setComplianceFilter] = useState('ALL');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [loadingCatalog, setLoadingCatalog] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
 
   useEffect(() => {
+    setLoadingCatalog(true);
+    setCatalogError('');
     fetch('http://localhost:4000/api/catalog')
       .then(res => res.json())
       .then(data => setApis(data))
-      .catch(err => console.error(err));
+      .catch(err => {
+        console.error(err);
+        setCatalogError('Failed to load API catalog.');
+      })
+      .finally(() => setLoadingCatalog(false));
   }, []);
 
   const filteredApis = apis.filter(api => {
@@ -751,7 +759,35 @@ export function Catalog() {
       
       {/* Main Content Area */}
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-      {viewMode === 'list' ? (
+      {loadingCatalog ? (
+        <div className="rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] overflow-hidden">
+          <div className="grid grid-cols-[minmax(260px,1.8fr)_repeat(5,minmax(120px,1fr))] border-b border-[#2e2e2e] bg-[#141414] px-4 py-3 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">
+            <span>API Name</span>
+            <span>Lifecycle</span>
+            <span>Sector</span>
+            <span>Compliance</span>
+            <span>Sensitivity</span>
+            <span>Owning Authority</span>
+          </div>
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="grid grid-cols-[minmax(260px,1.8fr)_repeat(5,minmax(120px,1fr))] items-center gap-4 border-b border-[#2e2e2e] px-4 py-4 last:border-b-0">
+              <div>
+                <div className="h-4 w-52 animate-pulse rounded bg-[#2e2e2e]" />
+                <div className="mt-2 h-3 w-28 animate-pulse rounded bg-[#242424]" />
+              </div>
+              <div className="h-5 w-20 animate-pulse rounded-full bg-[#242424]" />
+              <div className="h-3 w-20 animate-pulse rounded bg-[#242424]" />
+              <div className="h-5 w-32 animate-pulse rounded-full bg-[#242424]" />
+              <div className="h-3 w-14 animate-pulse rounded bg-[#242424]" />
+              <div className="h-3 w-12 animate-pulse rounded bg-[#242424]" />
+            </div>
+          ))}
+        </div>
+      ) : catalogError ? (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-6 text-[13px] text-red-300">
+          {catalogError}
+        </div>
+      ) : viewMode === 'list' ? (
         <div className="rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] overflow-hidden">
           <Table>
             <TableHeader className="sticky top-0 z-10">
@@ -855,7 +891,7 @@ export function Catalog() {
         </div>
       )}
       </div>
-      </div>
+    </div>
     </div>
   );
 }
@@ -1911,7 +1947,30 @@ export function ApiDetail() {
   }, [id, selectedVersion]);
 
   if (!api || !spec) {
-    return <div className="p-8 text-[#8b8b8b] text-left">Loading API details...</div>;
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-[#181818] text-left text-[#ededed]">
+        <div className="shrink-0 border-b border-[#2e2e2e] px-4 py-5 lg:px-8">
+          <div className="h-4 w-28 animate-pulse rounded bg-[#2e2e2e]" />
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div className="h-7 w-80 max-w-full animate-pulse rounded bg-[#2e2e2e]" />
+            <div className="h-6 w-24 animate-pulse rounded-full bg-[#242424]" />
+            <div className="h-6 w-32 animate-pulse rounded-full bg-[#242424]" />
+          </div>
+          <div className="mt-5 h-4 w-[520px] max-w-full animate-pulse rounded bg-[#242424]" />
+          <div className="mt-3 h-3 w-64 max-w-full animate-pulse rounded bg-[#242424]" />
+        </div>
+        <div className="shrink-0 border-b border-[#2e2e2e] bg-[#141414] px-4 py-3 lg:px-8">
+          <div className="h-8 w-[520px] max-w-full animate-pulse rounded bg-[#242424]" />
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden px-4 py-6 lg:px-8">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-40 animate-pulse rounded-lg border border-[#2e2e2e] bg-[#1c1c1c]" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const activeVersion = versions.find(version => version.version === selectedVersion);

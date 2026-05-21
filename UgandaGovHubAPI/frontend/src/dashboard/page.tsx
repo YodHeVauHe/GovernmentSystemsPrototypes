@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useUser } from '../context/UserContext';
@@ -319,26 +320,36 @@ export default function DashboardPage() {
   const [filterMda, setFilterMda] = useState<string>('ALL');
   const [timeRange, setTimeRange] = useState('7d');
   const [keyExpiryInputs, setKeyExpiryInputs] = useState<Record<string, string>>({});
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState('');
 
-  const fetchDashboardData = () => {
-    fetch('http://localhost:4000/api/access')
-      .then(res => res.json())
-      .then(data => setRequests(data))
-      .catch(err => console.error(err));
+  const fetchDashboardData = (showLoading = false) => {
+    if (showLoading) {
+      setDashboardLoading(true);
+      setDashboardError('');
+    }
 
-    fetch('http://localhost:4000/api/access/audit-logs')
-      .then(res => res.json())
-      .then(data => setAuditLogs(data))
-      .catch(err => console.error(err));
-
-    fetch('http://localhost:4000/api/access/matrix')
-      .then(res => res.json())
-      .then(data => setMatrix(data))
-      .catch(err => console.error(err));
+    Promise.all([
+      fetch('http://localhost:4000/api/access').then(res => res.json()),
+      fetch('http://localhost:4000/api/access/audit-logs').then(res => res.json()),
+      fetch('http://localhost:4000/api/access/matrix').then(res => res.json()),
+    ])
+      .then(([accessData, auditData, matrixData]) => {
+        setRequests(accessData);
+        setAuditLogs(auditData);
+        setMatrix(matrixData);
+      })
+      .catch(err => {
+        console.error(err);
+        setDashboardError('Failed to load dashboard data.');
+      })
+      .finally(() => {
+        if (showLoading) setDashboardLoading(false);
+      });
   };
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchDashboardData(true);
     // Default tabs depending on role
     if (role === 'developer') {
       setActiveTab('credentials');
@@ -629,8 +640,32 @@ export default function DashboardPage() {
 
       {/* Tab Panels */}
       <div className="flex-1 w-full min-h-[400px]">
+        {dashboardLoading && (
+          <div className="rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] overflow-hidden">
+            <div className="border-b border-[#2e2e2e] bg-[#141414] p-4">
+              <div className="h-4 w-44 animate-pulse rounded bg-[#2e2e2e]" />
+              <div className="mt-2 h-3 w-80 max-w-full animate-pulse rounded bg-[#242424]" />
+            </div>
+            <div className="divide-y divide-[#2e2e2e]">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="grid grid-cols-[1.2fr_1.4fr_1fr_1fr_120px] items-center gap-4 px-4 py-4">
+                  <div className="h-4 w-36 animate-pulse rounded bg-[#242424]" />
+                  <div className="h-4 w-48 animate-pulse rounded bg-[#242424]" />
+                  <div className="h-4 w-28 animate-pulse rounded bg-[#242424]" />
+                  <div className="h-5 w-20 animate-pulse rounded-full bg-[#242424]" />
+                  <div className="ml-auto h-8 w-24 animate-pulse rounded bg-[#242424]" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {!dashboardLoading && dashboardError && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-6 text-[13px] text-red-300">
+            {dashboardError}
+          </div>
+        )}
         {/* Tab 1: Access Approvals */}
-        {activeTab === 'approvals' && (
+        {!dashboardLoading && !dashboardError && activeTab === 'approvals' && (
           <div className="flex flex-col gap-4">
             <div className="border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
               <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex justify-between items-center">
@@ -770,7 +805,7 @@ export default function DashboardPage() {
         )}
 
         {/* Tab 2: My Credentials */}
-        {activeTab === 'credentials' && (
+        {!dashboardLoading && !dashboardError && activeTab === 'credentials' && (
           <div className="flex flex-col gap-6">
             <div className="border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
               <div className="p-4 border-b border-[#2e2e2e] bg-[#141414]">
@@ -821,12 +856,12 @@ export default function DashboardPage() {
                         </div>
                       </TableCell>
                       <TableCell className="py-3.5 px-4 text-right">
-                        <a 
-                          href={`/api/${req.api_id}`}
+                        <Link
+                          to={`/api/${req.api_id}`}
                           className="inline-flex items-center gap-1 text-[12.5px] text-[#3ecf8e] hover:underline"
                         >
                           Try Sandbox <IconExternalLink className="w-3.5 h-3.5" />
-                        </a>
+                        </Link>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -837,7 +872,7 @@ export default function DashboardPage() {
         )}
 
         {/* Tab 3: Audit Trails (Reviewer View) */}
-        {activeTab === 'audit' && (
+        {!dashboardLoading && !dashboardError && activeTab === 'audit' && (
           <div className="flex flex-col gap-4">
             <div className="border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
               <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -935,7 +970,7 @@ export default function DashboardPage() {
         )}
 
         {/* Tab 4: Interoperability Matrix */}
-        {activeTab === 'matrix' && (
+        {!dashboardLoading && !dashboardError && activeTab === 'matrix' && (
           <div className="flex flex-col gap-6 text-left">
             <div className="border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl p-6 shadow-lg">
               <h2 className="text-[15px] font-semibold text-white mb-2">Government Data Interoperability Channels</h2>
@@ -1022,7 +1057,7 @@ export default function DashboardPage() {
         )}
 
         {/* Tab 5: Usage Analytics */}
-        {activeTab === 'analytics' && (
+        {!dashboardLoading && !dashboardError && activeTab === 'analytics' && (
           <div className="flex flex-col gap-6 text-left">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
