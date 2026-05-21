@@ -1603,9 +1603,12 @@ function SandboxClientModal({
             <div className="flex min-w-0 items-center gap-2">
               <IconTerminal2 className="h-4 w-4 shrink-0 text-[#3ecf8e]" />
               <h2 className="truncate text-[15px] font-semibold text-white">Sandbox Console Simulator</h2>
+              <span className="inline-flex shrink-0 items-center rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/10 px-2 py-0.5 text-[11px] font-mono uppercase text-[#3ecf8e]">
+                {endpoints.length} endpoint{endpoints.length === 1 ? '' : 's'}
+              </span>
             </div>
             <p className="mt-0.5 truncate text-[12px] text-[#8b8b8b]">
-              {api.name} / {endpoints.length} endpoint{endpoints.length === 1 ? '' : 's'}
+              {api.name}
             </p>
           </div>
           <button
