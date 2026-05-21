@@ -1552,6 +1552,79 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
   );
 }
 
+function SandboxClientModal({
+  open,
+  onClose,
+  api,
+  endpoints,
+  spec,
+}: {
+  open: boolean;
+  onClose: () => void;
+  api: any;
+  endpoints: any[];
+  spec: any;
+}) {
+  useEffect(() => {
+    if (!open) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/55 px-3 pt-10 sm:px-5">
+      <button
+        type="button"
+        aria-label="Close sandbox simulator"
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+      />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Sandbox Console Simulator"
+        className="relative z-[81] flex h-[calc(100dvh-48px)] w-full max-w-[1390px] flex-col overflow-hidden rounded-t-lg border border-[#2e2e2e] bg-[#181818] shadow-2xl"
+      >
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-[#2e2e2e] bg-[#141414] px-4 py-3 lg:px-5">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <IconTerminal2 className="h-4 w-4 shrink-0 text-[#3ecf8e]" />
+              <h2 className="truncate text-[15px] font-semibold text-white">Sandbox Console Simulator</h2>
+            </div>
+            <p className="mt-0.5 truncate text-[12px] text-[#8b8b8b]">
+              {api.name} / {endpoints.length} endpoint{endpoints.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#2e2e2e] text-[#8b8b8b] transition-colors hover:bg-[#2e2e2e] hover:text-white"
+            aria-label="Close sandbox simulator"
+          >
+            <IconX className="h-4 w-4" />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 lg:px-6">
+          <SandboxTryItConsole api={api} endpoints={endpoints} spec={spec} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function EndpointBlock({ ep, spec }: { ep: any, spec: any }) {
   const responseCodes = Object.keys(ep.data.responses || {});
   const [activeTab, setActiveTab] = useState<string>(responseCodes[0] || '');
@@ -1780,6 +1853,7 @@ export function ApiDetail() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isPublishOpen, setIsPublishOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'docs' | 'gov' | 'try'>('docs');
   const [showPrintView, setShowPrintView] = useState(false);
 
@@ -2022,7 +2096,10 @@ export function ApiDetail() {
         </button>
 
         <button
-          onClick={() => setActiveTab('try')}
+          onClick={() => {
+            setActiveTab('try');
+            setIsSandboxOpen(true);
+          }}
           className={`h-11 px-4 text-[13.5px] font-medium border-b-2 transition-all flex items-center gap-2 ${
             activeTab === 'try' 
               ? 'border-[#3ecf8e] text-white bg-[#1c1c1c]/40' 
@@ -2178,15 +2255,38 @@ export function ApiDetail() {
           <div className="flex h-full min-h-0 flex-col">
             <div className="shrink-0 px-4 lg:px-8 py-5">
               <h2 className="text-[18px] font-semibold text-white mb-1">Sandbox Console Simulator</h2>
-              <p className="text-[13px] text-[#8b8b8b]">Interact with mock endpoints in real-time. Use generated key tokens or trigger anonymous request errors.</p>
+              <p className="text-[13px] text-[#8b8b8b]">Open the sandbox in a front-of-screen client panel so requests, parameters, and responses stay visible.</p>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 lg:px-8 pb-5 pt-1">
-              <SandboxTryItConsole api={api} endpoints={endpoints} spec={spec} />
+            <div className="min-h-0 flex-1 px-4 lg:px-8 pb-5 pt-1">
+              <div className="flex min-h-[260px] flex-col items-center justify-center rounded-xl border border-[#2e2e2e] bg-[#141414] px-6 text-center shadow-lg">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/10 text-[#3ecf8e]">
+                  <IconTerminal2 className="h-6 w-6" />
+                </div>
+                <h3 className="text-[16px] font-semibold text-white">Launch Sandbox Client</h3>
+                <p className="mt-2 max-w-xl text-[13px] leading-6 text-[#8b8b8b]">
+                  The simulator opens as a bottom popout like Scalar’s API client, keeping the request builder and response console in view.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsSandboxOpen(true)}
+                  className="mt-5 inline-flex h-9 items-center gap-2 rounded-md bg-[#3ecf8e] px-4 text-[13px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90"
+                >
+                  <IconPlayerPlay className="h-4 w-4 fill-black" />
+                  Open Sandbox Simulator
+                </button>
+              </div>
             </div>
           </div>
         )}
       </div>
+      <SandboxClientModal
+        open={isSandboxOpen}
+        onClose={() => setIsSandboxOpen(false)}
+        api={api}
+        endpoints={endpoints}
+        spec={spec}
+      />
     </div>
   );
 }
