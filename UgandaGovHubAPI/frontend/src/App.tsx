@@ -4,6 +4,7 @@ import { AppSidebar } from '@/dashboard/components/app-sidebar';
 import { SiteHeader } from '@/dashboard/components/site-header';
 import DashboardPage from '@/dashboard/page';
 import { Catalog, ApiDetail } from './pages/Catalog';
+import { AddApiPage } from './pages/AddApiPage';
 import { UserProvider } from './context/UserContext';
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
             <div className="flex flex-1 flex-col overflow-y-auto w-full">
               <Routes>
                 <Route path="/" element={<Catalog />} />
+                <Route path="/catalog/add" element={<AddApiPage />} />
                 <Route path="/api/:id" element={<ApiDetail />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/health" element={<div className="p-6 text-gray-500">Health checks coming soon...</div>} />

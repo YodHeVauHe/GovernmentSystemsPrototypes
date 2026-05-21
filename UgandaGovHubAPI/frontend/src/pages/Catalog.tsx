@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
@@ -16,15 +16,9 @@ import {
   IconRefresh,
   IconBuildingBank,
   IconFileCertificate,
-  IconPlus,
-  IconUpload,
-  IconCode,
-  IconLink,
-  IconCheck,
-  IconLoader
+  IconPlus
 } from '@tabler/icons-react';
 import { useUser } from '../context/UserContext';
-import { toast } from 'sonner';
 
 function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void }) {
   const { mdaId, mdas } = useUser();
@@ -196,589 +190,9 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
   );
 }
 
-const slugify = (text: string) => {
-  return text
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-') // Replace spaces with -
-    .replace(/[^\w\-]+/g, '') // Remove all non-word chars
-    .replace(/\-\-+/g, '-') // Replace multiple - with single -
-    .replace(/^-+/, '') // Trim - from start of text
-    .replace(/-+$/, ''); // Trim - from end of text
-};
-
-function AddApiModal({ onClose, onApiAdded }: { onClose: () => void; onApiAdded: () => void }) {
-  const [activeSourceTab, setActiveSourceTab] = useState<'url' | 'file' | 'text'>('url');
-  const [specUrl, setSpecUrl] = useState('');
-  const [specText, setSpecText] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [validationError, setValidationError] = useState('');
-  const [parsedSpec, setParsedSpec] = useState<any>(null);
-  
-  // Governance Form Fields
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [accessLevel, setAccessLevel] = useState<'Public' | 'Restricted' | 'Private'>('Restricted');
-  const [owningMdaId, setOwningMdaId] = useState('mda-01');
-  const [sector, setSector] = useState('Identity');
-  const [description, setDescription] = useState('');
-  const [lifecycleStatus, setLifecycleStatus] = useState('Draft');
-  const [sensitivityLevel, setSensitivityLevel] = useState('Medium');
-  const [sandboxAvailable, setSandboxAvailable] = useState(true);
-  const [requiredApprovalLevel, setRequiredApprovalLevel] = useState('Technical Director');
-  const [contactOffice, setContactOffice] = useState('api.support@nira.go.ug');
-  const [technicalOwner, setTechnicalOwner] = useState('Systems Engineering');
-  const [personalDataCategories, setPersonalDataCategories] = useState('NIN, Birthdate');
-  const [purposeLimitation, setPurposeLimitation] = useState('Identity validation only');
-  const [dataMinimizationNote, setDataMinimizationNote] = useState('Only returns Boolean match statuses');
-  const [retentionClass, setRetentionClass] = useState('No persistent logging of citizen variables');
-  const [statutoryBasis, setStatutoryBasis] = useState('Registration of Persons Act 2015');
-  const [securityClassification, setSecurityClassification] = useState('Restricted');
-  const [slaTarget, setSlaTarget] = useState('99.9% Uptime, <200ms latency');
-  const [complianceStatus, setComplianceStatus] = useState('Draft');
-
-  const getMdaShortName = (id: string) => {
-    const mdaMap: Record<string, string> = {
-      'mda-01': 'nira',
-      'mda-02': 'ura',
-      'mda-03': 'ursb',
-      'mda-04': 'mowt',
-      'mda-05': 'moict',
-      'mda-06': 'moh'
-    };
-    return mdaMap[id] || 'mda';
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setSpecText(event.target?.result as string || '');
-    };
-    reader.readAsText(file);
-  };
-
-  const handleValidateSpec = async () => {
-    setLoading(true);
-    setValidationError('');
-    try {
-      const response = await fetch('http://localhost:4000/api/catalog/validate-spec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          specText: activeSourceTab !== 'url' ? specText : undefined,
-          specUrl: activeSourceTab === 'url' ? specUrl : undefined
-        })
-      });
-      const data = await response.json();
-      if (!response.ok || !data.valid) {
-        throw new Error(data.error || 'Failed to parse OpenAPI document.');
-      }
-
-      setParsedSpec(data);
-      setName(data.metadata.title);
-      setSlug(slugify(data.metadata.title));
-      setDescription(data.metadata.description);
-    } catch (err: any) {
-      setValidationError(err.message || 'Validation failed. Ensure YAML/JSON is syntactically valid.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegisterApi = async () => {
-    setLoading(true);
-    // Resolve dynamic access override mappings matching Scalar
-    let finalSecurity = securityClassification;
-    let finalApproval = requiredApprovalLevel;
-    if (accessLevel === 'Public') {
-      finalSecurity = 'Public';
-      finalApproval = 'None';
-    } else if (accessLevel === 'Restricted') {
-      finalSecurity = 'Official';
-      finalApproval = 'Director General';
-    } else if (accessLevel === 'Private') {
-      finalSecurity = 'Restricted';
-      finalApproval = 'Cabinet';
-    }
-
-    try {
-      const response = await fetch('http://localhost:4000/api/catalog', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          owning_mda_id: owningMdaId,
-          sector,
-          description,
-          lifecycle_status: lifecycleStatus,
-          sensitivity_level: sensitivityLevel,
-          sandbox_available: sandboxAvailable,
-          openapi_spec: parsedSpec.rawSpec,
-          required_approval_level: finalApproval,
-          contact_office: contactOffice,
-          technical_owner: technicalOwner,
-          personal_data_categories: personalDataCategories,
-          purpose_limitation: purposeLimitation,
-          data_minimization_note: dataMinimizationNote,
-          retention_class: retentionClass,
-          statutory_basis: statutoryBasis,
-          security_classification: finalSecurity,
-          sla_target: slaTarget,
-          compliance_status: complianceStatus
-        })
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to register API.');
-      }
-      toast.success('API Catalog entry created successfully!');
-      onApiAdded();
-      onClose();
-    } catch (err: any) {
-      toast.error(err.message || 'Registration failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const publishPreview = `govhub.go.ug/${getMdaShortName(owningMdaId)}/${slug || 'pets-api'}@${parsedSpec?.metadata?.version || '1.0.0'}`;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-[#1c1c1c] border border-[#2e2e2e] rounded-xl w-full max-w-2xl shadow-2xl p-6 my-8 flex flex-col max-h-[90vh]">
-        
-        {/* Title */}
-        <div className="flex items-center justify-between border-b border-[#2e2e2e] pb-4 mb-4">
-          <h2 className="text-[16px] font-medium text-white flex items-center gap-2">
-            <span className="w-2.5 h-2.5 bg-[#3ecf8e] rounded-full animate-pulse"></span>
-            Register New API in GovHub Interoperability Registry
-          </h2>
-          <button onClick={onClose} className="text-[#8b8b8b] hover:text-white transition-colors text-[13px]">
-            Cancel
-          </button>
-        </div>
-
-        <div className="overflow-y-auto pr-1 flex-1 space-y-5">
-          {!parsedSpec ? (
-            /* PHASE 1: LOAD & VALIDATE */
-            <div className="space-y-4">
-              <p className="text-[13px] text-[#8b8b8b]">
-                Import the API OpenAPI Specification file. The GovHub validation engine will extract structure and endpoints to prepare compliance sheets.
-              </p>
-
-              {/* Tabs */}
-              <div className="flex bg-[#141414] p-1 rounded-lg border border-[#2e2e2e] text-[13px]">
-                <button
-                  type="button"
-                  onClick={() => { setActiveSourceTab('url'); setValidationError(''); }}
-                  className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${activeSourceTab === 'url' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
-                >
-                  <IconLink className="w-3.5 h-3.5" /> Spec URL
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setActiveSourceTab('file'); setValidationError(''); }}
-                  className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${activeSourceTab === 'file' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
-                >
-                  <IconUpload className="w-3.5 h-3.5" /> Upload Spec
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setActiveSourceTab('text'); setValidationError(''); }}
-                  className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${activeSourceTab === 'text' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
-                >
-                  <IconCode className="w-3.5 h-3.5" /> Raw Code
-                </button>
-              </div>
-
-              {/* Inputs */}
-              {activeSourceTab === 'url' && (
-                <div className="space-y-2">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">OpenAPI URL</label>
-                  <input
-                    type="url"
-                    placeholder="https://raw.githubusercontent.com/OAS/main/spec.yaml"
-                    value={specUrl}
-                    onChange={(e) => setSpecUrl(e.target.value)}
-                    className="w-full h-[38px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none focus:border-[#3ecf8e] transition-colors"
-                  />
-                </div>
-              )}
-
-              {activeSourceTab === 'file' && (
-                <div className="space-y-2">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Upload YAML or JSON Specification</label>
-                  <div className="border border-dashed border-[#2e2e2e] hover:border-[#3ecf8e] bg-[#141414] rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer transition-colors relative">
-                    <input
-                      type="file"
-                      accept=".yaml,.yml,.json"
-                      onChange={handleFileUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
-                    <IconUpload className="w-8 h-8 text-[#8b8b8b] mb-2" />
-                    <span className="text-[13px] text-white font-medium">Click or drop YAML/JSON here</span>
-                    <span className="text-[11px] text-[#8b8b8b] mt-1">Accepts standard .yaml, .yml, or .json</span>
-                  </div>
-                  {specText && (
-                    <div className="bg-[#1c1c1c] border border-[#2e2e2e] p-2.5 rounded-md text-[11px] text-[#3ecf8e] font-mono flex items-center gap-1.5">
-                      <IconCheck className="w-3.5 h-3.5" /> Spec loaded cleanly ({specText.length} characters)
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeSourceTab === 'text' && (
-                <div className="space-y-2">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Pasted Raw YAML/JSON Specification</label>
-                  <textarea
-                    placeholder="openapi: 3.0.0&#10;info:&#10;  title: Citizen Data Lookup API&#10;..."
-                    value={specText}
-                    onChange={(e) => setSpecText(e.target.value)}
-                    rows={8}
-                    className="w-full p-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] font-mono text-white focus:outline-none focus:border-[#3ecf8e] transition-colors resize-y"
-                  />
-                </div>
-              )}
-
-              {validationError && (
-                <div className="p-3 bg-red-950/20 border border-red-500/30 text-red-400 rounded-lg text-[12px]">
-                  <span className="font-semibold block mb-0.5">OpenAPI Validation Failed</span>
-                  {validationError}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleValidateSpec}
-                disabled={loading || (activeSourceTab === 'url' ? !specUrl : !specText)}
-                className="w-full h-[38px] bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[13px] transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? <IconLoader className="w-4 h-4 animate-spin text-black" /> : <IconCheck className="w-4 h-4" />}
-                Validate OpenAPI Specification
-              </button>
-            </div>
-          ) : (
-            /* PHASE 2: METADATA & COMPLIANCE REGISTRATION FORM */
-            <div className="space-y-4">
-              
-              {/* Checked Banner */}
-              <div className="p-3.5 bg-[#3ecf8e]/10 border border-[#3ecf8e]/20 text-[#3ecf8e] rounded-lg text-[13px] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <IconCheck className="w-4.5 h-4.5" />
-                  <div>
-                    <span className="font-semibold">OpenAPI Validated</span>: Version {parsedSpec.metadata.version}
-                  </div>
-                </div>
-                <div className="text-[12px] font-semibold bg-[#3ecf8e]/20 px-2 py-0.5 rounded-full">
-                  {parsedSpec.metadata.endpointsCount} Endpoints Found
-                </div>
-              </div>
-
-              {/* Form Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
-                
-                {/* Name */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">API Name</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => {
-                      setName(e.target.value);
-                      setSlug(slugify(e.target.value));
-                    }}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none focus:border-[#3ecf8e]"
-                  />
-                </div>
-
-                {/* Slug */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Slug Coordinate</label>
-                  <input
-                    type="text"
-                    value={slug}
-                    onChange={(e) => setSlug(slugify(e.target.value))}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none focus:border-[#3ecf8e]"
-                  />
-                </div>
-
-                {/* Owning MDA */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Owning MDA Namespace</label>
-                  <select
-                    value={owningMdaId}
-                    onChange={(e) => setOwningMdaId(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  >
-                    <option value="mda-01">NIRA (National ID Authority)</option>
-                    <option value="mda-02">URA (Uganda Revenue Authority)</option>
-                    <option value="mda-03">URSB (Business Registry)</option>
-                    <option value="mda-04">MoWT (Ministry of Transport)</option>
-                    <option value="mda-05">MoICT (Ministry of ICT)</option>
-                    <option value="mda-06">MoH (Ministry of Health)</option>
-                  </select>
-                </div>
-
-                {/* Access Level Selector */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Access Control Level</label>
-                  <select
-                    value={accessLevel}
-                    onChange={(e) => setAccessLevel(e.target.value as any)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  >
-                    <option value="Public">Public (Open Registry Access)</option>
-                    <option value="Restricted">Restricted (Legal Mandate Approval)</option>
-                    <option value="Private">Private (Internal MDA Lock)</option>
-                  </select>
-                </div>
-
-                {/* Coordinate Preview Banner */}
-                <div className="md:col-span-2 p-3 bg-[#141414] border border-[#2e2e2e] rounded-lg">
-                  <span className="text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider block mb-1">
-                    Publishing Registry Coordinate Preview
-                  </span>
-                  <span className="text-[13px] font-mono text-[#3ecf8e] break-all">
-                    {publishPreview}
-                  </span>
-                </div>
-
-                {/* Description */}
-                <div className="md:col-span-2 space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">API Functional Description</label>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={2}
-                    className="w-full p-2.5 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  />
-                </div>
-
-                {/* Sector */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Sector</label>
-                  <input
-                    type="text"
-                    value={sector}
-                    onChange={(e) => setSector(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  />
-                </div>
-
-                {/* SLA Target */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">SLA Target</label>
-                  <input
-                    type="text"
-                    value={slaTarget}
-                    onChange={(e) => setSlaTarget(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  />
-                </div>
-
-                {/* Lifecycle Status */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Lifecycle Status</label>
-                  <select
-                    value={lifecycleStatus}
-                    onChange={(e) => setLifecycleStatus(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  >
-                    <option value="Draft">Draft</option>
-                    <option value="Beta">Beta</option>
-                    <option value="Production">Production</option>
-                  </select>
-                </div>
-
-                {/* Compliance Status */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">GovHub Compliance Status</label>
-                  <select
-                    value={complianceStatus}
-                    onChange={(e) => setComplianceStatus(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  >
-                    <option value="Draft">Draft</option>
-                    <option value="Under Review">Under Review</option>
-                    <option value="Approved for Sandbox">Approved for Sandbox</option>
-                    <option value="Approved for Production">Approved for Production</option>
-                  </select>
-                </div>
-
-                {/* Sensitivity Level */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Sensitivity Level</label>
-                  <select
-                    value={sensitivityLevel}
-                    onChange={(e) => setSensitivityLevel(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  >
-                    <option value="Low">Low (Public Data)</option>
-                    <option value="Medium">Medium (Corporate Data)</option>
-                    <option value="High">High (PII Personal Data)</option>
-                  </select>
-                </div>
-
-                {/* Security Classification */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Security Classification</label>
-                  <select
-                    value={securityClassification}
-                    onChange={(e) => setSecurityClassification(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  >
-                    <option value="Public">Public</option>
-                    <option value="Official">Official</option>
-                    <option value="Restricted">Restricted</option>
-                    <option value="Confidential">Confidential</option>
-                  </select>
-                </div>
-
-                {/* Contact Office */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Contact Office Email</label>
-                  <input
-                    type="email"
-                    value={contactOffice}
-                    onChange={(e) => setContactOffice(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white"
-                  />
-                </div>
-
-                {/* Technical Owner */}
-                <div className="space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Technical Owner Team</label>
-                  <input
-                    type="text"
-                    value={technicalOwner}
-                    onChange={(e) => setTechnicalOwner(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white"
-                  />
-                </div>
-
-                {/* Statutory Legal Basis */}
-                <div className="md:col-span-2 space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Statutory / Legal Basis (Enabling Legislation)</label>
-                  <input
-                    type="text"
-                    value={statutoryBasis}
-                    onChange={(e) => setStatutoryBasis(e.target.value)}
-                    placeholder="e.g. Registration of Persons Act 2015, Section 65"
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  />
-                </div>
-
-                {/* Required Approval Level */}
-                <div className="md:col-span-2 space-y-1.5">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Required Approving Authority Tier</label>
-                  <input
-                    type="text"
-                    value={requiredApprovalLevel}
-                    onChange={(e) => setRequiredApprovalLevel(e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
-                  />
-                </div>
-
-                {/* Sandbox Available */}
-                <div className="md:col-span-2 flex items-center gap-2 py-1">
-                  <input
-                    type="checkbox"
-                    id="sandboxAvailable"
-                    checked={sandboxAvailable}
-                    onChange={(e) => setSandboxAvailable(e.target.checked)}
-                    className="w-4.5 h-4.5 rounded border-[#2e2e2e] bg-[#141414] text-[#3ecf8e] focus:ring-[#3ecf8e]"
-                  />
-                  <label htmlFor="sandboxAvailable" className="text-[13px] text-white font-medium select-none cursor-pointer">
-                    Enable Interoperability Sandbox Mock APIs Instantly
-                  </label>
-                </div>
-
-                {/* Governance Details Block */}
-                <div className="md:col-span-2 border-t border-[#2e2e2e] pt-4 mt-2">
-                  <h3 className="text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider mb-3">DPPO Compliance & Governance Safeguards</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Personal Data Categories Collected</label>
-                      <input
-                        type="text"
-                        value={personalDataCategories}
-                        onChange={(e) => setPersonalDataCategories(e.target.value)}
-                        className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Purpose Limitation Rule</label>
-                      <input
-                        type="text"
-                        value={purposeLimitation}
-                        onChange={(e) => setPurposeLimitation(e.target.value)}
-                        className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Data Minimization Safeguards</label>
-                      <input
-                        type="text"
-                        value={dataMinimizationNote}
-                        onChange={(e) => setDataMinimizationNote(e.target.value)}
-                        className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Data Retention Classification</label>
-                      <input
-                        type="text"
-                        value={retentionClass}
-                        onChange={(e) => setRetentionClass(e.target.value)}
-                        className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Action Buttons */}
-              <div className="border-t border-[#2e2e2e] pt-4 mt-6 flex justify-between gap-4">
-                <button
-                  type="button"
-                  onClick={() => setParsedSpec(null)}
-                  className="h-[38px] px-4 bg-[#2e2e2e] hover:bg-[#3e3e3e] text-white font-semibold rounded-md text-[13px] transition-colors"
-                >
-                  Change Specification
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleRegisterApi}
-                  disabled={loading}
-                  className="flex-1 h-[38px] bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[13px] transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading && <IconLoader className="w-4 h-4 animate-spin text-black" />}
-                  Register & Activate API
-                </button>
-              </div>
-
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function Catalog() {
   const { role } = useUser();
   const [apis, setApis] = useState<any[]>([]);
-  const [isAddApiModalOpen, setIsAddApiModalOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [complianceFilter, setComplianceFilter] = useState('ALL');
@@ -848,12 +262,12 @@ export function Catalog() {
 
         <div className="flex items-center gap-4 w-full sm:w-auto justify-end">
           {role === 'admin' && (
-            <button 
-              onClick={() => setIsAddApiModalOpen(true)} 
+            <Link
+              to="/catalog/add"
               className="h-[32px] px-3 bg-[#3ecf8e]/10 border border-[#3ecf8e]/20 hover:bg-[#3ecf8e]/20 text-[#3ecf8e] rounded-[6px] text-[12px] font-semibold flex items-center gap-1.5 transition-all"
             >
               <IconPlus className="w-3.5 h-3.5" /> Add API
-            </button>
+            </Link>
           )}
           <div className="flex items-center gap-1 bg-[#141414] border border-[#2e2e2e] p-1 rounded-lg">
             <button 
@@ -872,18 +286,6 @@ export function Catalog() {
         </div>
       </div>
       
-      {isAddApiModalOpen && (
-        <AddApiModal 
-          onClose={() => setIsAddApiModalOpen(false)} 
-          onApiAdded={() => {
-            fetch('http://localhost:4000/api/catalog')
-              .then(res => res.json())
-              .then(data => setApis(data))
-              .catch(err => console.error(err));
-          }}
-        />
-      )}
-
       {/* Main Content Area */}
       {viewMode === 'list' ? (
         <div className="rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] overflow-hidden">
@@ -992,28 +394,111 @@ export function Catalog() {
   );
 }
 
-function SandboxTryItConsole({ api, endpoints }: { api: any, endpoints: any[] }) {
+type SandboxParameterLocation = 'path' | 'query' | 'header' | 'cookie';
+
+type SandboxParameterRow = {
+  key: string;
+  name: string;
+  in: SandboxParameterLocation;
+  required?: boolean;
+  description?: string;
+  schema?: any;
+  value: string;
+  enabled: boolean;
+};
+
+const sampleValues: Record<string, string> = {
+  nin: 'CM99021234567X',
+  given_name: 'JOHN',
+  surname: 'DOE',
+  date_of_birth: '1990-01-01',
+  tin: '1000123456',
+  brn: 'BRN12345',
+  permitNumber: 'WP30219',
+  permit_number: 'WP30219',
+  class: 'Group B',
+};
+
+const apiBasePathById: Record<string, string> = {
+  'api-nira-01': '/api/v1/identity',
+  'api-ura-01': '/api/v1/tax',
+  'api-ursb-01': '/api/v1/business',
+  'api-mowt-01': '/api/v1/transport/driving-permit',
+  'api-moict-01': '/api/v1/service-uganda',
+};
+
+function getSchemaDefault(schema: any, name: string): any {
+  if (!schema) return sampleValues[name] || '';
+  if (schema.example !== undefined) return schema.example;
+  if (schema.default !== undefined) return schema.default;
+  if (schema.enum?.length) return schema.enum[0];
+  if (sampleValues[name] !== undefined) return sampleValues[name];
+  if (schema.type === 'boolean') return false;
+  if (schema.type === 'integer' || schema.type === 'number') return 0;
+  return '';
+}
+
+function buildBodyExample(requestBody: any) {
+  const content = requestBody?.content || {};
+  const contentType = Object.keys(content)[0] || 'application/json';
+  const media = content[contentType];
+
+  if (media?.example !== undefined) {
+    return { contentType, value: media.example };
+  }
+
+  const firstExample = media?.examples ? Object.values(media.examples)[0] as any : null;
+  if (firstExample?.value !== undefined) {
+    return { contentType, value: firstExample.value };
+  }
+
+  const schema = media?.schema;
+  if (schema?.type === 'object' || schema?.properties) {
+    const value = Object.fromEntries(
+      Object.entries(schema.properties || {}).map(([name, propertySchema]) => [
+        name,
+        getSchemaDefault(propertySchema, name),
+      ])
+    );
+    return { contentType, value };
+  }
+
+  return { contentType, value: '' };
+}
+
+function coerceParameterValue(value: string, schema: any) {
+  if (schema?.type === 'boolean') return value === 'true';
+  if (schema?.type === 'integer') return Number.parseInt(value, 10);
+  if (schema?.type === 'number') return Number.parseFloat(value);
+  return value;
+}
+
+function getServerBasePath(spec: any, apiId: string) {
+  const serverUrl = spec?.servers?.[0]?.url;
+  if (serverUrl) {
+    try {
+      return new URL(serverUrl).pathname.replace(/\/$/, '');
+    } catch {
+      if (serverUrl.startsWith('/')) return serverUrl.replace(/\/$/, '');
+    }
+  }
+  return apiBasePathById[apiId] || '/api/v1';
+}
+
+function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: any[], spec: any }) {
   const { mdaId } = useUser();
   const [approvedRequests, setApprovedRequests] = useState<any[]>([]);
   const [apiKeyOption, setApiKeyOption] = useState<'approved' | 'custom' | 'none'>('approved');
   const [customApiKey, setCustomApiKey] = useState('');
   const [activeEndpointIdx, setActiveEndpointIdx] = useState<number>(0);
-  
-  // Custom states for sandbox query parameters based on endpoints
-  const [inputs, setInputs] = useState<Record<string, string>>({
-    nin: 'CM99021234567X',
-    given_name: 'JOHN',
-    surname: 'DOE',
-    date_of_birth: '1990-01-01',
-    tin: '1000123456',
-    brn: 'BRN12345',
-    permitNumber: 'WP30219',
-    permit_number: 'WP30219',
-    class: 'Group B'
-  });
-
+  const [parameters, setParameters] = useState<SandboxParameterRow[]>([]);
+  const [bodyText, setBodyText] = useState('');
+  const [bodyContentType, setBodyContentType] = useState('application/json');
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<any>(null);
+  const activeEp = endpoints[activeEndpointIdx];
+  const canSendBody = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(activeEp?.method);
+  const basePath = useMemo(() => getServerBasePath(spec, api.id), [spec, api.id]);
 
   // Fetch approved requests to load generated keys
   const fetchApprovedKeys = () => {
@@ -1034,13 +519,86 @@ function SandboxTryItConsole({ api, endpoints }: { api: any, endpoints: any[] })
     setResponse(null);
   }, [api, mdaId]);
 
-  const handleInputChange = (field: string, val: string) => {
-    setInputs(prev => ({ ...prev, [field]: val }));
+  useEffect(() => {
+    if (!activeEp) return;
+
+    const rows = (activeEp.data.parameters || []).map((param: any) => {
+      const name = param.name;
+      const value = String(param.example ?? getSchemaDefault(param.schema, name));
+      return {
+        key: `${param.in}:${name}`,
+        name,
+        in: param.in,
+        required: param.required,
+        description: param.description,
+        schema: param.schema,
+        value,
+        enabled: param.required || value !== '',
+      } satisfies SandboxParameterRow;
+    });
+
+    const bodyExample = buildBodyExample(activeEp.data.requestBody);
+    setParameters(rows);
+    setBodyContentType(bodyExample.contentType);
+    setBodyText(
+      typeof bodyExample.value === 'string'
+        ? bodyExample.value
+        : JSON.stringify(bodyExample.value, null, 2)
+    );
+    setResponse(null);
+  }, [activeEndpointIdx, activeEp]);
+
+  const updateParameter = (key: string, patch: Partial<SandboxParameterRow>) => {
+    setParameters(prev => prev.map(row => row.key === key ? { ...row, ...patch } : row));
   };
 
+  const parameterGroups = useMemo(() => ({
+    path: parameters.filter(param => param.in === 'path'),
+    query: parameters.filter(param => param.in === 'query'),
+    header: parameters.filter(param => param.in === 'header'),
+    cookie: parameters.filter(param => param.in === 'cookie'),
+  }), [parameters]);
+
+  const applySampleValues = (updates: Record<string, string>) => {
+    setParameters(prev => prev.map(row => updates[row.name] !== undefined ? {
+      ...row,
+      value: updates[row.name],
+      enabled: true,
+    } : row));
+
+    setBodyText(prev => {
+      if (!prev.trim()) return prev;
+      try {
+        const parsed = JSON.parse(prev);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return prev;
+        return JSON.stringify({ ...parsed, ...updates }, null, 2);
+      } catch {
+        return prev;
+      }
+    });
+  };
+
+  const buildTargetUrl = () => {
+    let requestPath = activeEp.path;
+    parameterGroups.path.forEach(param => {
+      requestPath = requestPath.replace(
+        `{${param.name}}`,
+        encodeURIComponent(param.value)
+      );
+    });
+
+    const url = new URL(`${basePath}${requestPath}`, 'http://localhost:4000');
+    parameterGroups.query
+      .filter(param => param.enabled && param.value !== '')
+      .forEach(param => url.searchParams.set(param.name, param.value));
+
+    return url.toString();
+  };
+
+  const targetUrl = activeEp ? buildTargetUrl() : '';
+
   const handleSend = () => {
-    const ep = endpoints[activeEndpointIdx];
-    if (!ep) return;
+    if (!activeEp) return;
 
     setLoading(true);
     setResponse(null);
@@ -1055,57 +613,47 @@ function SandboxTryItConsole({ api, endpoints }: { api: any, endpoints: any[] })
 
     const correlationId = `tx-client-${Date.now()}`;
 
-    // Substitute path parameters
-    let requestPath = ep.path;
-    if (requestPath.includes('{nin}')) {
-      requestPath = requestPath.replace('{nin}', inputs.nin);
-    } else if (requestPath.includes('{brn}')) {
-      requestPath = requestPath.replace('{brn}', inputs.brn);
-    } else if (requestPath.includes('{tin}')) {
-      requestPath = requestPath.replace('{tin}', inputs.tin);
-    } else if (requestPath.includes('{permitNumber}')) {
-      requestPath = requestPath.replace('{permitNumber}', inputs.permitNumber);
-    }
-
-    // Build payload for POST
-    let bodyPayload: any = null;
-    if (ep.method === 'POST') {
-      if (ep.path === '/verify-nin') {
-        bodyPayload = {
-          nin: inputs.nin,
-          given_name: inputs.given_name,
-          surname: inputs.surname,
-          date_of_birth: inputs.date_of_birth
-        };
-      } else if (ep.path === '/tin-status') {
-        bodyPayload = { tin: inputs.tin };
-      } else if (ep.path === '/beneficial-ownership/verify') {
-        bodyPayload = { brn: inputs.brn, nin: inputs.nin };
-      } else if (ep.path === '/verify' && api.id === 'api-mowt-01') {
-        bodyPayload = {
-          permit_number: inputs.permit_number,
-          surname: inputs.surname,
-          class: inputs.class
-        };
-      } else if (ep.path === '/eligibility-check') {
-        bodyPayload = {
-          nin: inputs.nin,
-          tin: inputs.tin,
-          permit_number: inputs.permit_number
-        };
+    let requestBody: BodyInit | undefined;
+    if (canSendBody && bodyText.trim()) {
+      if (bodyContentType.includes('json')) {
+        try {
+          requestBody = JSON.stringify(JSON.parse(bodyText));
+        } catch (err: any) {
+          setLoading(false);
+          setResponse({
+            status: 0,
+            statusText: 'Invalid Request Body',
+            body: { error: err.message }
+          });
+          return;
+        }
+      } else {
+        requestBody = bodyText;
       }
     }
 
-    const targetUrl = `http://localhost:4000/api/v1${requestPath}`;
+    const headers: Record<string, string> = {
+      'X-Correlation-ID': correlationId
+    };
+
+    if (bodyText.trim() && canSendBody) headers['Content-Type'] = bodyContentType;
+    if (key) headers['X-GovHub-API-Key'] = key;
+    parameterGroups.header
+      .filter(param => param.enabled && param.value !== '')
+      .forEach(param => {
+        headers[param.name] = String(coerceParameterValue(param.value, param.schema));
+      });
+
+    const cookieHeader = parameterGroups.cookie
+      .filter(param => param.enabled && param.value !== '')
+      .map(param => `${param.name}=${param.value}`)
+      .join('; ');
+    if (cookieHeader) headers.Cookie = cookieHeader;
 
     fetch(targetUrl, {
-      method: ep.method,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-GovHub-API-Key': key,
-        'X-Correlation-ID': correlationId
-      },
-      body: bodyPayload ? JSON.stringify(bodyPayload) : undefined
+      method: activeEp.method,
+      headers,
+      body: requestBody
     })
     .then(async (res) => {
       const status = res.status;
@@ -1113,7 +661,13 @@ function SandboxTryItConsole({ api, endpoints }: { api: any, endpoints: any[] })
       res.headers.forEach((val, name) => {
         headersObj[name] = val;
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: unknown;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = text;
+      }
       setResponse({
         status,
         statusText: res.statusText,
@@ -1131,25 +685,66 @@ function SandboxTryItConsole({ api, endpoints }: { api: any, endpoints: any[] })
     .finally(() => setLoading(false));
   };
 
-  const activeEp = endpoints[activeEndpointIdx];
-
   // Helper selectors for quick seeding/presenting in sandbox
   const loadProfile = (profile: string) => {
     if (profile === 'valid-nira') {
-      setInputs(prev => ({ ...prev, nin: 'CM99021234567X', given_name: 'JOHN', surname: 'DOE' }));
+      applySampleValues({ nin: 'CM99021234567X', given_name: 'JOHN', surname: 'DOE' });
     } else if (profile === 'invalid-nira') {
-      setInputs(prev => ({ ...prev, nin: 'CM00000000000X' }));
+      applySampleValues({ nin: 'CM00000000000X' });
     } else if (profile === 'expired-nira') {
-      setInputs(prev => ({ ...prev, nin: 'CM99021234567E' }));
+      applySampleValues({ nin: 'CM99021234567E' });
     } else if (profile === 'compliant-ura') {
-      setInputs(prev => ({ ...prev, tin: '1000123456' }));
+      applySampleValues({ tin: '1000123456' });
     } else if (profile === 'noncompliant-ura') {
-      setInputs(prev => ({ ...prev, tin: '9999999999' }));
+      applySampleValues({ tin: '9999999999' });
     } else if (profile === 'valid-permit') {
-      setInputs(prev => ({ ...prev, permitNumber: 'WP30219', permit_number: 'WP30219' }));
+      applySampleValues({ permitNumber: 'WP30219', permit_number: 'WP30219' });
     } else if (profile === 'suspended-permit') {
-      setInputs(prev => ({ ...prev, permitNumber: 'WP30219susp', permit_number: 'WP30219susp' }));
+      applySampleValues({ permitNumber: 'WP30219susp', permit_number: 'WP30219susp' });
     }
+  };
+
+  const renderParameterSection = (title: string, rows: SandboxParameterRow[]) => {
+    if (!rows.length) return null;
+    return (
+      <div className="rounded-md border border-[#2e2e2e] overflow-hidden">
+        <div className="grid grid-cols-[42px_1fr_1.4fr] bg-[#1c1c1c] border-b border-[#2e2e2e] text-[11px] uppercase tracking-wider font-mono text-[#8b8b8b]">
+          <div className="px-3 py-2">On</div>
+          <div className="px-3 py-2 border-l border-[#2e2e2e]">{title}</div>
+          <div className="px-3 py-2 border-l border-[#2e2e2e]">Value</div>
+        </div>
+        {rows.map(row => (
+          <div key={row.key} className="grid grid-cols-[42px_1fr_1.4fr] border-b border-[#2e2e2e] last:border-b-0 bg-[#141414]">
+            <div className="px-3 py-2 flex items-center justify-center">
+              <input
+                type="checkbox"
+                checked={row.enabled}
+                disabled={row.required}
+                onChange={e => updateParameter(row.key, { enabled: e.target.checked })}
+                className="rounded border-[#2e2e2e] bg-[#1c1c1c] text-[#3ecf8e] focus:ring-0 focus:ring-offset-0"
+              />
+            </div>
+            <div className="px-3 py-2 border-l border-[#2e2e2e] min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[13px] text-white truncate">{row.name}</span>
+                {row.required && <span className="text-[10px] text-red-400">Required</span>}
+              </div>
+              <div className="text-[11px] text-[#8b8b8b] truncate">
+                {row.schema?.type || 'string'}{row.description ? ` - ${row.description}` : ''}
+              </div>
+            </div>
+            <div className="px-2 py-2 border-l border-[#2e2e2e]">
+              <input
+                type={row.schema?.type === 'number' || row.schema?.type === 'integer' ? 'number' : 'text'}
+                value={row.value}
+                onChange={e => updateParameter(row.key, { value: e.target.value, enabled: true })}
+                className="w-full h-[32px] px-2 bg-[#0a0a0a] border border-[#2e2e2e] text-[13px] text-white font-mono rounded-md focus:outline-none focus:border-[#444]"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -1286,8 +881,8 @@ function SandboxTryItConsole({ api, endpoints }: { api: any, endpoints: any[] })
                   )}
                   {api.id === 'api-moict-01' && (
                     <>
-                      <button onClick={() => { loadProfile('valid-nira'); loadProfile('compliant-ura'); loadProfile('valid-permit'); }} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Eligible</button>
-                      <button onClick={() => { loadProfile('invalid-nira'); loadProfile('compliant-ura'); loadProfile('valid-permit'); }} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Ineligible</button>
+                      <button onClick={() => applySampleValues({ nin: 'CM99021234567X', tin: '1000123456', permit_number: 'WP30219' })} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Eligible</button>
+                      <button onClick={() => applySampleValues({ nin: 'CM00000000000X', tin: '1000123456', permit_number: 'WP30219' })} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Ineligible</button>
                     </>
                   )}
                 </div>
@@ -1296,112 +891,40 @@ function SandboxTryItConsole({ api, endpoints }: { api: any, endpoints: any[] })
 
             {/* Inputs based on Path */}
             <div className="flex flex-col gap-4">
-              {(activeEp.path.includes('{nin}') || activeEp.path === '/verify-nin' || activeEp.path === '/beneficial-ownership/verify' || activeEp.path === '/eligibility-check') && (
-                <div>
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">NIN (National Identification Number)</label>
-                  <input
-                    type="text"
-                    value={inputs.nin}
-                    onChange={e => handleInputChange('nin', e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#1c1c1c] border border-[#2e2e2e] text-[13px] text-white rounded-md focus:outline-none focus:border-[#444]"
-                  />
-                </div>
-              )}
+              {renderParameterSection('Variables', parameterGroups.path)}
+              {renderParameterSection('Query Parameters', parameterGroups.query)}
+              {renderParameterSection('Headers', parameterGroups.header)}
+              {renderParameterSection('Cookies', parameterGroups.cookie)}
 
-              {activeEp.path === '/verify-nin' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">Given Name</label>
-                    <input
-                      type="text"
-                      value={inputs.given_name}
-                      onChange={e => handleInputChange('given_name', e.target.value)}
-                      className="w-full h-[36px] px-3 bg-[#1c1c1c] border border-[#2e2e2e] text-[13px] text-white rounded-md focus:outline-none focus:border-[#444]"
-                    />
+              {canSendBody && activeEp.data.requestBody && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[12px] font-mono text-[#8b8b8b]">Request Body</label>
+                    <select
+                      value={bodyContentType}
+                      onChange={e => setBodyContentType(e.target.value)}
+                      className="h-[28px] px-2 bg-[#1c1c1c] border border-[#2e2e2e] text-[12px] text-white rounded-md focus:outline-none focus:border-[#444]"
+                    >
+                      {Object.keys(activeEp.data.requestBody.content || { 'application/json': {} }).map(type => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
                   </div>
-                  <div>
-                    <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">Surname</label>
-                    <input
-                      type="text"
-                      value={inputs.surname}
-                      onChange={e => handleInputChange('surname', e.target.value)}
-                      className="w-full h-[36px] px-3 bg-[#1c1c1c] border border-[#2e2e2e] text-[13px] text-white rounded-md focus:outline-none focus:border-[#444]"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {(activeEp.path.includes('{tin}') || activeEp.path === '/tin-status' || activeEp.path === '/eligibility-check') && (
-                <div>
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">TIN (Taxpayer Identification Number)</label>
-                  <input
-                    type="text"
-                    value={inputs.tin}
-                    onChange={e => handleInputChange('tin', e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#1c1c1c] border border-[#2e2e2e] text-[13px] text-white rounded-md focus:outline-none focus:border-[#444]"
+                  <textarea
+                    value={bodyText}
+                    onChange={e => setBodyText(e.target.value)}
+                    spellCheck={false}
+                    className="w-full min-h-[170px] p-3 bg-[#0a0a0a] border border-[#2e2e2e] text-[12.5px] text-white font-mono rounded-md focus:outline-none focus:border-[#444] resize-y"
                   />
                 </div>
               )}
 
-              {(activeEp.path.includes('{brn}') || activeEp.path === '/beneficial-ownership/verify') && (
-                <div>
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">BRN (Business Registration Number)</label>
-                  <input
-                    type="text"
-                    value={inputs.brn}
-                    onChange={e => handleInputChange('brn', e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#1c1c1c] border border-[#2e2e2e] text-[13px] text-white rounded-md focus:outline-none focus:border-[#444]"
-                  />
+              <div>
+                <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">Request URL</label>
+                <div className="px-3 py-2 bg-[#0a0a0a] border border-[#2e2e2e] rounded-md text-[12px] text-[#3ecf8e] font-mono break-all">
+                  {targetUrl}
                 </div>
-              )}
-
-              {activeEp.path.includes('{permitNumber}') && (
-                <div>
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">Permit Number</label>
-                  <input
-                    type="text"
-                    value={inputs.permitNumber}
-                    onChange={e => handleInputChange('permitNumber', e.target.value)}
-                    className="w-full h-[36px] px-3 bg-[#1c1c1c] border border-[#2e2e2e] text-[13px] text-white rounded-md focus:outline-none focus:border-[#444]"
-                  />
-                </div>
-              )}
-
-              {(activeEp.path === '/verify' || activeEp.path === '/eligibility-check') && api.id === 'api-mowt-01' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">Permit Number</label>
-                    <input
-                      type="text"
-                      value={inputs.permit_number}
-                      onChange={e => handleInputChange('permit_number', e.target.value)}
-                      className="w-full h-[36px] px-3 bg-[#1c1c1c] border border-[#2e2e2e] text-[13px] text-white rounded-md focus:outline-none focus:border-[#444]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">Class Code</label>
-                    <input
-                      type="text"
-                      value={inputs.class}
-                      onChange={e => handleInputChange('class', e.target.value)}
-                      className="w-full h-[36px] px-3 bg-[#1c1c1c] border border-[#2e2e2e] text-[13px] text-white rounded-md focus:outline-none focus:border-[#444]"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {activeEp.path === '/eligibility-check' && api.id === 'api-moict-01' && (
-                <div>
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] mb-1">Permit Number (Optional)</label>
-                  <input
-                    type="text"
-                    value={inputs.permit_number}
-                    onChange={e => handleInputChange('permit_number', e.target.value)}
-                    placeholder="Enter driver permit code if verifying vehicle operations..."
-                    className="w-full h-[36px] px-3 bg-[#1c1c1c] border border-[#2e2e2e] text-[13px] text-white rounded-md focus:outline-none focus:border-[#444]"
-                  />
-                </div>
-              )}
+              </div>
             </div>
 
             <button
@@ -1976,7 +1499,7 @@ export function ApiDetail() {
               <p className="text-[13px] text-[#8b8b8b] mb-6">Interact with mock endpoints in real-time. Use generated key tokens or trigger anonymous request errors.</p>
             </div>
             
-            <SandboxTryItConsole api={api} endpoints={endpoints} />
+            <SandboxTryItConsole api={api} endpoints={endpoints} spec={spec} />
           </div>
         )}
       </div>
