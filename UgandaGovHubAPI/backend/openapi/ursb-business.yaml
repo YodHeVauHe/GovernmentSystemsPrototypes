@@ -1,129 +1,200 @@
-openapi: 3.1.0
-info:
-  title: URSB Business Registration Lookup
-  version: 1.0.0
-  description: |
-    Verify business registration status and confirm beneficial ownership details.
-    Aligned with the Companies Act 2012 and statutory registry access policies.
-  contact:
-    name: URSB Systems Division
-    email: services@ursb.go.ug
-servers:
-  - url: https://sandbox.govhub.go.ug/api/v1/business
-    description: Sandbox Environment
-security:
-  - ApiKeyAuth: []
-paths:
-  /registration/{brn}:
-    get:
-      summary: Lookup Business by Registration Number
-      operationId: lookupBrn
-      tags:
-        - Registration
-      parameters:
-        - name: brn
-          in: path
-          required: true
-          schema:
-            type: string
-          description: The Business Registration Number (BRN) to verify
-      responses:
-        '200':
-          description: Registration details returned successfully.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BusinessDetails'
-              examples:
-                Active Company:
-                  value:
-                    status: "ACTIVE"
-                    company_name: "Acme Technologies Uganda Ltd"
-                    registration_date: "2020-05-10"
-                    entity_type: "Private Limited Company"
-                Dissolved Company:
-                  value:
-                    status: "DISSOLVED"
-                    company_name: "Old Kampala Traders"
-                    registration_date: "2010-01-01"
-                    entity_type: "Partnership"
-        '401':
-          description: Missing or invalid API key.
-        '403':
-          description: Unauthorized to access this endpoint.
-        '404':
-          description: Business Registration Number not found.
-  /beneficial-ownership/verify:
-    post:
-      summary: Verify Beneficial Ownership
-      operationId: verifyBeneficialOwnership
-      tags:
-        - Ownership
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OwnershipVerificationRequest'
-            example:
-              brn: "BRN12345"
-              nin: "CM99021234567X"
-      responses:
-        '200':
-          description: Ownership verification results.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OwnershipVerificationResponse'
-              example:
-                verified: true
-                ownership_percentage: 51.5
-                role: "Director"
-        '400':
-          description: Missing required parameters.
-        '401':
-          description: Missing or invalid API key.
-        '403':
-          description: Unauthorized to access this endpoint.
-components:
-  securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-GovHub-API-Key
-  schemas:
-    BusinessDetails:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [ACTIVE, DISSOLVED, SUSPENDED]
-        company_name:
-          type: string
-        registration_date:
-          type: string
-          format: date
-        entity_type:
-          type: string
-    OwnershipVerificationRequest:
-      type: object
-      required:
-        - brn
-        - nin
-      properties:
-        brn:
-          type: string
-        nin:
-          type: string
-    OwnershipVerificationResponse:
-      type: object
-      properties:
-        verified:
-          type: boolean
-        ownership_percentage:
-          type: number
-          format: float
-        role:
-          type: string
-        remarks:
-          type: string
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "URSB Business Registration Lookup",
+    "version": "1.0.0",
+    "description": "Verify business registration status and confirm beneficial ownership details.\nAligned with the Companies Act 2012 and statutory registry access policies.\n",
+    "contact": {
+      "name": "URSB Systems Division",
+      "email": "services@ursb.go.ug"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://sandbox.govhub.go.ug/api/v1/business",
+      "description": "Sandbox Environment"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/registration/{brn}": {
+      "get": {
+        "summary": "Lookup Business by Registration Number",
+        "operationId": "lookupBrn",
+        "tags": [
+          "Registration"
+        ],
+        "parameters": [
+          {
+            "name": "brn",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Business Registration Number (BRN) to verify"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration details returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessDetails"
+                },
+                "examples": {
+                  "Active Company": {
+                    "value": {
+                      "status": "ACTIVE",
+                      "company_name": "Acme Technologies Uganda Ltd",
+                      "registration_date": "2020-05-10",
+                      "entity_type": "Private Limited Company"
+                    }
+                  },
+                  "Dissolved Company": {
+                    "value": {
+                      "status": "DISSOLVED",
+                      "company_name": "Old Kampala Traders",
+                      "registration_date": "2010-01-01",
+                      "entity_type": "Partnership"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key."
+          },
+          "403": {
+            "description": "Unauthorized to access this endpoint."
+          },
+          "404": {
+            "description": "Business Registration Number not found."
+          }
+        }
+      }
+    },
+    "/beneficial-ownership/verify": {
+      "post": {
+        "summary": "Verify Beneficial Ownership",
+        "operationId": "verifyBeneficialOwnership",
+        "tags": [
+          "Ownership"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnershipVerificationRequest"
+              },
+              "example": {
+                "brn": "BRN12345",
+                "nin": "CM99021234567X"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ownership verification results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnershipVerificationResponse"
+                },
+                "example": {
+                  "verified": true,
+                  "ownership_percentage": 51.5,
+                  "role": "Director"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing required parameters."
+          },
+          "401": {
+            "description": "Missing or invalid API key."
+          },
+          "403": {
+            "description": "Unauthorized to access this endpoint."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-GovHub-API-Key"
+      }
+    },
+    "schemas": {
+      "BusinessDetails": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DISSOLVED",
+              "SUSPENDED"
+            ]
+          },
+          "company_name": {
+            "type": "string"
+          },
+          "registration_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "entity_type": {
+            "type": "string"
+          }
+        }
+      },
+      "OwnershipVerificationRequest": {
+        "type": "object",
+        "required": [
+          "brn",
+          "nin"
+        ],
+        "properties": {
+          "brn": {
+            "type": "string"
+          },
+          "nin": {
+            "type": "string"
+          }
+        }
+      },
+      "OwnershipVerificationResponse": {
+        "type": "object",
+        "properties": {
+          "verified": {
+            "type": "boolean"
+          },
+          "ownership_percentage": {
+            "type": "number",
+            "format": "float"
+          },
+          "role": {
+            "type": "string"
+          },
+          "remarks": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
