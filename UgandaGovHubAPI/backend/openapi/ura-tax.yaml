@@ -1,0 +1,134 @@
+openapi: 3.1.0
+info:
+  title: URA Tax Compliance Status API
+  version: 1.0.0
+  description: >
+    Verify tax compliance status using a Tax Identification Number (TIN).
+    Sandbox responses expose compliance outcome, validity window, and reference
+    identifiers without returning tax history.
+  contact:
+    name: URA API Support
+    email: api.support@ura.go.ug
+servers:
+  - url: https://sandbox.govhub.go.ug/api/v1/tax
+    description: Sandbox Environment
+  - url: https://api.govhub.go.ug/api/v1/tax
+    description: Production Environment
+security:
+  - ApiKeyAuth: []
+paths:
+  /tin-status:
+    post:
+      summary: Check TIN compliance status
+      operationId: checkTinStatus
+      tags:
+        - Tax Compliance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TinStatusRequest'
+            examples:
+              compliant:
+                value:
+                  tin: '1000123456'
+              nonCompliant:
+                value:
+                  tin: '1000987654'
+      responses:
+        '200':
+          description: Compliance status returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TinStatusResponse'
+              examples:
+                compliant:
+                  value:
+                    status: COMPLIANT
+                    issuing_authority: Uganda Revenue Authority
+                    valid_until: '2027-05-22'
+                    reference_id: cl-1000123456
+                nonCompliant:
+                  value:
+                    status: NON_COMPLIANT
+                    issuing_authority: Uganda Revenue Authority
+                    remarks: Outstanding returns or arrears detected.
+                    reference_id: cl-1000987654
+        '400':
+          description: Missing or invalid TIN.
+        '401':
+          description: Missing API key.
+        '403':
+          description: API key is not scoped to this endpoint.
+  /clearance/{tin}:
+    get:
+      summary: Retrieve clearance status
+      operationId: getTaxClearance
+      tags:
+        - Tax Compliance
+      parameters:
+        - name: tin
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tax Identification Number.
+      responses:
+        '200':
+          description: Clearance status returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearanceResponse'
+              example:
+                clearance_status: CLEARED
+                issued_date: '2026-05-22'
+        '404':
+          description: TIN format is unrecognized.
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-GovHub-API-Key
+      description: API key issued through Uganda GovHub API access approval.
+  schemas:
+    TinStatusRequest:
+      type: object
+      required:
+        - tin
+      properties:
+        tin:
+          type: string
+          minLength: 6
+          description: Tax Identification Number.
+    TinStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - COMPLIANT
+            - NON_COMPLIANT
+        issuing_authority:
+          type: string
+        valid_until:
+          type: string
+          format: date
+        remarks:
+          type: string
+        reference_id:
+          type: string
+    ClearanceResponse:
+      type: object
+      properties:
+        clearance_status:
+          type: string
+          enum:
+            - CLEARED
+            - NOT_CLEARED
+        issued_date:
+          type: string
+          format: date

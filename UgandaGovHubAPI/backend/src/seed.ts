@@ -15,10 +15,13 @@ console.log('Initializing database schema...');
 
 // Create tables
 db.exec(`
+  DROP TABLE IF EXISTS verification_documents;
+  DROP TABLE IF EXISTS user_profiles;
   DROP TABLE IF EXISTS sessions;
   DROP TABLE IF EXISTS users;
   DROP TABLE IF EXISTS audit_logs;
   DROP TABLE IF EXISTS access_requests;
+  DROP TABLE IF EXISTS api_versions;
   DROP TABLE IF EXISTS apis;
   DROP TABLE IF EXISTS mdas;
 
@@ -99,7 +102,8 @@ const mdas = [
   ['mda-06', 'Ministry of Health', 'MoH'],
   ['mda-07', 'Public Procurement and Disposal of Public Assets Authority', 'PPDA'],
   ['mda-08', 'National Social Security Fund', 'NSSF'],
-  ['mda-09', 'Uganda Police Force', 'UPF']
+  ['mda-09', 'Uganda Police Force', 'UPF'],
+  ['mda-10', 'National Information Technology Authority Uganda', 'NITA-U']
 ];
 mdas.forEach(m => insertMda.run(m));
 

@@ -42,13 +42,13 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success'>('idle');
 
-  const fields = api.personal_data_categories 
+  const fields = useMemo(() => api.personal_data_categories 
     ? api.personal_data_categories.split(',').map((f: string) => f.trim())
-    : [];
+    : [], [api.personal_data_categories]);
 
   useEffect(() => {
     setSelectedFields(fields);
-  }, [api]);
+  }, [fields]);
 
   const handleFieldToggle = (field: string) => {
     setSelectedFields(prev => 
@@ -1064,7 +1064,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
   const basePath = useMemo(() => getServerBasePath(spec, api.id), [spec, api.id]);
 
   // Fetch approved requests to load generated keys
-  const fetchApprovedKeys = () => {
+  const fetchApprovedKeys = useCallback(() => {
     fetch('http://localhost:4000/api/access')
       .then(res => res.json())
       .then(data => {
@@ -1080,12 +1080,12 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
         setApprovedRequests(approved);
       })
       .catch(err => console.error(err));
-  };
+  }, [api.id, mdaId]);
 
   useEffect(() => {
     fetchApprovedKeys();
     setResponse(null);
-  }, [api, mdaId]);
+  }, [fetchApprovedKeys]);
 
   useEffect(() => {
     if (!activeEp) return;

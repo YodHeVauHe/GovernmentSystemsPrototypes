@@ -23,7 +23,7 @@ async function startApp() {
   });
 
   const server = createServer(app);
-  await new Promise<void>(resolve => server.listen(0, resolve));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert(address && typeof address === 'object');
   return { db, server, baseUrl: `http://127.0.0.1:${address.port}` };

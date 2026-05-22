@@ -6,7 +6,12 @@
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
-    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install"
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
+    "lint": "cd frontend && npm run lint",
+    "test": "cd backend && npm test",
+    "build": "cd frontend && npm run build",
+    "seed": "cd backend && npm run seed",
+    "demo": "npm run seed && npm run dev"
   },
   "dependencies": {
     "concurrently": "^8.2.2"

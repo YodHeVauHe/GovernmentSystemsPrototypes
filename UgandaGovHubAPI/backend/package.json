@@ -10,7 +10,8 @@
     "test:auth-routes": "ts-node src/auth-routes.test.ts",
     "test:access-control": "ts-node src/access-control.test.ts",
     "test:account-verification": "ts-node src/account-verification.test.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test:versioning": "ts-node src/versioning.test.ts",
+    "test": "npm run test:auth && npm run test:access-control && npm run test:account-verification && npm run test:versioning && npm run test:auth-routes"
   },
   "keywords": [],
   "author": "",
