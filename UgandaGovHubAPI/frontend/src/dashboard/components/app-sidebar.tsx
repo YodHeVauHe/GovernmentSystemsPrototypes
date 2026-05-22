@@ -60,7 +60,7 @@ const data = {
 
 function SystemHealthIndicator() {
   return (
-    <div className="mx-2 mt-auto mb-1 flex h-9 items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] px-2.5 text-[12px] text-[#8b8b8b] group-data-[collapsible=icon]:mx-0 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+    <div className="mx-2 mt-auto mb-1 flex h-9 items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] px-2.5 text-[12px] text-[#8b8b8b] group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
       <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#3ecf8e]/25 bg-[#3ecf8e]/10 text-[#3ecf8e]">
         <span className="absolute inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-[#3ecf8e]/25" />
         <IconCircleCheck className="relative h-4 w-4" stroke={2} />
@@ -82,13 +82,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader className="group-data-[collapsible=icon]:items-center">
+      <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:[&>div:last-child]:hidden"
             >
               <Link to="/">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
@@ -108,7 +108,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SystemHealthIndicator />
         <NavSecondary items={data.navSecondary} />
       </SidebarContent>
-      <SidebarFooter className="group-data-[collapsible=icon]:items-center">
+      <SidebarFooter>
         <NavUser user={navUser} />
       </SidebarFooter>
     </Sidebar>
