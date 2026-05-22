@@ -33,6 +33,8 @@ import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
 import { toast } from 'sonner';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+
 function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void }) {
   const { mdaId, mdas } = useUser();
   const { addNotification } = useNotifications();
@@ -42,6 +44,7 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
   const [environment, setEnvironment] = useState('sandbox');
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success'>('idle');
+  const [error, setError] = useState('');
 
   const fields = useMemo(() => api.personal_data_categories 
     ? api.personal_data_categories.split(',').map((f: string) => f.trim())
@@ -61,7 +64,9 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
     e.preventDefault();
     setStatus('submitting');
     
-    fetch('http://localhost:4000/api/access', {
+    setError('');
+
+    fetch(`${API_BASE}/api/access`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -74,7 +79,13 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
         environment
       })
     })
-    .then(res => res.json())
+    .then(async res => {
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error || 'Failed to submit access request.');
+      }
+      return body;
+    })
     .then(() => {
       addNotification({
         type: 'access',
@@ -83,7 +94,12 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
       });
       setStatus('success');
     })
-    .catch(err => console.error(err));
+    .catch(err => {
+      const message = err instanceof Error ? err.message : 'Failed to submit access request.';
+      setError(message);
+      setStatus('idle');
+      toast.error('Access request failed', { description: message });
+    });
   };
 
   const requestingMda = mdas.find(m => m.id === mdaId);
@@ -195,6 +211,11 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
                 className="w-full h-20 p-3 bg-[#141414] border border-[#2e2e2e] text-[13px] text-white focus:outline-none focus:border-[#444] rounded-md resize-none"
               />
             </div>
+            {error && (
+              <div className="rounded-md border border-red-500/30 bg-red-950/20 p-3 text-[12px] text-red-300">
+                {error}
+              </div>
+            )}
             
             <div className="flex items-center gap-3 pt-2">
               <button type="button" onClick={onClose} className="flex-1 h-[36px] border border-[#2e2e2e] hover:bg-[#2e2e2e] text-[#ededed] font-medium rounded-md text-[13px] transition-colors">
@@ -249,7 +270,7 @@ function AdminApiEditorModal({
     setError('');
 
     try {
-      const response = await fetch(`http://localhost:4000/api/catalog/${api.id}`, {
+      const response = await fetch(`${API_BASE}/api/catalog/${api.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, openapi_spec: specText }),
@@ -418,7 +439,7 @@ function PublishVersionModal({
     setError('');
 
     try {
-      const validateResponse = await fetch('http://localhost:4000/api/catalog/validate-spec', {
+      const validateResponse = await fetch(`${API_BASE}/api/catalog/validate-spec`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -431,7 +452,7 @@ function PublishVersionModal({
         throw new Error(parsed.error || 'Failed to validate OpenAPI document.');
       }
 
-      const response = await fetch(`http://localhost:4000/api/catalog/${apiId}/versions`, {
+      const response = await fetch(`${API_BASE}/api/catalog/${apiId}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -606,7 +627,7 @@ function DeleteApiModal({ api, onClose }: { api: any; onClose: () => void }) {
     setError('');
 
     try {
-      const response = await fetch(`http://localhost:4000/api/catalog/${api.id}`, { method: 'DELETE' });
+    const response = await fetch(`${API_BASE}/api/catalog/${api.id}`, { method: 'DELETE' });
       const result = await response.json();
       if (!response.ok) {
         throw new Error(result.error || 'Failed to delete API');
@@ -716,7 +737,7 @@ export function Catalog() {
   useEffect(() => {
     setLoadingCatalog(true);
     setCatalogError('');
-    fetch('http://localhost:4000/api/catalog')
+    fetch(`${API_BASE}/api/catalog`)
       .then(res => res.json())
       .then(data => setApis(data))
       .catch(err => {
@@ -1079,7 +1100,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
 
   // Fetch approved requests to load generated keys
   const fetchApprovedKeys = useCallback(() => {
-    fetch('http://localhost:4000/api/access')
+    fetch(`${API_BASE}/api/access`)
       .then(res => res.json())
       .then(data => {
         // Filter approved for active representing MDA and current API
@@ -1223,7 +1244,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
       );
     });
 
-    const url = new URL(`${basePath}${requestPath}`, 'http://localhost:4000');
+    const url = new URL(`${basePath}${requestPath}`, API_BASE);
     parameterGroups.query
       .filter(param => param.enabled && param.value !== '')
       .forEach(param => url.searchParams.set(param.name, param.value));
@@ -1413,42 +1434,52 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
       {/* Controls Column */}
       <div className="flex-1 w-full lg:basis-1/2 lg:min-w-0 flex flex-col gap-6">
         {/* Compact Authentication */}
-        <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] shadow-md">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2e2e2e] bg-[#1c1c1c]">
-            <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] flex items-center gap-1.5">
-              <IconLock className="w-4 h-4 text-[#3ecf8e]" />
-              Authentication
-            </span>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="min-w-0 flex-1 rounded-lg border border-[#2e2e2e] bg-[#141414] shadow-md">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2e2e2e] bg-[#1c1c1c]">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] flex items-center gap-1.5">
+                <IconLock className="w-4 h-4 text-[#3ecf8e]" />
+                Authentication
+              </span>
+            </div>
+            <div className="px-4 py-2.5 flex flex-wrap items-center gap-3">
+              <select
+                value={apiKeyOption}
+                onChange={e => setApiKeyOption(e.target.value as any)}
+                className="h-[30px] px-2 bg-[#1c1c1c] border border-[#2e2e2e] text-[12px] text-white rounded-md focus:outline-none focus:border-[#444]"
+              >
+                <option value="approved">Approved Key</option>
+                <option value="custom">Custom Key</option>
+                <option value="none">No Key (Anonymous)</option>
+              </select>
+              {apiKeyOption === 'approved' && (
+                approvedRequests.length > 0 ? (
+                  <span className="text-[11px] text-[#3ecf8e] font-mono truncate max-w-[200px]">
+                    {approvedRequests[0].api_key.substring(0, 20)}...
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-orange-400">No approved keys</span>
+                )
+              )}
+              {apiKeyOption === 'custom' && (
+                <input
+                  type="text"
+                  value={customApiKey}
+                  onChange={e => setCustomApiKey(e.target.value)}
+                  placeholder="Enter API key..."
+                  className="flex-1 min-w-[120px] h-[30px] px-2 bg-[#0a0a0a] border border-[#2e2e2e] text-[12px] text-white font-mono rounded-md focus:outline-none focus:border-[#444]"
+                />
+              )}
+            </div>
           </div>
-          <div className="px-4 py-2.5 flex flex-wrap items-center gap-3">
-            <select
-              value={apiKeyOption}
-              onChange={e => setApiKeyOption(e.target.value as any)}
-              className="h-[30px] px-2 bg-[#1c1c1c] border border-[#2e2e2e] text-[12px] text-white rounded-md focus:outline-none focus:border-[#444]"
-            >
-              <option value="approved">Approved Key</option>
-              <option value="custom">Custom Key</option>
-              <option value="none">No Key (Anonymous)</option>
-            </select>
-            {apiKeyOption === 'approved' && (
-              approvedRequests.length > 0 ? (
-                <span className="text-[11px] text-[#3ecf8e] font-mono truncate max-w-[200px]">
-                  {approvedRequests[0].api_key.substring(0, 20)}...
-                </span>
-              ) : (
-                <span className="text-[11px] text-orange-400">No approved keys</span>
-              )
-            )}
-            {apiKeyOption === 'custom' && (
-              <input
-                type="text"
-                value={customApiKey}
-                onChange={e => setCustomApiKey(e.target.value)}
-                placeholder="Enter API key..."
-                className="flex-1 min-w-[120px] h-[30px] px-2 bg-[#0a0a0a] border border-[#2e2e2e] text-[12px] text-white font-mono rounded-md focus:outline-none focus:border-[#444]"
-              />
-            )}
-          </div>
+          <button
+            onClick={handleSend}
+            disabled={loading || !activeEp}
+            className="h-[32px] w-full shrink-0 sm:w-auto sm:min-w-[128px] px-3 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-md disabled:opacity-50"
+          >
+            <IconPlayerPlay className="w-3.5 h-3.5 fill-black" />
+            {loading ? 'Sending...' : 'Send Request'}
+          </button>
         </div>
 
         {/* Target Endpoint */}
@@ -1554,14 +1585,6 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
               </div>
             </div>
 
-            <button
-              onClick={handleSend}
-              disabled={loading}
-              className="mt-2 w-full h-[38px] bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[13px] flex items-center justify-center gap-2 transition-all shadow-md disabled:opacity-50"
-            >
-              <IconPlayerPlay className="w-4 h-4 fill-black" />
-              {loading ? 'Executing Sandbox Request...' : 'Send Sandbox Request'}
-            </button>
           </div>
         )}
       </div>
@@ -1943,7 +1966,7 @@ function APIPrintSummary({ api }: { api: any }) {
 
 export function ApiDetail() {
   const { id } = useParams();
-  const { role } = useUser();
+  const { role, mdaId } = useUser();
   const [api, setApi] = useState<any>(null);
   const [spec, setSpec] = useState<any>(null);
   const [versions, setVersions] = useState<ApiVersion[]>([]);
@@ -1958,7 +1981,7 @@ export function ApiDetail() {
   const [showPrintView, setShowPrintView] = useState(false);
 
   const logAuditEvent = useCallback((eventType: string, mdaId: string | null, apiId: string | null, requestId: string, details: any) => {
-    fetch('http://localhost:4000/api/access/audit-logs', {
+    fetch(`${API_BASE}/api/access/audit-logs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ eventType, mdaId, apiId, requestId, details })
@@ -1968,7 +1991,7 @@ export function ApiDetail() {
   const fetchVersions = useCallback(() => {
     if (!id) return;
 
-    fetch(`http://localhost:4000/api/catalog/${id}/versions`)
+      fetch(`${API_BASE}/api/catalog/${id}/versions`)
       .then(res => res.json())
       .then(data => {
         const list = Array.isArray(data) ? data : [];
@@ -1983,7 +2006,7 @@ export function ApiDetail() {
   }, [id]);
 
   const fetchApi = useCallback(() => {
-    fetch(`http://localhost:4000/api/catalog/${id}`)
+    fetch(`${API_BASE}/api/catalog/${id}`)
       .then(res => res.json())
       .then(data => {
         setApi(data);
@@ -2001,7 +2024,7 @@ export function ApiDetail() {
     if (!id) return;
     setSpec(null);
     const params = selectedVersion ? `?version=${encodeURIComponent(selectedVersion)}` : '';
-    fetch(`http://localhost:4000/api/catalog/${id}/spec${params}`)
+    fetch(`${API_BASE}/api/catalog/${id}/spec${params}`)
       .then(res => res.json())
       .then(data => setSpec(data))
       .catch(err => console.error(err));
@@ -2035,14 +2058,15 @@ export function ApiDetail() {
   }
 
   const activeVersion = versions.find(version => version.version === selectedVersion);
-  const specUrl = `http://localhost:4000${activeVersion?.openapi_spec_path || api.openapi_spec_path}`;
+  const canManageCurrentApi = role === 'admin' || (role === 'api_owner' && api?.owning_mda_id === mdaId);
+  const specUrl = `${API_BASE}${activeVersion?.openapi_spec_path || api.openapi_spec_path}`;
   const refreshDetail = () => {
     setIsEditOpen(false);
     fetchApi();
     fetchVersions();
     if (id) {
       const params = selectedVersion ? `?version=${encodeURIComponent(selectedVersion)}` : '';
-      fetch(`http://localhost:4000/api/catalog/${id}/spec${params}`)
+      fetch(`${API_BASE}/api/catalog/${id}/spec${params}`)
         .then(res => res.json())
         .then(data => setSpec(data))
         .catch(err => console.error(err));
@@ -2107,7 +2131,7 @@ export function ApiDetail() {
           </Link>
           
           <div className="flex items-center gap-3">
-            {(role === 'admin' || role === 'api_owner') && (
+            {canManageCurrentApi && (
               <>
                 <button
                   type="button"

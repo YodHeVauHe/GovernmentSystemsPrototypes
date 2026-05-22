@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -35,6 +35,8 @@ import {
   IconTrash,
   IconX
 } from '@tabler/icons-react';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
 function dateToDateTimeLocalValue(date: Date) {
   const offset = date.getTimezoneOffset() * 60000;
@@ -329,7 +331,7 @@ function ExpiryDatePicker({
 }
 
 async function fetchDashboardJson(path: string) {
-  const response = await fetch(`http://localhost:4000${path}`);
+  const response = await fetch(`${API_BASE}${path}`);
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(body.error || `${path} failed with ${response.status}`);
@@ -341,11 +343,15 @@ export default function DashboardPage() {
   const { role, mdaId, mdas } = useUser();
   const { addNotification } = useNotifications();
   const [requests, setRequests] = useState<any[]>([]);
+  const [accountRequests, setAccountRequests] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [matrix, setMatrix] = useState<any[]>([]);
   const [selectedLog, setSelectedLog] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<string>('approvals');
   const [approving, setApproving] = useState<string | null>(null);
+  const [accountReviewing, setAccountReviewing] = useState<string | null>(null);
+  const [accountRoleInputs, setAccountRoleInputs] = useState<Record<string, string>>({});
+  const [accountMdaInputs, setAccountMdaInputs] = useState<Record<string, string>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [filterMda, setFilterMda] = useState<string>('ALL');
   const [timeRange, setTimeRange] = useState('7d');
@@ -353,21 +359,24 @@ export default function DashboardPage() {
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState('');
 
-  const fetchDashboardData = (showLoading = false) => {
+  const fetchDashboardData = useCallback((showLoading = false) => {
     if (showLoading) {
       setDashboardLoading(true);
       setDashboardError('');
     }
 
+    const canViewOversight = role === 'admin' || role === 'reviewer';
     Promise.all([
       fetchDashboardJson('/api/access'),
-      fetchDashboardJson('/api/access/audit-logs'),
-      fetchDashboardJson('/api/access/matrix'),
+      canViewOversight ? fetchDashboardJson('/api/access/audit-logs') : Promise.resolve([]),
+      canViewOversight ? fetchDashboardJson('/api/access/matrix') : Promise.resolve([]),
+      role === 'admin' ? fetchDashboardJson('/api/admin/users?status=PENDING_REVIEW') : Promise.resolve({ users: [] }),
     ])
-      .then(([accessData, auditData, matrixData]) => {
+      .then(([accessData, auditData, matrixData, userData]) => {
         setRequests(accessData);
         setAuditLogs(auditData);
         setMatrix(matrixData);
+        setAccountRequests(Array.isArray(userData.users) ? userData.users : []);
       })
       .catch(err => {
         console.error(err);
@@ -376,7 +385,7 @@ export default function DashboardPage() {
       .finally(() => {
         if (showLoading) setDashboardLoading(false);
       });
-  };
+  }, [role]);
 
   useEffect(() => {
     fetchDashboardData(true);
@@ -388,12 +397,12 @@ export default function DashboardPage() {
     } else {
       setActiveTab('approvals');
     }
-  }, [role, mdaId]);
+  }, [fetchDashboardData, role, mdaId]);
 
   const handleApprove = (id: string) => {
     const request = requests.find(req => req.id === id);
     setApproving(id);
-    fetch(`http://localhost:4000/api/access/${id}/approve`, {
+    fetch(`${API_BASE}/api/access/${id}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key_expires_at: fromDateTimeLocalValue(keyExpiryInputs[id]) })
@@ -422,9 +431,78 @@ export default function DashboardPage() {
       .finally(() => setApproving(null));
   };
 
+  const handleApproveAccount = (user: any) => {
+    const nextRole = accountRoleInputs[user.id] || user.requested_role;
+    const nextMda = accountMdaInputs[user.id] || user.requested_mda_id || mdas[0]?.id || '';
+    const needsMda = nextRole === 'developer' || nextRole === 'api_owner';
+    setAccountReviewing(user.id);
+
+    fetch(`${API_BASE}/api/admin/users/${user.id}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: nextRole, mda_id: needsMda ? nextMda : null }),
+    })
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to approve account');
+        return result;
+      })
+      .then(() => {
+        toast.success('Account approved', {
+          description: `${user.full_name} can now access the dashboard.`,
+        });
+        addNotification({
+          type: 'account',
+          title: 'Account approved',
+          message: `${user.full_name} was approved as ${nextRole}${needsMda ? ` for ${mdas.find(mda => mda.id === nextMda)?.shortName || nextMda}` : ''}.`,
+        });
+        fetchDashboardData();
+      })
+      .catch(err => {
+        toast.error('Approval failed', {
+          description: err instanceof Error ? err.message : 'Failed to approve account',
+        });
+      })
+      .finally(() => setAccountReviewing(null));
+  };
+
+  const handleRejectAccount = (user: any) => {
+    const reason = prompt(`Reject ${user.full_name}'s account request? Add a short reason:`);
+    if (reason === null) return;
+    setAccountReviewing(user.id);
+
+    fetch(`${API_BASE}/api/admin/users/${user.id}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    })
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to reject account');
+        return result;
+      })
+      .then(() => {
+        toast.success('Account rejected', {
+          description: `${user.full_name}'s request was closed.`,
+        });
+        addNotification({
+          type: 'account',
+          title: 'Account rejected',
+          message: `${user.full_name}'s account request was rejected${reason ? `: ${reason}` : '.'}`,
+        });
+        fetchDashboardData();
+      })
+      .catch(err => {
+        toast.error('Rejection failed', {
+          description: err instanceof Error ? err.message : 'Failed to reject account',
+        });
+      })
+      .finally(() => setAccountReviewing(null));
+  };
+
   const handleUpdateExpiry = (id: string) => {
     const request = requests.find(req => req.id === id);
-    fetch(`http://localhost:4000/api/access/${id}/key-expiry`, {
+    fetch(`${API_BASE}/api/access/${id}/key-expiry`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key_expires_at: fromDateTimeLocalValue(keyExpiryInputs[id]) })
@@ -457,7 +535,7 @@ export default function DashboardPage() {
 
   const handleRevokeKey = (id: string) => {
     if (!confirm('Revoke this API key? Existing clients will be blocked immediately.')) return;
-    fetch(`http://localhost:4000/api/access/${id}/revoke-key`, { method: 'POST' })
+    fetch(`${API_BASE}/api/access/${id}/revoke-key`, { method: 'POST' })
       .then(async res => {
         const result = await res.json();
         if (!res.ok || result.error) throw new Error(result.error || 'Failed to revoke key');
@@ -478,7 +556,7 @@ export default function DashboardPage() {
 
   const handleDeleteKey = (id: string) => {
     if (!confirm('Delete this API key? The access request remains for audit, but the token will no longer be visible or usable.')) return;
-    fetch(`http://localhost:4000/api/access/${id}/key`, { method: 'DELETE' })
+    fetch(`${API_BASE}/api/access/${id}/key`, { method: 'DELETE' })
       .then(async res => {
         const result = await res.json();
         if (!res.ok || result.error) throw new Error(result.error || 'Failed to delete key');
@@ -619,7 +697,7 @@ export default function DashboardPage() {
       {/* Navigation Tabs */}
       <div className="flex shrink-0 border-b border-[#2e2e2e] gap-1 bg-[#141414] p-1 rounded-lg self-start">
         {role !== 'developer' && role !== 'reviewer' && (
-          <button 
+          <button
             onClick={() => setActiveTab('approvals')}
             className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
               activeTab === 'approvals' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
@@ -635,8 +713,25 @@ export default function DashboardPage() {
           </button>
         )}
 
+        {role === 'admin' && (
+          <button
+            onClick={() => setActiveTab('accounts')}
+            className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'accounts' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
+            }`}
+          >
+            <IconCircleCheck className="w-4 h-4" />
+            Account Requests
+            {accountRequests.length > 0 && (
+              <span className="h-4.5 min-w-4.5 px-1 bg-orange-500 text-white font-bold rounded-full text-[10px] flex items-center justify-center">
+                {accountRequests.length}
+              </span>
+            )}
+          </button>
+        )}
+
         {(role === 'developer' || role === 'admin') && (
-          <button 
+          <button
             onClick={() => setActiveTab('credentials')}
             className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
               activeTab === 'credentials' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
@@ -649,7 +744,7 @@ export default function DashboardPage() {
 
         {(role === 'reviewer' || role === 'admin') && (
           <>
-            <button 
+            <button
               onClick={() => setActiveTab('audit')}
               className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
                 activeTab === 'audit' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
@@ -658,7 +753,7 @@ export default function DashboardPage() {
               <IconListDetails className="w-4 h-4" />
               Audit Trails
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('matrix')}
               className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
                 activeTab === 'matrix' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
@@ -670,15 +765,17 @@ export default function DashboardPage() {
           </>
         )}
 
-        <button 
-          onClick={() => setActiveTab('analytics')}
-          className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
-            activeTab === 'analytics' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
-          }`}
-        >
-          <IconChartBar className="w-4 h-4" />
-          Analytics
-        </button>
+        {(role === 'reviewer' || role === 'admin') && (
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'analytics' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
+            }`}
+          >
+            <IconChartBar className="w-4 h-4" />
+            Analytics
+          </button>
+        )}
       </div>
 
       {/* Tab Panels */}
@@ -842,6 +939,113 @@ export default function DashboardPage() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: Account Requests */}
+        {!dashboardLoading && !dashboardError && activeTab === 'accounts' && role === 'admin' && (
+          <div className="flex h-full min-h-0 flex-col gap-4">
+            <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
+              <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex justify-between items-center">
+                <div>
+                  <h2 className="text-[15px] font-semibold text-white">Pending Account Requests</h2>
+                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Review new signup applications, assign role and MDA privileges, then approve or reject access.</p>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto">
+                <Table className="min-w-[1180px]">
+                  <TableHeader>
+                    <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Applicant</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Account Type</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Organization</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Purpose</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Approve As</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Assigned MDA</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4 text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {accountRequests.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-28 text-center text-[#8b8b8b] text-[13px]">
+                          No pending account requests.
+                        </TableCell>
+                      </TableRow>
+                    ) : accountRequests.map(user => {
+                      const selectedRole = accountRoleInputs[user.id] || user.requested_role || 'developer';
+                      const selectedMda = accountMdaInputs[user.id] || user.requested_mda_id || mdas[0]?.id || '';
+                      const needsMda = selectedRole === 'developer' || selectedRole === 'api_owner';
+
+                      return (
+                        <TableRow key={user.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
+                          <TableCell className="py-3.5 px-4">
+                            <div className="font-semibold text-[13px] text-[#ededed]">{user.full_name}</div>
+                            <div className="mt-0.5 text-[12px] text-[#8b8b8b]">{user.email}</div>
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-[13px] text-[#ededed]">
+                            <div className="capitalize">{String(user.account_type || '').replace(/_/g, ' ')}</div>
+                            <div className="mt-0.5 text-[11px] text-[#8b8b8b]">Requested {user.requested_role}</div>
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] max-w-[180px] truncate" title={user.requested_organization}>
+                            {user.requested_organization}
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] max-w-[220px] truncate" title={user.requested_purpose}>
+                            {user.requested_purpose}
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4">
+                            <select
+                              value={selectedRole}
+                              onChange={event => setAccountRoleInputs(current => ({ ...current, [user.id]: event.target.value }))}
+                              className="h-[30px] w-[142px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none focus:border-[#444]"
+                            >
+                              <option value="developer">Developer</option>
+                              <option value="api_owner">API Owner</option>
+                              <option value="reviewer">Reviewer</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4">
+                            <select
+                              value={selectedMda}
+                              disabled={!needsMda}
+                              onChange={event => setAccountMdaInputs(current => ({ ...current, [user.id]: event.target.value }))}
+                              className="h-[30px] w-[190px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none focus:border-[#444] disabled:opacity-40"
+                            >
+                              {mdas.map(mda => (
+                                <option key={mda.id} value={mda.id}>{mda.shortName}</option>
+                              ))}
+                            </select>
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleRejectAccount(user)}
+                                disabled={accountReviewing === user.id}
+                                className="inline-flex h-[28px] items-center gap-1.5 rounded-md border border-red-400/20 px-2.5 text-[12px] font-semibold text-red-300 transition-colors hover:bg-red-400/10 disabled:opacity-50"
+                              >
+                                <IconX className="h-3.5 w-3.5" />
+                                Reject
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleApproveAccount(user)}
+                                disabled={accountReviewing === user.id}
+                                className="inline-flex h-[28px] items-center gap-1.5 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:opacity-50"
+                              >
+                                <IconCircleCheck className="h-3.5 w-3.5" />
+                                {accountReviewing === user.id ? 'Saving...' : 'Approve'}
+                              </button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </div>
             </div>
           </div>

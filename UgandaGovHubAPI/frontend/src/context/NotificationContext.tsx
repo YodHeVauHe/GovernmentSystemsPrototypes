@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 
-export type AppNotificationType = 'api' | 'access' | 'key';
+export type AppNotificationType = 'api' | 'access' | 'key' | 'account';
 
 export interface AppNotification {
   id: string;
