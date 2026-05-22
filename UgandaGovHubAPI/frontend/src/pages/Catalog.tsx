@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { 
@@ -29,9 +29,11 @@ import {
   IconCheck
 } from '@tabler/icons-react';
 import { useUser } from '../context/UserContext';
+import { useNotifications } from '../context/NotificationContext';
 
 function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void }) {
   const { mdaId, mdas } = useUser();
+  const { addNotification } = useNotifications();
   const [purpose, setPurpose] = useState('');
   const [legalBasis, setLegalBasis] = useState('');
   const [volumeTier, setVolumeTier] = useState('Low (< 1,000 / month)');
@@ -71,7 +73,14 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
       })
     })
     .then(res => res.json())
-    .then(() => setStatus('success'))
+    .then(() => {
+      addNotification({
+        type: 'access',
+        title: 'Access request submitted',
+        message: `${requestingMda?.shortName || 'Your agency'} requested access to ${api.name}.`,
+      });
+      setStatus('success');
+    })
     .catch(err => console.error(err));
   };
 
@@ -211,6 +220,7 @@ function AdminApiEditorModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { addNotification } = useNotifications();
   const [form, setForm] = useState({
     name: api.name || '',
     sector: api.sector || '',
@@ -245,6 +255,11 @@ function AdminApiEditorModal({
       if (!response.ok) {
         throw new Error(result.error || 'Failed to update API');
       }
+      addNotification({
+        type: 'api',
+        title: 'API updated',
+        message: `${form.name || api.name} metadata was updated.`,
+      });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update API');
@@ -560,6 +575,7 @@ function PublishVersionModal({
 }
 
 function DeleteApiModal({ api, onClose }: { api: any; onClose: () => void }) {
+  const { addNotification } = useNotifications();
   const [status, setStatus] = useState<'confirming' | 'deleting' | 'success'>('confirming');
   const [error, setError] = useState('');
 
@@ -573,6 +589,11 @@ function DeleteApiModal({ api, onClose }: { api: any; onClose: () => void }) {
       if (!response.ok) {
         throw new Error(result.error || 'Failed to delete API');
       }
+      addNotification({
+        type: 'api',
+        title: 'API deleted',
+        message: `${api.name} was removed from the API catalog.`,
+      });
       setStatus('success');
     } catch (err) {
       setStatus('confirming');
@@ -654,8 +675,9 @@ function DeleteApiModal({ api, onClose }: { api: any; onClose: () => void }) {
 
 export function Catalog() {
   const { role } = useUser();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [apis, setApis] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
+  const search = searchParams.get('q') || '';
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [complianceFilter, setComplianceFilter] = useState('ALL');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
@@ -674,6 +696,16 @@ export function Catalog() {
       })
       .finally(() => setLoadingCatalog(false));
   }, []);
+
+  const updateSearch = (value: string) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (value.trim()) {
+      nextParams.set('q', value);
+    } else {
+      nextParams.delete('q');
+    }
+    setSearchParams(nextParams);
+  };
 
   const filteredApis = apis.filter(api => {
     const matchesSearch = api.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -702,7 +734,7 @@ export function Catalog() {
             <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8b8b8b] w-[18px] h-[18px]" />
             <Input 
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => updateSearch(e.target.value)}
               placeholder="Search by name, sector, agency..." 
               className="h-[36px] pl-9 bg-[#1c1c1c] border-[#2e2e2e] text-[13px] text-white focus:border-[#444] rounded-[6px]"
             />

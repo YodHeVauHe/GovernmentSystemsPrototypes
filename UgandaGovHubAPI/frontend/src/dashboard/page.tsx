@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useUser } from '../context/UserContext';
+import { useNotifications } from '../context/NotificationContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,7 +30,9 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconCircleCheck,
+  IconBan,
   IconDotsVertical,
+  IconTrash,
   IconX
 } from '@tabler/icons-react';
 
@@ -173,11 +176,14 @@ function formatExpiryLabel(value: string) {
 function ExpiryDatePicker({
   value,
   onChange,
+  onApply,
 }: {
   value: string;
   onChange: (value: string) => void;
+  onApply?: () => void;
 }) {
   const selectedDate = value ? new Date(value) : null;
+  const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(selectedDate || new Date());
 
   useEffect(() => {
@@ -214,7 +220,7 @@ function ExpiryDatePicker({
   };
 
   return (
-    <Popover>
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -303,6 +309,20 @@ function ExpiryDatePicker({
             </button>
           ))}
         </div>
+
+        {onApply && (
+          <button
+            type="button"
+            onClick={() => {
+              onApply();
+              setIsOpen(false);
+            }}
+            className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90"
+          >
+            <IconCalendarTime className="h-3.5 w-3.5" />
+            Update expiry
+          </button>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -310,6 +330,7 @@ function ExpiryDatePicker({
 
 export default function DashboardPage() {
   const { role, mdaId, mdas } = useUser();
+  const { addNotification } = useNotifications();
   const [requests, setRequests] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [matrix, setMatrix] = useState<any[]>([]);
@@ -361,6 +382,7 @@ export default function DashboardPage() {
   }, [role, mdaId]);
 
   const handleApprove = (id: string) => {
+    const request = requests.find(req => req.id === id);
     setApproving(id);
     fetch(`http://localhost:4000/api/access/${id}/approve`, {
       method: 'POST',
@@ -376,6 +398,11 @@ export default function DashboardPage() {
         toast.success('API key generated', {
           description: 'The access request was approved and a sandbox key was generated.',
         });
+        addNotification({
+          type: 'key',
+          title: 'Access approved',
+          message: `${request?.mda_name || 'An agency'} was approved for ${request?.api_name || 'an API'}.`,
+        });
         fetchDashboardData();
       })
       .catch(err => {
@@ -387,6 +414,7 @@ export default function DashboardPage() {
   };
 
   const handleUpdateExpiry = (id: string) => {
+    const request = requests.find(req => req.id === id);
     fetch(`http://localhost:4000/api/access/${id}/key-expiry`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -398,10 +426,16 @@ export default function DashboardPage() {
         return result;
       })
       .then(result => {
+        const expiryLabel = result.api_key_expires_at
+          ? new Date(result.api_key_expires_at).toLocaleString()
+          : 'No expiry';
         toast.success('API key expiry updated', {
-          description: result.api_key_expires_at
-            ? `New expiry: ${new Date(result.api_key_expires_at).toLocaleString()}`
-            : 'The key no longer has an expiry date.',
+          description: result.api_key_expires_at ? `New expiry: ${expiryLabel}` : 'The key no longer has an expiry date.',
+        });
+        addNotification({
+          type: 'key',
+          title: 'API key expiry updated',
+          message: `${request?.api_name || 'API key'} now expires: ${expiryLabel}.`,
         });
         fetchDashboardData();
       })
@@ -522,11 +556,11 @@ export default function DashboardPage() {
   const distributionColors = ['bg-[#3ecf8e]', 'bg-blue-500', 'bg-orange-400', 'bg-purple-400', 'bg-yellow-400', 'bg-red-400'];
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-8 text-left max-w-[1400px] mx-auto w-full text-[#ededed] relative">
+    <div className="h-full overflow-hidden">
+      <div className="flex h-full min-h-0 flex-col gap-6 p-4 lg:p-8 text-left max-w-[1400px] mx-auto w-full text-[#ededed] relative">
       
       {/* Stats Summary Panel */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid shrink-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Stat 1 */}
         <div className="p-4 border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl flex items-center justify-between">
           <div className="flex flex-col">
@@ -574,7 +608,7 @@ export default function DashboardPage() {
 
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-[#2e2e2e] gap-1 bg-[#141414] p-1 rounded-lg self-start">
+      <div className="flex shrink-0 border-b border-[#2e2e2e] gap-1 bg-[#141414] p-1 rounded-lg self-start">
         {role !== 'developer' && role !== 'reviewer' && (
           <button 
             onClick={() => setActiveTab('approvals')}
@@ -639,7 +673,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Tab Panels */}
-      <div className="flex-1 w-full min-h-[400px]">
+      <div className="min-h-0 flex-1 w-full">
         {dashboardLoading && (
           <div className="rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] overflow-hidden">
             <div className="border-b border-[#2e2e2e] bg-[#141414] p-4">
@@ -666,15 +700,15 @@ export default function DashboardPage() {
         )}
         {/* Tab 1: Access Approvals */}
         {!dashboardLoading && !dashboardError && activeTab === 'approvals' && (
-          <div className="flex flex-col gap-4">
-            <div className="border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
+          <div className="flex h-full min-h-0 flex-col gap-4">
+            <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
               <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex justify-between items-center">
                 <div>
                   <h2 className="text-[15px] font-semibold text-white">Active Access Requests</h2>
                   <p className="text-[12px] text-[#8b8b8b] mt-0.5">Evaluate legal mandate alignment and manage cryptographically bound sandbox API keys.</p>
                 </div>
               </div>
-              <div className="overflow-x-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
               <Table className="min-w-[1060px]">
                 <TableHeader>
                   <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
@@ -730,24 +764,27 @@ export default function DashboardPage() {
                           </div>
                         ) : (
                           <div className="flex flex-col items-end gap-2">
-                            <div className="flex items-center justify-end gap-1.5 font-mono text-[12px] text-[#8b8b8b]">
-                              <span>
+                            <div className="flex w-[204px] items-center justify-between gap-1.5 font-mono text-[12px] text-[#8b8b8b]">
+                              <span className="min-w-0 truncate">
                                 {req.api_key ? `${req.api_key.substring(0, 12)}...` : 'Key deleted'}
                               </span>
                               {req.api_key && (
                                 <button 
+                                  type="button"
+                                  aria-label="Copy API key"
                                   onClick={() => copyToClipboard(req.api_key)}
-                                  className="text-[#8b8b8b] hover:text-white transition-colors"
+                                  className="inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md border border-transparent text-[#8b8b8b] transition-colors hover:border-[#2e2e2e] hover:bg-[#2e2e2e] hover:text-white"
                                 >
                                   <IconCopy className="w-4 h-4" />
                                 </button>
                               )}
                             </div>
                             {req.api_key && (
-                              <div className="flex items-center justify-end gap-1.5">
+                              <div className="flex w-[204px] items-center justify-start gap-1.5">
                                 <ExpiryDatePicker
                                   value={keyExpiryInputs[req.id] ?? toDateTimeLocalValue(req.api_key_expires_at)}
                                   onChange={value => setKeyExpiryInputs(current => ({ ...current, [req.id]: value }))}
+                                  onApply={() => handleUpdateExpiry(req.id)}
                                 />
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -764,28 +801,25 @@ export default function DashboardPage() {
                                     className="w-44 border-[#2e2e2e] bg-[#1c1c1c] text-[#ededed]"
                                   >
                                     <DropdownMenuItem
-                                      onClick={() => handleUpdateExpiry(req.id)}
-                                      className="cursor-pointer text-[12px] focus:bg-[#2e2e2e] focus:text-white"
-                                    >
-                                      Update expiry
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
                                       onClick={() => copyToClipboard(req.api_key)}
-                                      className="cursor-pointer text-[12px] focus:bg-[#2e2e2e] focus:text-white"
+                                      className="flex cursor-pointer items-center gap-2 text-[12px] focus:bg-[#2e2e2e] focus:text-white"
                                     >
+                                      <IconCopy className="h-3.5 w-3.5" />
                                       Copy key
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator className="bg-[#2e2e2e]" />
                                     <DropdownMenuItem
                                       onClick={() => handleRevokeKey(req.id)}
-                                      className="cursor-pointer text-[12px] text-orange-300 focus:bg-orange-400/10 focus:text-orange-200"
+                                      className="flex cursor-pointer items-center gap-2 text-[12px] text-orange-300 focus:bg-orange-400/10 focus:text-orange-200"
                                     >
+                                      <IconBan className="h-3.5 w-3.5" />
                                       Revoke key
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       onClick={() => handleDeleteKey(req.id)}
-                                      className="cursor-pointer text-[12px] text-red-300 focus:bg-red-400/10 focus:text-red-200"
+                                      className="flex cursor-pointer items-center gap-2 text-[12px] text-red-300 focus:bg-red-400/10 focus:text-red-200"
                                     >
+                                      <IconTrash className="h-3.5 w-3.5" />
                                       Delete key
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
@@ -806,12 +840,13 @@ export default function DashboardPage() {
 
         {/* Tab 2: My Credentials */}
         {!dashboardLoading && !dashboardError && activeTab === 'credentials' && (
-          <div className="flex flex-col gap-6">
-            <div className="border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
+          <div className="flex h-full min-h-0 flex-col gap-6">
+            <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
               <div className="p-4 border-b border-[#2e2e2e] bg-[#141414]">
                 <h2 className="text-[15px] font-semibold text-white">Active Agency Sandbox Keys</h2>
                 <p className="text-[12px] text-[#8b8b8b] mt-0.5">Use these keys inside headers (<code>X-GovHub-API-Key</code>) to query mock registries.</p>
               </div>
+              <div className="min-h-0 flex-1 overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
@@ -867,14 +902,15 @@ export default function DashboardPage() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </div>
           </div>
         )}
 
         {/* Tab 3: Audit Trails (Reviewer View) */}
         {!dashboardLoading && !dashboardError && activeTab === 'audit' && (
-          <div className="flex flex-col gap-4">
-            <div className="border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
+          <div className="flex h-full min-h-0 flex-col gap-4">
+            <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
               <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <h2 className="text-[15px] font-semibold text-white">Platform Governance Audit Log</h2>
@@ -906,6 +942,7 @@ export default function DashboardPage() {
                 </div>
               </div>
               
+              <div className="min-h-0 flex-1 overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
@@ -957,28 +994,32 @@ export default function DashboardPage() {
                         <TableCell className="py-3 px-4 text-left font-mono text-[11px] text-[#8b8b8b]">
                           {log.request_id}
                         </TableCell>
-                        <TableCell className="py-3 px-4 text-right text-[12.5px] text-[#3ecf8e] hover:underline font-mono">
-                          Inspect &rarr;
+                        <TableCell className="py-3 px-4 text-right">
+                          <span className="inline-flex items-center justify-end gap-1.5 font-mono text-[12.5px] text-[#3ecf8e] hover:underline">
+                            Inspect
+                            <IconExternalLink className="h-3.5 w-3.5" />
+                          </span>
                         </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
+              </div>
             </div>
           </div>
         )}
 
         {/* Tab 4: Interoperability Matrix */}
         {!dashboardLoading && !dashboardError && activeTab === 'matrix' && (
-          <div className="flex flex-col gap-6 text-left">
-            <div className="border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl p-6 shadow-lg">
+          <div className="flex h-full min-h-0 flex-col gap-6 text-left">
+            <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl p-6 shadow-lg">
               <h2 className="text-[15px] font-semibold text-white mb-2">Government Data Interoperability Channels</h2>
               <p className="text-[12px] text-[#8b8b8b] mb-6">
                 Active matrix of approved MDA sharing links. Ensure that all exchanges are backed by statutory instruments.
               </p>
               
-              <div className="overflow-x-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
                 <Table className="border border-[#2e2e2e] rounded-lg">
                   <TableHeader>
                     <TableRow className="border-b border-[#2e2e2e] bg-[#141414]">
@@ -1058,7 +1099,7 @@ export default function DashboardPage() {
 
         {/* Tab 5: Usage Analytics */}
         {!dashboardLoading && !dashboardError && activeTab === 'analytics' && (
-          <div className="flex flex-col gap-6 text-left">
+          <div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto text-left">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-[18px] font-semibold text-white">Usage Analytics</h2>

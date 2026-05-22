@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconArrowLeft, IconCheck, IconCircleCheck, IconCode, IconLink, IconLoader, IconUpload } from '@tabler/icons-react';
 import { toast } from 'sonner';
+import { useNotifications } from '../context/NotificationContext';
 
 const slugify = (text: string) => {
   return text
@@ -17,6 +18,7 @@ const slugify = (text: string) => {
 
 export function AddApiPage() {
   const navigate = useNavigate();
+  const { addNotification } = useNotifications();
   const [activeSourceTab, setActiveSourceTab] = useState<'url' | 'file' | 'text'>('url');
   const [specUrl, setSpecUrl] = useState('');
   const [specText, setSpecText] = useState('');
@@ -143,6 +145,11 @@ export function AddApiPage() {
         throw new Error(errorData.error || 'Failed to register API.');
       }
       toast.success('API Catalog entry created successfully!');
+      addNotification({
+        type: 'api',
+        title: 'API created',
+        message: `${name} was added to the API catalog.`,
+      });
       navigate('/');
     } catch (err: any) {
       toast.error(err.message || 'Registration failed.');
@@ -183,101 +190,105 @@ export function AddApiPage() {
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
           {!parsedSpec ? (
             /* PHASE 1: LOAD & VALIDATE */
-            <div className="space-y-4">
-              <p className="text-[13px] text-[#8b8b8b]">
-                Import the API OpenAPI Specification file. The GovHub validation engine will extract structure and endpoints to prepare compliance sheets.
-              </p>
+            <div className="flex min-h-full flex-col">
+              <div className="space-y-4">
+                <p className="text-[13px] text-[#8b8b8b]">
+                  Import the API OpenAPI Specification file. The GovHub validation engine will extract structure and endpoints to prepare compliance sheets.
+                </p>
 
-              {/* Tabs */}
-              <div className="flex bg-[#141414] p-1 rounded-lg border border-[#2e2e2e] text-[13px]">
-                <button
-                  type="button"
-                  onClick={() => { setActiveSourceTab('url'); setValidationError(''); }}
-                  className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${activeSourceTab === 'url' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
-                >
-                  <IconLink className="w-3.5 h-3.5" /> Spec URL
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setActiveSourceTab('file'); setValidationError(''); }}
-                  className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${activeSourceTab === 'file' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
-                >
-                  <IconUpload className="w-3.5 h-3.5" /> Upload Spec
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setActiveSourceTab('text'); setValidationError(''); }}
-                  className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${activeSourceTab === 'text' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
-                >
-                  <IconCode className="w-3.5 h-3.5" /> Raw Code
-                </button>
+                {/* Tabs */}
+                <div className="flex bg-[#141414] p-1 rounded-lg border border-[#2e2e2e] text-[13px]">
+                  <button
+                    type="button"
+                    onClick={() => { setActiveSourceTab('url'); setValidationError(''); }}
+                    className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${activeSourceTab === 'url' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
+                  >
+                    <IconLink className="w-3.5 h-3.5" /> Spec URL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveSourceTab('file'); setValidationError(''); }}
+                    className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${activeSourceTab === 'file' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
+                  >
+                    <IconUpload className="w-3.5 h-3.5" /> Upload Spec
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveSourceTab('text'); setValidationError(''); }}
+                    className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-medium transition-all ${activeSourceTab === 'text' ? 'bg-[#2e2e2e] text-white border border-[#3e3e3e]' : 'text-[#8b8b8b] hover:text-white'}`}
+                  >
+                    <IconCode className="w-3.5 h-3.5" /> Raw Code
+                  </button>
+                </div>
+
+                {/* Inputs */}
+                {activeSourceTab === 'url' && (
+                  <div className="space-y-2">
+                    <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">OpenAPI URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://raw.githubusercontent.com/OAS/main/spec.yaml"
+                      value={specUrl}
+                      onChange={(e) => setSpecUrl(e.target.value)}
+                      className="w-full h-[38px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none focus:border-[#3ecf8e] transition-colors"
+                    />
+                  </div>
+                )}
+
+                {activeSourceTab === 'file' && (
+                  <div className="space-y-2">
+                    <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Upload YAML or JSON Specification</label>
+                    <div className="border border-dashed border-[#2e2e2e] hover:border-[#3ecf8e] bg-[#141414] rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer transition-colors relative">
+                      <input
+                        type="file"
+                        accept=".yaml,.yml,.json"
+                        onChange={handleFileUpload}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                      <IconUpload className="w-8 h-8 text-[#8b8b8b] mb-2" />
+                      <span className="text-[13px] text-white font-medium">Click or drop YAML/JSON here</span>
+                      <span className="text-[11px] text-[#8b8b8b] mt-1">Accepts standard .yaml, .yml, or .json</span>
+                    </div>
+                    {specText && (
+                      <div className="bg-[#1c1c1c] border border-[#2e2e2e] p-2.5 rounded-md text-[11px] text-[#3ecf8e] font-mono flex items-center gap-1.5">
+                        <IconCheck className="w-3.5 h-3.5" /> Spec loaded cleanly ({specText.length} characters)
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeSourceTab === 'text' && (
+                  <div className="space-y-2">
+                    <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Pasted Raw YAML/JSON Specification</label>
+                    <textarea
+                      placeholder="openapi: 3.0.0&#10;info:&#10;  title: Citizen Data Lookup API&#10;..."
+                      value={specText}
+                      onChange={(e) => setSpecText(e.target.value)}
+                      rows={8}
+                      className="w-full p-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] font-mono text-white focus:outline-none focus:border-[#3ecf8e] transition-colors resize-y"
+                    />
+                  </div>
+                )}
               </div>
 
-              {/* Inputs */}
-              {activeSourceTab === 'url' && (
-                <div className="space-y-2">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">OpenAPI URL</label>
-                  <input
-                    type="url"
-                    placeholder="https://raw.githubusercontent.com/OAS/main/spec.yaml"
-                    value={specUrl}
-                    onChange={(e) => setSpecUrl(e.target.value)}
-                    className="w-full h-[38px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none focus:border-[#3ecf8e] transition-colors"
-                  />
-                </div>
-              )}
-
-              {activeSourceTab === 'file' && (
-                <div className="space-y-2">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Upload YAML or JSON Specification</label>
-                  <div className="border border-dashed border-[#2e2e2e] hover:border-[#3ecf8e] bg-[#141414] rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer transition-colors relative">
-                    <input
-                      type="file"
-                      accept=".yaml,.yml,.json"
-                      onChange={handleFileUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
-                    <IconUpload className="w-8 h-8 text-[#8b8b8b] mb-2" />
-                    <span className="text-[13px] text-white font-medium">Click or drop YAML/JSON here</span>
-                    <span className="text-[11px] text-[#8b8b8b] mt-1">Accepts standard .yaml, .yml, or .json</span>
+              <div className="mt-auto pt-4">
+                {validationError && (
+                  <div className="mb-3 p-3 bg-red-950/20 border border-red-500/30 text-red-400 rounded-lg text-[12px]">
+                    <span className="font-semibold block mb-0.5">OpenAPI Validation Failed</span>
+                    {validationError}
                   </div>
-                  {specText && (
-                    <div className="bg-[#1c1c1c] border border-[#2e2e2e] p-2.5 rounded-md text-[11px] text-[#3ecf8e] font-mono flex items-center gap-1.5">
-                      <IconCheck className="w-3.5 h-3.5" /> Spec loaded cleanly ({specText.length} characters)
-                    </div>
-                  )}
-                </div>
-              )}
+                )}
 
-              {activeSourceTab === 'text' && (
-                <div className="space-y-2">
-                  <label className="block text-[12px] font-mono text-[#8b8b8b] uppercase tracking-wider">Pasted Raw YAML/JSON Specification</label>
-                  <textarea
-                    placeholder="openapi: 3.0.0&#10;info:&#10;  title: Citizen Data Lookup API&#10;..."
-                    value={specText}
-                    onChange={(e) => setSpecText(e.target.value)}
-                    rows={8}
-                    className="w-full p-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] font-mono text-white focus:outline-none focus:border-[#3ecf8e] transition-colors resize-y"
-                  />
-                </div>
-              )}
-
-              {validationError && (
-                <div className="p-3 bg-red-950/20 border border-red-500/30 text-red-400 rounded-lg text-[12px]">
-                  <span className="font-semibold block mb-0.5">OpenAPI Validation Failed</span>
-                  {validationError}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleValidateSpec}
-                disabled={loading || (activeSourceTab === 'url' ? !specUrl : !specText)}
-                className="w-full h-[38px] bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[13px] transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? <IconLoader className="w-4 h-4 animate-spin text-black" /> : <IconCheck className="w-4 h-4" />}
-                Validate OpenAPI Specification
-              </button>
+                <button
+                  type="button"
+                  onClick={handleValidateSpec}
+                  disabled={loading || (activeSourceTab === 'url' ? !specUrl : !specText)}
+                  className="w-full h-[38px] bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[13px] transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? <IconLoader className="w-4 h-4 animate-spin text-black" /> : <IconCheck className="w-4 h-4" />}
+                  Validate OpenAPI Specification
+                </button>
+              </div>
             </div>
           ) : (
             /* PHASE 2: METADATA & COMPLIANCE REGISTRATION FORM */

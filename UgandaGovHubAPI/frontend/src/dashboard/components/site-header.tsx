@@ -1,17 +1,52 @@
 import { Separator } from "@/components/ui/separator"
-import { useLocation } from "react-router-dom"
-import { IconSearch, IconHelp, IconBell, IconUserCircle } from "@tabler/icons-react"
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import { IconBell, IconSearch, IconUserCircle } from "@tabler/icons-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useUser, type UserRole } from "../../context/UserContext"
+import { useNotifications } from "../../context/NotificationContext"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+
+function formatNotificationTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "Just now"
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
 
 export function SiteHeader() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { role, mdaId, setRole, setMdaId, mdas } = useUser()
+  const { notifications, unreadCount, markAllRead, clearNotifications } = useNotifications()
+  const search = searchParams.get("q") || ""
   
   let title = "API Catalog"
   if (location.pathname === "/dashboard") title = "Dashboard"
   else if (location.pathname === "/catalog/add") title = "Add API"
   else if (location.pathname.startsWith("/api/")) title = "API Details"
+
+  const updateCatalogSearch = (value: string) => {
+    const nextParams = new URLSearchParams(searchParams)
+    if (value.trim()) {
+      nextParams.set("q", value)
+    } else {
+      nextParams.delete("q")
+    }
+
+    navigate({
+      pathname: "/",
+      search: nextParams.toString(),
+    })
+  }
 
   return (
     <header className="flex h-[56px] shrink-0 items-center justify-between px-4 lg:px-6 bg-[#141414] border-b border-[#2e2e2e] sticky top-0 z-40">
@@ -69,18 +104,67 @@ export function SiteHeader() {
           <IconSearch className="w-4 h-4 text-[#8b8b8b] absolute left-2.5" />
           <input 
             type="text" 
+            value={search}
+            onChange={event => updateCatalogSearch(event.target.value)}
             placeholder="Search... Ctrl K" 
             className="h-[30px] w-[180px] bg-[#141414] border border-[#2e2e2e] rounded-full pl-8 pr-3 text-[12px] text-white focus:outline-none focus:border-[#444]"
           />
         </div>
         
         <div className="flex items-center gap-2 text-[#8b8b8b]">
-          <button className="w-7 h-7 rounded-full border border-[#2e2e2e] flex items-center justify-center hover:text-white hover:border-[#444] transition-colors">
-            <IconHelp className="w-4 h-4" />
-          </button>
-          <button className="w-7 h-7 rounded-full border border-[#2e2e2e] flex items-center justify-center hover:text-white hover:border-[#444] transition-colors">
-            <IconBell className="w-4 h-4" />
-          </button>
+          <Popover onOpenChange={open => {
+            if (open && unreadCount > 0) markAllRead()
+          }}>
+            <PopoverTrigger asChild>
+              <button className="relative w-7 h-7 rounded-full border border-[#2e2e2e] flex items-center justify-center hover:text-white hover:border-[#444] transition-colors">
+                <IconBell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 min-w-4 h-4 rounded-full bg-[#3ecf8e] px-1 text-[10px] leading-4 text-black font-semibold">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-80 border-[#2e2e2e] bg-[#1c1c1c] p-0 text-[#ededed]">
+              <div className="flex items-center justify-between border-b border-[#2e2e2e] px-4 py-3">
+                <div>
+                  <h2 className="text-[13px] font-semibold text-white">Notifications</h2>
+                  <p className="text-[11px] text-[#8b8b8b]">{notifications.length} recent events</p>
+                </div>
+                {notifications.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearNotifications}
+                    className="text-[11px] text-[#8b8b8b] hover:text-white"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-[12px] text-[#8b8b8b]">
+                    No notifications yet.
+                  </div>
+                ) : (
+                  notifications.map(notification => (
+                    <div key={notification.id} className="border-b border-[#2e2e2e] px-4 py-3 last:border-b-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[13px] font-medium text-white">{notification.title}</p>
+                          <p className="mt-1 text-[12px] leading-relaxed text-[#8b8b8b]">{notification.message}</p>
+                        </div>
+                        {!notification.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#3ecf8e]" />}
+                      </div>
+                      <p className="mt-2 text-[10px] font-mono uppercase tracking-wider text-[#666]">
+                        {formatNotificationTime(notification.createdAt)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
     </header>
