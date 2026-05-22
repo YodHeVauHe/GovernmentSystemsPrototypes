@@ -1,17 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
   IconArrowRight,
   IconBook2,
   IconBuildingBank,
-  IconCopy,
+  IconCar,
+  IconCertificate,
+  IconCashBanknote,
+  IconHeartbeat,
+  IconId,
   IconLock,
+  IconNetwork,
+  IconPageBreak,
   IconSearch,
   IconShieldCheck,
+  IconShoppingCart,
   IconWorld,
 } from '@tabler/icons-react';
-import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
@@ -61,6 +66,49 @@ function VisibilityBadge({ value }: { value: DocsVisibility }) {
   );
 }
 
+function SectorBadge({ sector }: { sector: string | null }) {
+  const value = sector || 'MDA API';
+  const normalized = value.toLowerCase();
+  const Icon =
+    normalized.includes('identity') ? IconId :
+    normalized.includes('transport') ? IconCar :
+    normalized.includes('finance') || normalized.includes('tax') ? IconCashBanknote :
+    normalized.includes('commerce') || normalized.includes('business') ? IconCertificate :
+    normalized.includes('health') ? IconHeartbeat :
+    normalized.includes('procurement') ? IconShoppingCart :
+    normalized.includes('integration') ? IconNetwork :
+    IconBuildingBank;
+
+  return (
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] font-medium text-[#b5b5b5]">
+      <Icon className="size-3.5 text-[#3ecf8e]" />
+      {value}
+    </span>
+  );
+}
+
+function MetadataTag({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'low' | 'medium' | 'high' }) {
+  const toneClass = {
+    neutral: 'border-[#2e2e2e] bg-[#141414] text-[#b5b5b5]',
+    low: 'border-[#3ecf8e]/25 bg-[#3ecf8e]/5 text-[#3ecf8e]',
+    medium: 'border-amber-400/25 bg-amber-400/5 text-amber-300',
+    high: 'border-red-400/25 bg-red-400/5 text-red-300',
+  }[tone];
+
+  return (
+    <span className={`inline-flex h-7 items-center rounded-md border px-2 text-[11px] font-medium ${toneClass}`}>
+      {children}
+    </span>
+  );
+}
+
+function sensitivityTone(value?: string | null): 'low' | 'medium' | 'high' {
+  const normalized = (value || '').toLowerCase();
+  if (normalized.includes('high')) return 'high';
+  if (normalized.includes('medium')) return 'medium';
+  return 'low';
+}
+
 function docsAccessText(value: DocsVisibility) {
   if (value === 'public') return 'Public visitors, approved users, MDA owners, reviewers, and administrators can open these docs.';
   if (value === 'authenticated') return 'Approved signed-in users can open these docs; anonymous visitors must sign in first.';
@@ -69,22 +117,18 @@ function docsAccessText(value: DocsVisibility) {
 
 function ShareUrl({ apiId }: { apiId: string }) {
   const url = typeof window !== 'undefined' ? `${window.location.origin}/docs/${apiId}` : `/docs/${apiId}`;
-
-  const copy = async (event: MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    await navigator.clipboard.writeText(url);
-    toast.success('Docs link copied');
-  };
+  const path = `/docs/${apiId}`;
 
   return (
-    <div className="mt-4 flex min-w-0 items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] p-1.5">
-      <input readOnly value={url} className="min-w-0 flex-1 bg-transparent px-2 text-[12px] text-[#8b8b8b] outline-none" />
-      <button type="button" onClick={copy} className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded bg-[#242424] px-2 text-[12px] text-white hover:bg-[#2e2e2e]">
-        <IconCopy className="size-3.5" />
-        Copy
-      </button>
-    </div>
+    <Link
+      to={path}
+      onClick={event => event.stopPropagation()}
+      className="mt-4 flex min-w-0 items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] px-3 py-2 text-[12px] text-[#b5b5b5] hover:border-[#3ecf8e]/45 hover:text-white"
+      title={url}
+    >
+      <span className="min-w-0 flex-1 truncate">{url}</span>
+      <IconArrowRight className="size-4 shrink-0 text-[#8b8b8b] transition-transform group-hover:translate-x-0.5 group-hover:text-[#3ecf8e]" />
+    </Link>
   );
 }
 
@@ -119,8 +163,8 @@ export function DocsPage() {
   }, [apis, query]);
 
   return (
-    <div className="h-full overflow-auto bg-[#181818] text-[#ededed]">
-      <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 p-4 lg:p-8">
+    <div className="h-full overflow-hidden bg-[#181818] text-[#ededed]">
+      <div className="mx-auto flex h-full w-full max-w-[1280px] flex-col gap-6 p-4 lg:p-8">
         <div className="flex flex-col gap-4 border-b border-[#2e2e2e] pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-3 inline-flex h-8 items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] px-3 text-[12px] font-mono uppercase tracking-wider text-[#3ecf8e]">
@@ -166,39 +210,45 @@ export function DocsPage() {
           </div>
         )}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          {filteredApis.map(api => (
-            <Link
-              key={api.id}
-              to={`/docs/${api.id}`}
-              className="group rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-5 transition-colors hover:border-[#3ecf8e]/45 hover:bg-[#202020]"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <VisibilityBadge value={api.docs_visibility} />
-                    {api.lifecycle_status && (
-                      <span className="inline-flex h-7 items-center rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] font-mono uppercase text-[#8b8b8b]">
-                        {api.lifecycle_status}
-                      </span>
-                    )}
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="grid gap-4 lg:grid-cols-2">
+            {filteredApis.map(api => (
+              <Link
+                key={api.id}
+                to={`/docs/${api.id}`}
+                className="group flex min-h-[268px] flex-col rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-5 transition-colors hover:border-[#3ecf8e]/45 hover:bg-[#202020]"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <VisibilityBadge value={api.docs_visibility} />
+                      {api.lifecycle_status && (
+                        <span className="inline-flex h-7 items-center rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] font-mono uppercase text-[#8b8b8b]">
+                          {api.lifecycle_status}
+                        </span>
+                      )}
+                    </div>
+                    <h2 className="truncate text-[17px] font-semibold text-white group-hover:text-[#3ecf8e]">{api.name}</h2>
+                    <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#8b8b8b]">{api.description}</p>
                   </div>
-                  <h2 className="truncate text-[17px] font-semibold text-white group-hover:text-[#3ecf8e]">{api.name}</h2>
-                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#8b8b8b]">{api.description}</p>
+                  <span className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] font-medium text-[#b5b5b5] group-hover:border-[#3ecf8e]/45 group-hover:text-white">
+                    <IconPageBreak className="size-3.5 text-[#3ecf8e]" />
+                    Open
+                  </span>
                 </div>
-                <IconArrowRight className="mt-8 size-5 shrink-0 text-[#8b8b8b] transition-transform group-hover:translate-x-0.5 group-hover:text-[#3ecf8e]" />
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[#2e2e2e] pt-4 text-[12px] text-[#8b8b8b]">
-                <span className="inline-flex items-center gap-1.5">
-                  <IconBuildingBank className="size-3.5 text-[#3ecf8e]" />
-                  {api.sector || 'MDA API'}
-                </span>
-                <span>{api.security_classification || 'Unclassified'}</span>
-                <span>{api.sensitivity_level || 'Unknown'} sensitivity</span>
-              </div>
-              <ShareUrl apiId={api.id} />
-            </Link>
-          ))}
+                <div className="mt-auto border-t border-[#2e2e2e] pt-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SectorBadge sector={api.sector} />
+                    <MetadataTag>{api.security_classification || 'Unclassified'}</MetadataTag>
+                    <MetadataTag tone={sensitivityTone(api.sensitivity_level)}>
+                      {api.sensitivity_level || 'Unknown'} sensitivity
+                    </MetadataTag>
+                  </div>
+                  <ShareUrl apiId={api.id} />
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
     </div>
