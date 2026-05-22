@@ -2,15 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   IconArrowLeft,
-  IconCopy,
   IconDownload,
   IconEdit,
-  IconLink,
   IconLock,
   IconShieldCheck,
   IconWorld,
 } from '@tabler/icons-react';
-import { toast } from 'sonner';
 import { useUser } from '@/context/UserContext';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
@@ -397,24 +394,6 @@ function OperationBlock({ item, spec }: { item: Operation; spec: OpenApiSpec }) 
   );
 }
 
-function ShareLink({ url }: { url: string }) {
-  const copy = async () => {
-    await navigator.clipboard.writeText(url);
-    toast.success('Docs link copied');
-  };
-
-  return (
-    <div className="flex min-w-0 items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] p-1.5">
-      <IconLink className="ml-1 size-4 shrink-0 text-[#3ecf8e]" />
-      <input readOnly value={url} className="min-w-0 flex-1 bg-transparent px-1 text-[12px] text-[#b5b5b5] outline-none" />
-      <button type="button" onClick={copy} className="inline-flex h-7 items-center gap-1.5 rounded bg-[#242424] px-2 text-[12px] text-white hover:bg-[#2e2e2e]">
-        <IconCopy className="size-3.5" />
-        Copy
-      </button>
-    </div>
-  );
-}
-
 export function ApiDocsPage() {
   const { apiId } = useParams();
   const { role } = useUser();
@@ -453,7 +432,6 @@ export function ApiDocsPage() {
     operations.forEach(operation => groups.set(operation.tag, [...(groups.get(operation.tag) || []), operation]));
     return Array.from(groups.entries());
   }, [operations]);
-  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/docs/${apiId}` : `/docs/${apiId}`;
   const VisibilityIcon = api ? visibilityIcon(api.docs_visibility) : IconShieldCheck;
   const canEditDocs = role === 'admin' || role === 'api_owner';
 
@@ -500,7 +478,6 @@ export function ApiDocsPage() {
             Back to API Docs
           </Link>
           <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center">
-            <ShareLink url={shareUrl} />
             {canEditDocs && (
               <Link
                 to={`/api/${api.id}`}
