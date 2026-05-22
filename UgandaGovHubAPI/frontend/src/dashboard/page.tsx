@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -182,7 +182,7 @@ function ExpiryDatePicker({
   onChange: (value: string) => void;
   onApply?: () => void;
 }) {
-  const selectedDate = value ? new Date(value) : null;
+  const selectedDate = useMemo(() => value ? new Date(value) : null, [value]);
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(selectedDate || new Date());
 
@@ -190,7 +190,7 @@ function ExpiryDatePicker({
     if (selectedDate && !Number.isNaN(selectedDate.getTime())) {
       setViewDate(selectedDate);
     }
-  }, [value]);
+  }, [selectedDate, value]);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();

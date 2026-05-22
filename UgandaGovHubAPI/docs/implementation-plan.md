@@ -260,5 +260,4 @@ Audit dashboard, guided scenarios, executive summary, final README, and repeatab
 - Access request and approval workflow works in the UI.
 - Unauthorized calls are denied and logged.
 - Dashboard shows usage, denied calls, and active access.
-- Demo use cases in `docs/ministry-demo-use-cases.md` can be performed end to end.
-
+- Demo use cases in `docs/ministry-demo-use-case.md` can be performed end to end.
