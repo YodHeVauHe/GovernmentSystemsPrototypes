@@ -1,0 +1,70 @@
+# API Docs Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add shareable `/docs` and `/docs/:apiId` pages that render MDA OpenAPI docs with a custom GovHub renderer and enforce per-API documentation visibility.
+
+**Architecture:** Backend docs access rules live in focused helpers and a docs router, with schema migration support for `apis.docs_visibility`. Frontend adds a docs index and per-API custom OpenAPI page, then exposes docs and access groups from the sidebar/settings. Existing catalog detail remains intact and links into the new docs route.
+
+**Tech Stack:** Express, better-sqlite3, TypeScript, React, Vite, React Router, Tabler icons.
+
+---
+
+### Task 1: Backend Docs Visibility
+
+**Files:**
+- Create: `backend/src/docs-access.ts`
+- Create: `backend/src/docs-access.test.ts`
+- Modify: `backend/package.json`
+
+- [ ] Write failing tests for default visibility, role authorization, and approved consumer access.
+- [ ] Run `npm run test:docs-access` and confirm it fails because `docs-access.ts` does not exist.
+- [ ] Implement `ensureDocsSchema`, `resolveDocsVisibility`, `canViewApiDocs`, and `listVisibleDocsApis`.
+- [ ] Run `npm run test:docs-access` and confirm it passes.
+- [ ] Add `test:docs-access` to the backend test script.
+
+### Task 2: Backend Docs Routes
+
+**Files:**
+- Create: `backend/src/routes/docs.ts`
+- Modify: `backend/src/index.ts`
+
+- [ ] Write endpoint behavior through helper tests already created in Task 1.
+- [ ] Add `GET /api/docs` using optional auth and returning visible API metadata.
+- [ ] Add `GET /api/docs/:id` using optional auth and returning metadata plus `spec_url` only when allowed.
+- [ ] Add `PATCH /api/catalog/:id/docs-visibility` for admins and owning API owners.
+- [ ] Wire `ensureDocsSchema(db)` during startup and mount `docsRouter(db)`.
+
+### Task 3: Frontend Docs Pages
+
+**Files:**
+- Create: `frontend/src/pages/DocsPage.tsx`
+- Create: `frontend/src/pages/ApiDocsPage.tsx`
+- Modify: `frontend/src/App.tsx`
+- Modify: `frontend/package.json`
+
+- [ ] Create a `/docs` index that lists visible docs and labels visibility/access group rules.
+- [ ] Create `/docs/:apiId` that fetches docs metadata and renders the authorized OpenAPI document with GovHub components.
+- [ ] Add route entries for `/docs` and `/docs/:apiId`.
+
+### Task 4: Navigation And Settings Access Groups
+
+**Files:**
+- Modify: `frontend/src/dashboard/components/app-sidebar.tsx`
+- Modify: `frontend/src/pages/AccountSettingsPage.tsx`
+- Modify: `frontend/src/pages/Catalog.tsx`
+
+- [ ] Add “API Docs” to main sidebar navigation.
+- [ ] Add “Access Groups” to secondary sidebar navigation, linking to account settings.
+- [ ] Ensure account settings can open the privileges tab from `?tab=privileges`.
+- [ ] Add an “API Docs” link from API detail to `/docs/:apiId`.
+
+### Task 5: Verification
+
+**Files:**
+- No new files.
+
+- [ ] Run backend docs test and backend full test suite.
+- [ ] Install missing frontend dependencies if needed.
+- [ ] Run frontend build.
+- [ ] Start the dev server if verification succeeds and report the URL.

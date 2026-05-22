@@ -19,6 +19,8 @@ import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers, requireAuth } fr
 import { adminUsersRouter, authRouter } from './routes/auth';
 import { requireApiManager } from './access-control';
 import { ensureAccountVerificationSchema } from './account-verification';
+import { ensureDocsSchema } from './docs-access';
+import { docsRouter } from './routes/docs';
 
 dotenv.config();
 
@@ -44,6 +46,7 @@ ensureAuthSchema(db);
 ensureDefaultAdmin(db);
 ensureDemoUsers(db);
 ensureAccountVerificationSchema(db);
+ensureDocsSchema(db);
 
 // Serve static OpenAPI files
 app.use('/openapi', express.static(path.join(__dirname, '../openapi')));
@@ -54,6 +57,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRouter(db));
 app.use('/api/admin/users', adminUsersRouter(db));
+app.use('/api/docs', docsRouter(db));
 
 // Seed API Catalog route
 app.get('/api/catalog', (req, res) => {
@@ -267,12 +271,20 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
     security_classification,
     sla_target,
     compliance_status,
+    docs_visibility,
   } = req.body;
 
   try {
     const existing = db.prepare('SELECT * FROM apis WHERE id = ?').get(req.params.id) as any;
     if (!existing) {
       return res.status(404).json({ error: 'API not found' });
+    }
+    const hasDocsVisibilityPatch = Object.prototype.hasOwnProperty.call(req.body, 'docs_visibility');
+    const normalizedDocsVisibility = typeof docs_visibility === 'string' && docs_visibility.trim()
+      ? docs_visibility.trim().toLowerCase()
+      : null;
+    if (normalizedDocsVisibility && !['public', 'authenticated', 'restricted'].includes(normalizedDocsVisibility)) {
+      return res.status(400).json({ error: 'docs_visibility must be public, authenticated, or restricted.' });
     }
 
     let specPath = existing.openapi_spec_path;
@@ -303,7 +315,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
           sensitivity_level = ?, sandbox_available = ?, openapi_spec_path = ?, required_approval_level = ?,
           contact_office = ?, technical_owner = ?, personal_data_categories = ?, purpose_limitation = ?,
           data_minimization_note = ?, retention_class = ?, statutory_basis = ?, security_classification = ?,
-          sla_target = ?, compliance_status = ?
+          sla_target = ?, compliance_status = ?, docs_visibility = ?
         WHERE id = ?
       `).run(
         name ?? existing.name,
@@ -325,6 +337,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
         security_classification ?? existing.security_classification,
         sla_target ?? existing.sla_target,
         compliance_status ?? existing.compliance_status,
+        hasDocsVisibilityPatch ? normalizedDocsVisibility : existing.docs_visibility,
         req.params.id
       );
 
