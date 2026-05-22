@@ -7,6 +7,8 @@ export interface MDA {
   id: string;
   name: string;
   shortName: string;
+  logoUrl: string;
+  logoSourceUrl: string;
 }
 
 export interface AuthUser {
@@ -59,12 +61,76 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'govhub_auth_token';
 
 export const MDAS_LIST: MDA[] = [
-  { id: 'mda-01', name: 'National Identification and Registration Authority', shortName: 'NIRA' },
-  { id: 'mda-02', name: 'Uganda Revenue Authority', shortName: 'URA' },
-  { id: 'mda-03', name: 'Uganda Registration Services Bureau', shortName: 'URSB' },
-  { id: 'mda-04', name: 'Ministry of Works and Transport', shortName: 'MoWT' },
-  { id: 'mda-05', name: 'Ministry of ICT and National Guidance', shortName: 'MoICT' },
-  { id: 'mda-06', name: 'Ministry of Health', shortName: 'MoH' },
+  {
+    id: 'mda-01',
+    name: 'National Identification and Registration Authority',
+    shortName: 'NIRA',
+    logoUrl: '/mda-logos/nira.png',
+    logoSourceUrl: 'https://www.nira.go.ug/media/2021/05/nira_logo_black@2x.png',
+  },
+  {
+    id: 'mda-02',
+    name: 'Uganda Revenue Authority',
+    shortName: 'URA',
+    logoUrl: '/mda-logos/ura.png',
+    logoSourceUrl: 'https://ura.go.ug/wp-content/uploads/2022/10/URA-logo.png',
+  },
+  {
+    id: 'mda-03',
+    name: 'Uganda Registration Services Bureau',
+    shortName: 'URSB',
+    logoUrl: '/mda-logos/ursb.png',
+    logoSourceUrl: 'https://ursb.go.ug/wp-content/uploads/2021/10/URSB-LOGO.png',
+  },
+  {
+    id: 'mda-04',
+    name: 'Ministry of Works and Transport',
+    shortName: 'MoWT',
+    logoUrl: '/mda-logos/mowt.png',
+    logoSourceUrl: 'https://works.go.ug/wp-content/uploads/2025/09/logo.png',
+  },
+  {
+    id: 'mda-05',
+    name: 'Ministry of ICT and National Guidance',
+    shortName: 'MoICT',
+    logoUrl: '/mda-logos/moict.png',
+    logoSourceUrl: 'https://ict.go.ug/site/ictlogo.png',
+  },
+  {
+    id: 'mda-06',
+    name: 'Ministry of Health',
+    shortName: 'MoH',
+    logoUrl: '/mda-logos/moh.png',
+    logoSourceUrl: 'https://health.go.ug/wp-content/uploads/2025/02/MoH-Logo.png',
+  },
+  {
+    id: 'mda-07',
+    name: 'Public Procurement and Disposal of Public Assets Authority',
+    shortName: 'PPDA',
+    logoUrl: '/mda-logos/ppda.png',
+    logoSourceUrl: 'https://www.ppda.go.ug/wp-content/themes/ppda/images/logo/logo.png',
+  },
+  {
+    id: 'mda-08',
+    name: 'National Social Security Fund',
+    shortName: 'NSSF',
+    logoUrl: '/mda-logos/nssf.jpg',
+    logoSourceUrl: 'https://mastercardfdn.org/en/partners/nssf-uganda/',
+  },
+  {
+    id: 'mda-09',
+    name: 'Uganda Police Force',
+    shortName: 'UPF',
+    logoUrl: '/mda-logos/upf.png',
+    logoSourceUrl: 'https://upf.go.ug/wp-content/uploads/2026/04/header_banner_logo.png',
+  },
+  {
+    id: 'mda-10',
+    name: 'National Information Technology Authority - Uganda',
+    shortName: 'NITA-U',
+    logoUrl: '/mda-logos/nita.png',
+    logoSourceUrl: 'https://www.nita.go.ug/sites/default/files/LOGOS8-07.png',
+  },
 ];
 
 async function parseAuthResponse(response: Response) {
