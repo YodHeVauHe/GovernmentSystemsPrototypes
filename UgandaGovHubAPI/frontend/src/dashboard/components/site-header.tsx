@@ -2,7 +2,7 @@ import { Separator } from "@/components/ui/separator"
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import { IconBell, IconSearch, IconUserCircle } from "@tabler/icons-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import { useUser, type UserRole } from "../../context/UserContext"
+import { useUser } from "../../context/UserContext"
 import { useNotifications } from "../../context/NotificationContext"
 import {
   Popover,
@@ -25,7 +25,7 @@ export function SiteHeader() {
   const location = useLocation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { role, mdaId, setRole, setMdaId, mdas } = useUser()
+  const { user, role, currentMda } = useUser()
   const { notifications, unreadCount, markAllRead, clearNotifications } = useNotifications()
   const search = searchParams.get("q") || ""
   
@@ -63,40 +63,14 @@ export function SiteHeader() {
       
       {/* Persona Switcher & Toolbars */}
       <div className="flex items-center gap-4">
-        {/* Persona Switcher Container */}
         <div className="flex items-center gap-2 bg-[#1c1c1c] border border-[#2e2e2e] px-2.5 py-1 rounded-lg">
           <IconUserCircle className="w-4 h-4 text-[#3ecf8e]" />
-          
           <div className="flex items-center gap-1.5 text-[12px]">
-            {/* Role Select */}
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as UserRole)}
-              className="bg-transparent border-none text-[#ededed] font-medium focus:outline-none cursor-pointer pr-1"
-            >
-              <option value="developer" className="bg-[#1c1c1c] text-white">Developer</option>
-              <option value="api_owner" className="bg-[#1c1c1c] text-white">API Owner</option>
-              <option value="admin" className="bg-[#1c1c1c] text-white">Platform Admin</option>
-              <option value="reviewer" className="bg-[#1c1c1c] text-white">Compliance Reviewer</option>
-            </select>
-            
-            {(role === 'developer' || role === 'api_owner') && (
-              <>
-                <span className="text-[#444] font-mono">|</span>
-                {/* MDA Select */}
-                <select
-                  value={mdaId}
-                  onChange={(e) => setMdaId(e.target.value)}
-                  className="bg-transparent border-none text-[#8b8b8b] focus:outline-none cursor-pointer"
-                >
-                  {mdas.map(mda => (
-                    <option key={mda.id} value={mda.id} className="bg-[#1c1c1c] text-white">
-                      {mda.shortName}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
+            <span className="font-medium text-[#ededed]">
+              {user ? role.replace("_", " ") : "Public"}
+            </span>
+            <span className="text-[#444] font-mono">|</span>
+            <span className="text-[#8b8b8b]">{currentMda?.shortName || "Visitor"}</span>
           </div>
         </div>
 

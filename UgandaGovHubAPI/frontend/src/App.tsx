@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/dashboard/components/app-sidebar';
 import { SiteHeader } from '@/dashboard/components/site-header';
 import DashboardPage from '@/dashboard/page';
 import { Catalog, ApiDetail } from './pages/Catalog';
 import { AddApiPage } from './pages/AddApiPage';
-import { UserProvider } from './context/UserContext';
+import { UserProvider, useUser } from './context/UserContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { Toaster } from '@/components/ui/sonner';
+import { LoginPage } from './pages/LoginPage';
+import { SignupPage } from './pages/SignupPage';
+import { AccountStatusPage } from './pages/AccountStatusPage';
+import { AccountSettingsPage } from './pages/AccountSettingsPage';
 
 function RouteLoadingBar() {
   const location = useLocation();
@@ -29,36 +33,98 @@ function RouteLoadingBar() {
   );
 }
 
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { loading, isAuthenticated, isApproved } = useUser();
+  const location = useLocation();
+
+  if (loading) {
+    return <div className="p-6 text-sm text-[#8b8b8b]">Loading...</div>;
+  }
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  if (!isApproved) {
+    return <Navigate to="/account-status" replace />;
+  }
+  return children;
+}
+
+function AuthenticatedRoute({ children }: { children: React.ReactNode }) {
+  const { loading, isAuthenticated } = useUser();
+  const location = useLocation();
+
+  if (loading) {
+    return <div className="p-6 text-sm text-[#8b8b8b]">Loading...</div>;
+  }
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  return children;
+}
+
+function AppShell() {
+  const location = useLocation();
+  const { loading, isAuthenticated, isApproved } = useUser();
+  const authPage = ['/login', '/signup', '/account-status'].includes(location.pathname);
+
+  if (authPage) {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/account-status" element={<AccountStatusPage />} />
+      </Routes>
+    );
+  }
+
+  if (loading) {
+    return <div className="flex min-h-dvh items-center justify-center bg-[#181818] text-sm text-[#8b8b8b]">Loading...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (!isApproved && location.pathname !== "/account/settings") {
+    return <Navigate to="/account-status" replace />;
+  }
+
+  return (
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "224px",
+          "--sidebar-width-icon": "56px",
+          "--header-height": "48px",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar collapsible="icon" />
+      <SidebarInset className="bg-[#181818] flex flex-col h-dvh overflow-hidden">
+        <div className="flex flex-col overflow-hidden w-full h-full">
+          <RouteLoadingBar />
+          <SiteHeader />
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <Routes>
+              <Route path="/" element={<Catalog />} />
+              <Route path="/catalog/add" element={<ProtectedRoute><AddApiPage /></ProtectedRoute>} />
+              <Route path="/api/:id" element={<ApiDetail />} />
+              <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/account/settings" element={<AuthenticatedRoute><AccountSettingsPage /></AuthenticatedRoute>} />
+            </Routes>
+          </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
+
 function App() {
   return (
     <UserProvider>
       <NotificationProvider>
         <BrowserRouter>
-          <SidebarProvider
-            style={
-              {
-                "--sidebar-width": "224px",
-                "--sidebar-width-icon": "56px",
-                "--header-height": "48px",
-              } as React.CSSProperties
-            }
-          >
-            <AppSidebar collapsible="icon" />
-            <SidebarInset className="bg-[#181818] flex flex-col h-dvh overflow-hidden">
-              <div className="flex flex-col overflow-hidden w-full h-full">
-                <RouteLoadingBar />
-                <SiteHeader />
-                <div className="flex-1 min-h-0 overflow-hidden">
-                  <Routes>
-                  <Route path="/" element={<Catalog />} />
-                  <Route path="/catalog/add" element={<AddApiPage />} />
-                  <Route path="/api/:id" element={<ApiDetail />} />
-                  <Route path="/dashboard" element={<DashboardPage />} />
-                  </Routes>
-                </div>
-              </div>
-            </SidebarInset>
-          </SidebarProvider>
+          <AppShell />
         </BrowserRouter>
         <Toaster position="bottom-right" richColors />
       </NotificationProvider>

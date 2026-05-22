@@ -328,6 +328,15 @@ function ExpiryDatePicker({
   );
 }
 
+async function fetchDashboardJson(path: string) {
+  const response = await fetch(`http://localhost:4000${path}`);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.error || `${path} failed with ${response.status}`);
+  }
+  return body;
+}
+
 export default function DashboardPage() {
   const { role, mdaId, mdas } = useUser();
   const { addNotification } = useNotifications();
@@ -351,9 +360,9 @@ export default function DashboardPage() {
     }
 
     Promise.all([
-      fetch('http://localhost:4000/api/access').then(res => res.json()),
-      fetch('http://localhost:4000/api/access/audit-logs').then(res => res.json()),
-      fetch('http://localhost:4000/api/access/matrix').then(res => res.json()),
+      fetchDashboardJson('/api/access'),
+      fetchDashboardJson('/api/access/audit-logs'),
+      fetchDashboardJson('/api/access/matrix'),
     ])
       .then(([accessData, auditData, matrixData]) => {
         setRequests(accessData);
@@ -362,7 +371,7 @@ export default function DashboardPage() {
       })
       .catch(err => {
         console.error(err);
-        setDashboardError('Failed to load dashboard data.');
+        setDashboardError(err instanceof Error ? err.message : 'Failed to load dashboard data.');
       })
       .finally(() => {
         if (showLoading) setDashboardLoading(false);
