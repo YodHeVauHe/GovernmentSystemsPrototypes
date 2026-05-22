@@ -4,6 +4,7 @@ import { IconBell, IconSearch, IconUserCircle } from "@tabler/icons-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useUser } from "../../context/UserContext"
 import { useNotifications } from "../../context/NotificationContext"
+import { MdaLogo } from "@/components/MdaLogo"
 import {
   Popover,
   PopoverContent,
@@ -66,7 +67,7 @@ export function SiteHeader() {
       {/* Persona Switcher & Toolbars */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 bg-[#1c1c1c] border border-[#2e2e2e] px-2.5 py-1 rounded-lg">
-          <IconUserCircle className="w-4 h-4 text-[#3ecf8e]" />
+          {currentMda ? <MdaLogo mdaId={currentMda.id} className="size-5 rounded-sm border-[#444]" imageClassName="p-0.5" /> : <IconUserCircle className="w-4 h-4 text-[#3ecf8e]" />}
           <div className="flex items-center gap-1.5 text-[12px]">
             <span className="font-medium text-[#ededed]">
               {user ? role.replace("_", " ") : "Public"}
