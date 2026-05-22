@@ -13,8 +13,6 @@ import {
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
-import { MdaLogo } from '@/components/MdaLogo';
-import { getMdaShortName } from '@/lib/mdas';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
@@ -176,9 +174,7 @@ export function DocsPage() {
               className="group rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-5 transition-colors hover:border-[#3ecf8e]/45 hover:bg-[#202020]"
             >
               <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 gap-3">
-                  <MdaLogo mdaId={api.owning_mda_id} className="mt-1 size-11" />
-                  <div className="min-w-0">
+                <div className="min-w-0">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <VisibilityBadge value={api.docs_visibility} />
                     {api.lifecycle_status && (
@@ -188,9 +184,7 @@ export function DocsPage() {
                     )}
                   </div>
                   <h2 className="truncate text-[17px] font-semibold text-white group-hover:text-[#3ecf8e]">{api.name}</h2>
-                  <p className="mt-1 text-[12px] font-mono text-[#8b8b8b]">{getMdaShortName(api.owning_mda_id)} owner</p>
                   <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#8b8b8b]">{api.description}</p>
-                  </div>
                 </div>
                 <IconArrowRight className="mt-8 size-5 shrink-0 text-[#8b8b8b] transition-transform group-hover:translate-x-0.5 group-hover:text-[#3ecf8e]" />
               </div>

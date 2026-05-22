@@ -31,8 +31,6 @@ import {
 } from '@tabler/icons-react';
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
-import { MdaLogo } from '@/components/MdaLogo';
-import { getMdaDisplayName, getMdaShortName } from '@/lib/mdas';
 import { toast } from 'sonner';
 
 function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void }) {
@@ -911,10 +909,10 @@ export function Catalog() {
                     </span>
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-left text-[13px] text-[#ededed] font-medium">
-                    <span className="inline-flex items-center gap-2">
-                      <MdaLogo mdaId={api.owning_mda_id} className="size-7" />
-                      {getMdaShortName(api.owning_mda_id)}
-                    </span>
+                    {api.owning_mda_id === 'mda-01' ? 'NIRA' :
+                     api.owning_mda_id === 'mda-02' ? 'URA' :
+                     api.owning_mda_id === 'mda-03' ? 'URSB' :
+                     api.owning_mda_id === 'mda-04' ? 'MoWT' : 'MoICT'}
                   </TableCell>
                 </TableRow>
               ))}
@@ -942,9 +940,11 @@ export function Catalog() {
               </p>
               <div className="flex justify-between items-center text-[12px] border-t border-[#2e2e2e] pt-4 mt-auto">
                 <span className="text-[#8b8b8b]">Owner</span>
-                <span className="inline-flex items-center gap-2 text-white font-medium font-mono">
-                  <MdaLogo mdaId={api.owning_mda_id} className="size-7" />
-                  {getMdaShortName(api.owning_mda_id)}
+                <span className="text-white font-medium font-mono">
+                  {api.owning_mda_id === 'mda-01' ? 'NIRA' :
+                   api.owning_mda_id === 'mda-02' ? 'URA' :
+                   api.owning_mda_id === 'mda-03' ? 'URSB' :
+                   api.owning_mda_id === 'mda-04' ? 'MoWT' : 'MoICT'}
                 </span>
               </div>
             </Link>
@@ -1882,9 +1882,12 @@ function APIPrintSummary({ api }: { api: any }) {
       <div className="grid grid-cols-2 gap-x-6 gap-y-4 text-[13px]">
         <div>
           <span className="block text-[11px] uppercase tracking-wider font-mono text-gray-500">Owning MDA (Data Owner)</span>
-          <span className="inline-flex items-center gap-2 font-semibold text-gray-900">
-            <MdaLogo mdaId={api.owning_mda_id} className="size-8 border-gray-300" />
-            {getMdaDisplayName(api.owning_mda_id)}
+          <span className="font-semibold text-gray-900">
+            {api.owning_mda_id === 'mda-01' ? 'National Identification and Registration Authority (NIRA)' :
+             api.owning_mda_id === 'mda-02' ? 'Uganda Revenue Authority (URA)' :
+             api.owning_mda_id === 'mda-03' ? 'Uganda Registration Services Bureau (URSB)' :
+             api.owning_mda_id === 'mda-04' ? 'Ministry of Works and Transport (MoWT)' : 
+             'Ministry of ICT and National Guidance (MoICT)'}
           </span>
         </div>
 
@@ -2296,9 +2299,12 @@ export function ApiDetail() {
                 <div className="flex flex-col gap-3.5 text-[13px]">
                   <div>
                     <span className="block text-[#8b8b8b] text-[11px] uppercase tracking-wider font-mono">Data Owner (Controller)</span>
-                    <span className="inline-flex items-center gap-2 text-white font-medium">
-                      <MdaLogo mdaId={api.owning_mda_id} className="size-8" />
-                      {getMdaDisplayName(api.owning_mda_id)}
+                    <span className="text-white font-medium">
+                      {api.owning_mda_id === 'mda-01' ? 'National Identification and Registration Authority (NIRA)' :
+                       api.owning_mda_id === 'mda-02' ? 'Uganda Revenue Authority (URA)' :
+                       api.owning_mda_id === 'mda-03' ? 'Uganda Registration Services Bureau (URSB)' :
+                       api.owning_mda_id === 'mda-04' ? 'Ministry of Works and Transport (MoWT)' : 
+                       'Ministry of ICT and National Guidance (MoICT)'}
                     </span>
                   </div>
                   <div>
