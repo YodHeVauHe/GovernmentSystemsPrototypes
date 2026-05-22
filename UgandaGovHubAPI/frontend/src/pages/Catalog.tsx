@@ -30,6 +30,7 @@ import {
 } from '@tabler/icons-react';
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
+import { toast } from 'sonner';
 
 function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void }) {
   const { mdaId, mdas } = useUser();
@@ -260,9 +261,16 @@ function AdminApiEditorModal({
         title: 'API updated',
         message: `${form.name || api.name} metadata was updated.`,
       });
+      toast.success('API updated', {
+        description: `${form.name || api.name} was saved successfully.`,
+      });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update API');
+      const message = err instanceof Error ? err.message : 'Failed to update API';
+      setError(message);
+      toast.error('API update failed', {
+        description: message,
+      });
     } finally {
       setSaving(false);
     }
@@ -594,10 +602,17 @@ function DeleteApiModal({ api, onClose }: { api: any; onClose: () => void }) {
         title: 'API deleted',
         message: `${api.name} was removed from the API catalog.`,
       });
+      toast.success('API deleted', {
+        description: `${api.name} was removed from the catalog.`,
+      });
       setStatus('success');
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete API';
       setStatus('confirming');
-      setError(err instanceof Error ? err.message : 'Failed to delete API');
+      setError(message);
+      toast.error('API delete failed', {
+        description: message,
+      });
     }
   };
 
