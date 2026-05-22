@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { db } from '../index';
+import type Database from 'better-sqlite3';
 import { computeApiKeyAccess } from '../admin';
+import { logAuditEvent } from '../audit';
 
 function getApiIdFromPath(url: string): string | null {
   if (url.includes('/identity')) return 'api-nira-01';
@@ -12,20 +13,8 @@ function getApiIdFromPath(url: string): string | null {
   return null;
 }
 
-export function logAuditEvent(eventType: string, mdaId: string | null, apiId: string | null, requestId: string, details: any) {
-  try {
-    const id = `audit-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-    const stmt = db.prepare(`
-      INSERT INTO audit_logs (id, event_type, mda_id, api_id, request_id, details) 
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(id, eventType, mdaId, apiId, requestId, JSON.stringify(details));
-  } catch (err) {
-    console.error('Failed to write audit log:', err);
-  }
-}
-
-export function sandboxMiddleware(req: Request, res: Response, next: NextFunction) {
+export function sandboxMiddleware(db: Database.Database) {
+  return (req: Request, res: Response, next: NextFunction) => {
   // Generate or forward Correlation ID
   const correlationId = req.headers['x-correlation-id'] || crypto.randomUUID();
   res.setHeader('X-Correlation-ID', correlationId as string);
@@ -47,7 +36,7 @@ export function sandboxMiddleware(req: Request, res: Response, next: NextFunctio
   const apiId = getApiIdFromPath(req.originalUrl);
 
   if (!apiKey) {
-    logAuditEvent('SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
+    logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
       reason: 'The X-GovHub-API-Key header is missing.',
       path: req.originalUrl,
       method: req.method
@@ -63,7 +52,7 @@ export function sandboxMiddleware(req: Request, res: Response, next: NextFunctio
   `).get(apiKey) as any;
   const accessDecision = computeApiKeyAccess(requestRecord, apiId);
   if (!accessDecision.allowed && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
-    logAuditEvent('SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
+    logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
       reason: accessDecision.message,
       path: req.originalUrl,
       method: req.method,
@@ -74,7 +63,7 @@ export function sandboxMiddleware(req: Request, res: Response, next: NextFunctio
 
   // Enforce endpoint/scope verification
   if (!accessDecision.allowed && accessDecision.code === 'UNAUTHORIZED_ENDPOINT') {
-    logAuditEvent('SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
+    logAuditEvent(db, 'SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
       reason: accessDecision.message,
       path: req.originalUrl,
       method: req.method,
@@ -84,12 +73,13 @@ export function sandboxMiddleware(req: Request, res: Response, next: NextFunctio
   }
 
   // Key is valid and authorized
-  logAuditEvent('SANDBOX_CALL_ALLOWED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
+  logAuditEvent(db, 'SANDBOX_CALL_ALLOWED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
     path: req.originalUrl,
     method: req.method
   });
 
   next();
+  };
 }
 
 export function sendSandboxError(res: Response, code: string, message: string, status: number = 400) {

@@ -15,11 +15,16 @@ import { drivingPermitRouter } from './routes/driving-permit';
 import { compositeRouter } from './routes/composite';
 import { ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
 import { deleteSpecFiles, ensureAdminSchema, removeExistingSpecFiles } from './admin';
+import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers, requireAuth } from './auth';
+import { adminUsersRouter, authRouter } from './routes/auth';
+import { requireApiManager } from './access-control';
+import { ensureAccountVerificationSchema } from './account-verification';
 
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 4000;
+const port = Number(process.env.PORT || 4000);
+const host = process.env.HOST || '127.0.0.1';
 
 app.use(cors({
   exposedHeaders: [
@@ -35,6 +40,10 @@ app.use(express.json());
 export const db = new Database(path.join(__dirname, '../data/govhub.db'));
 ensureAdminSchema(db);
 ensureApiVersionSchema(db);
+ensureAuthSchema(db);
+ensureDefaultAdmin(db);
+ensureDemoUsers(db);
+ensureAccountVerificationSchema(db);
 
 // Serve static OpenAPI files
 app.use('/openapi', express.static(path.join(__dirname, '../openapi')));
@@ -42,6 +51,9 @@ app.use('/openapi', express.static(path.join(__dirname, '../openapi')));
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'Uganda GovHub API Mock Sandbox' });
 });
+
+app.use('/api/auth', authRouter(db));
+app.use('/api/admin/users', adminUsersRouter(db));
 
 // Seed API Catalog route
 app.get('/api/catalog', (req, res) => {
@@ -89,7 +101,7 @@ app.get('/api/catalog/:id/versions', (req, res) => {
   }
 });
 
-app.post('/api/catalog/:id/versions', (req, res) => {
+app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), (req, res) => {
   const { openapi_spec, status, notes, make_current } = req.body;
 
   if (!openapi_spec || !openapi_spec.trim()) {
@@ -161,7 +173,7 @@ app.post('/api/catalog/:id/versions', (req, res) => {
   }
 });
 
-app.post('/api/catalog/:id/versions/:version/current', (req, res) => {
+app.post('/api/catalog/:id/versions/:version/current', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), (req, res) => {
   try {
     const version = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, req.params.version) as any;
     if (!version) {
@@ -186,7 +198,7 @@ app.post('/api/catalog/:id/versions/:version/current', (req, res) => {
   }
 });
 
-app.delete('/api/catalog/:id/versions/:version', (req, res) => {
+app.delete('/api/catalog/:id/versions/:version', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), (req, res) => {
   try {
     const version = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, req.params.version) as any;
     if (!version) {
@@ -234,7 +246,7 @@ app.get('/api/catalog/:id/spec', (req, res) => {
   }
 });
 
-app.patch('/api/catalog/:id', (req, res) => {
+app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), (req, res) => {
   const {
     name,
     owning_mda_id,
@@ -373,7 +385,7 @@ app.patch('/api/catalog/:id', (req, res) => {
   }
 });
 
-app.delete('/api/catalog/:id', (req, res) => {
+app.delete('/api/catalog/:id', requireAuth(db, ['admin']), (req, res) => {
   try {
     const api = db.prepare('SELECT * FROM apis WHERE id = ?').get(req.params.id) as any;
     if (!api) {
@@ -411,7 +423,7 @@ app.delete('/api/catalog/:id', (req, res) => {
   }
 });
 
-app.post('/api/catalog/validate-spec', async (req, res) => {
+app.post('/api/catalog/validate-spec', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
   const { specText, specUrl } = req.body;
   try {
     let content = specText || '';
@@ -477,7 +489,7 @@ app.post('/api/catalog/validate-spec', async (req, res) => {
   }
 });
 
-app.post('/api/catalog', (req, res) => {
+app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => {
   const {
     name,
     owning_mda_id,
@@ -502,6 +514,9 @@ app.post('/api/catalog', (req, res) => {
 
   if (!name || !owning_mda_id || !openapi_spec) {
     return res.status(400).json({ error: 'Missing mandatory fields: name, owning_mda_id, and openapi_spec are required.' });
+  }
+  if (req.user?.role === 'api_owner' && req.user.mda_id !== owning_mda_id) {
+    return res.status(403).json({ error: 'API owners can only register APIs for their approved MDA.', code: 'MDA_IMPERSONATION' });
   }
 
   const id = `api-reg-${crypto.randomUUID()}`;
@@ -593,16 +608,16 @@ app.post('/api/catalog', (req, res) => {
 });
 
 // Access Management API
-app.use('/api/access', accessRouter);
+app.use('/api/access', accessRouter(db));
 
 // --- SANDBOX APIs ---
-app.use('/api/v1', sandboxMiddleware);
+app.use('/api/v1', sandboxMiddleware(db));
 app.use('/api/v1/identity', identityRouter);
 app.use('/api/v1/tax', taxRouter);
 app.use('/api/v1/business', businessRouter);
 app.use('/api/v1/transport/driving-permit', drivingPermitRouter);
 app.use('/api/v1/service-uganda', compositeRouter);
 
-app.listen(port, () => {
-  console.log(`Backend running at http://localhost:${port}`);
+export const server = app.listen(port, host, () => {
+  console.log(`Backend running at http://${host}:${port}`);
 });

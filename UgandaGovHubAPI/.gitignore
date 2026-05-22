@@ -1,1 +1,4 @@
 backend/data/*.db
+.env
+backend/.env
+frontend/.env

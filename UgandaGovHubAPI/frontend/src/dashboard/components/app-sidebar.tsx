@@ -14,6 +14,7 @@ import { Link } from "react-router-dom"
 import { NavMain } from "@/dashboard/components/nav-main"
 import { NavSecondary } from "@/dashboard/components/nav-secondary"
 import { NavUser } from "@/dashboard/components/nav-user"
+import { useUser } from "@/context/UserContext"
 import {
   Sidebar,
   SidebarContent,
@@ -72,6 +73,13 @@ function SystemHealthIndicator() {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { user } = useUser()
+  const navUser = {
+    name: user?.full_name || "Public Visitor",
+    email: user?.email || "Browse catalog",
+    avatar: "/avatars/shadcn.jpg",
+  }
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="group-data-[collapsible=icon]:items-center">
@@ -101,7 +109,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavSecondary items={data.navSecondary} />
       </SidebarContent>
       <SidebarFooter className="group-data-[collapsible=icon]:items-center">
-        <NavUser user={data.user} />
+        <NavUser user={navUser} />
       </SidebarFooter>
     </Sidebar>
   )

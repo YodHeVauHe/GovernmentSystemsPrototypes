@@ -66,6 +66,21 @@ export function ensureAdminSchema(db: Database.Database) {
   addColumn('api_key_status', "TEXT DEFAULT 'ACTIVE'");
   addColumn('api_key_expires_at', 'TEXT');
   addColumn('api_key_revoked_at', 'TEXT');
+
+  const auditColumns = db.prepare('PRAGMA table_info(audit_logs)').all() as Array<{ name: string }>;
+  if (auditColumns.length > 0) {
+    const auditNames = new Set(auditColumns.map(column => column.name));
+    const addAuditColumn = (name: string, definition: string) => {
+      if (!auditNames.has(name)) {
+        db.exec(`ALTER TABLE audit_logs ADD COLUMN ${name} ${definition}`);
+      }
+    };
+    addAuditColumn('mda_id', 'TEXT');
+    addAuditColumn('api_id', 'TEXT');
+    addAuditColumn('request_id', 'TEXT');
+    addAuditColumn('details', 'TEXT');
+    addAuditColumn('created_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
+  }
 }
 
 export function removeExistingSpecFiles(specPaths: Array<string | null | undefined>) {

@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers } from './auth';
+import { ensureAccountVerificationSchema } from './account-verification';
 
 const dataDir = path.join(__dirname, '../data');
 if (!fs.existsSync(dataDir)) {
@@ -13,6 +15,8 @@ console.log('Initializing database schema...');
 
 // Create tables
 db.exec(`
+  DROP TABLE IF EXISTS sessions;
+  DROP TABLE IF EXISTS users;
   DROP TABLE IF EXISTS audit_logs;
   DROP TABLE IF EXISTS access_requests;
   DROP TABLE IF EXISTS apis;
@@ -77,6 +81,11 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
+
+ensureAuthSchema(db);
+ensureDefaultAdmin(db);
+ensureDemoUsers(db);
+ensureAccountVerificationSchema(db);
 
 console.log('Inserting seed data...');
 
