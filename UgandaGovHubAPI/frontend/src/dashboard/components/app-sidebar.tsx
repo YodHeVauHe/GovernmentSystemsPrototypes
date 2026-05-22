@@ -2,12 +2,14 @@
 
 import * as React from "react"
 import {
+  IconBook2,
   IconCircleCheck,
   IconDashboard,
   IconDatabase,
   IconHelp,
   IconInnerShadowTop,
   IconSettings,
+  IconUsersGroup,
 } from "@tabler/icons-react"
 import { Link } from "react-router-dom"
 
@@ -33,21 +35,31 @@ const data = {
   },
   navMain: [
     {
+      title: "Dashboard",
+      url: "/dashboard",
+      icon: IconDashboard,
+    },
+    {
       title: "API Catalog",
       url: "/",
       icon: IconDatabase,
     },
     {
-      title: "Dashboard",
-      url: "/dashboard",
-      icon: IconDashboard,
+      title: "API Docs",
+      url: "/docs",
+      icon: IconBook2,
     }
   ],
   navSecondary: [
     {
       title: "Settings",
-      url: "#",
+      url: "/account/settings",
       icon: IconSettings,
+    },
+    {
+      title: "Access Groups",
+      url: "/account/settings?tab=privileges",
+      icon: IconUsersGroup,
     },
     {
       title: "Get Help",

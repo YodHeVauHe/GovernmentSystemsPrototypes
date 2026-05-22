@@ -100,7 +100,7 @@ export function AddApiPage() {
 
   const handleRegisterApi = async () => {
     setLoading(true);
-    // Resolve dynamic access override mappings matching Scalar
+    // Resolve dynamic access override mappings for GovHub docs and access policy.
     let finalSecurity = securityClassification;
     let finalApproval = requiredApprovalLevel;
     if (accessLevel === 'Public') {

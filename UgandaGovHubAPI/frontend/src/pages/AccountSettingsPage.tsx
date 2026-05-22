@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   IconBell,
   IconBuildingBank,
@@ -54,8 +55,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export function AccountSettingsPage() {
   const { user, refreshUser } = useUser();
   const { notifications, unreadCount, markAllRead, clearNotifications } = useNotifications();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [account, setAccount] = useState<AccountSnapshot | null>(null);
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'profile');
   const [profileDraft, setProfileDraft] = useState<Record<string, any>>({});
   const [docDraft, setDocDraft] = useState<Record<string, Record<string, string>>>({});
   const [loading, setLoading] = useState(true);
@@ -74,6 +76,11 @@ export function AccountSettingsPage() {
   useEffect(() => {
     loadAccount();
   }, []);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab) setActiveTab(tab);
+  }, [searchParams]);
 
   const documentTypes = useMemo(() => new Set(account?.documents.map(document => document.type) || []), [account]);
 
@@ -159,7 +166,10 @@ export function AccountSettingsPage() {
           {tabs.map(([id, Icon, label]) => (
             <button
               key={id}
-              onClick={() => setActiveTab(id)}
+              onClick={() => {
+                setActiveTab(id);
+                setSearchParams(id === 'profile' ? {} : { tab: id });
+              }}
               className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm ${
                 activeTab === id ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
               }`}

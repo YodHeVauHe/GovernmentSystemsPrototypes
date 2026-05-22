@@ -33,6 +33,8 @@ export function SiteHeader() {
   if (location.pathname === "/dashboard") title = "Dashboard"
   else if (location.pathname === "/catalog/add") title = "Add API"
   else if (location.pathname.startsWith("/api/")) title = "API Details"
+  else if (location.pathname.startsWith("/docs/")) title = "API Docs"
+  else if (location.pathname === "/docs") title = "API Docs"
 
   const updateCatalogSearch = (value: string) => {
     const nextParams = new URLSearchParams(searchParams)

@@ -13,6 +13,8 @@ import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { AccountStatusPage } from './pages/AccountStatusPage';
 import { AccountSettingsPage } from './pages/AccountSettingsPage';
+import { DocsPage } from './pages/DocsPage';
+import { ApiDocsPage } from './pages/ApiDocsPage';
 
 function RouteLoadingBar() {
   const location = useLocation();
@@ -66,6 +68,7 @@ function AppShell() {
   const location = useLocation();
   const { loading, isAuthenticated, isApproved } = useUser();
   const authPage = ['/login', '/signup', '/account-status'].includes(location.pathname);
+  const publicDocsPage = location.pathname === '/docs' || location.pathname.startsWith('/docs/');
 
   if (authPage) {
     return (
@@ -81,11 +84,11 @@ function AppShell() {
     return <div className="flex min-h-dvh items-center justify-center bg-[#181818] text-sm text-[#8b8b8b]">Loading...</div>;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !publicDocsPage) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  if (!isApproved && location.pathname !== "/account/settings") {
+  if (!isApproved && location.pathname !== "/account/settings" && !publicDocsPage) {
     return <Navigate to="/account-status" replace />;
   }
 
@@ -107,6 +110,8 @@ function AppShell() {
           <div className="flex-1 min-h-0 overflow-hidden">
             <Routes>
               <Route path="/" element={<Catalog />} />
+              <Route path="/docs" element={<DocsPage />} />
+              <Route path="/docs/:apiId" element={<ApiDocsPage />} />
               <Route path="/catalog/add" element={<ProtectedRoute><AddApiPage /></ProtectedRoute>} />
               <Route path="/api/:id" element={<ApiDetail />} />
               <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />

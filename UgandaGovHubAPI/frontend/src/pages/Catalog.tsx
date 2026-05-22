@@ -26,7 +26,8 @@ import {
   IconUpload,
   IconCode,
   IconLoader,
-  IconCheck
+  IconCheck,
+  IconExternalLink
 } from '@tabler/icons-react';
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -232,6 +233,7 @@ function AdminApiEditorModal({
     contact_office: api.contact_office || '',
     technical_owner: api.technical_owner || '',
     sla_target: api.sla_target || '',
+    docs_visibility: api.docs_visibility || '',
   });
   const [specText, setSpecText] = useState(JSON.stringify(spec, null, 2));
   const [saving, setSaving] = useState(false);
@@ -343,6 +345,18 @@ function AdminApiEditorModal({
             <div>
               <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">SLA Target</label>
               <input value={form.sla_target} onChange={e => updateField('sla_target', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]" />
+            </div>
+            <div>
+              <label className="block text-[11px] uppercase font-mono text-[#8b8b8b] mb-1.5">Docs Visibility</label>
+              <select value={form.docs_visibility} onChange={e => updateField('docs_visibility', e.target.value)} className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#2e2e2e] text-white text-[13px]">
+                <option value="">Default from classification</option>
+                <option value="public">Public</option>
+                <option value="authenticated">Approved users</option>
+                <option value="restricted">Restricted access groups</option>
+              </select>
+              <p className="mt-1.5 text-[11px] leading-4 text-[#8b8b8b]">
+                Controls whether `/docs/{api.id}` is public, approved-user only, or restricted to privileged access groups.
+              </p>
             </div>
           </div>
 
@@ -512,7 +526,7 @@ function PublishVersionModal({
                 />
                 <IconUpload className="mb-2 h-8 w-8 text-[#8b8b8b]" />
                 <span className="text-[13px] font-medium text-white">Drop YAML/JSON here or choose a file</span>
-                <span className="mt-1 text-[11px] text-[#8b8b8b]">Scalar-style source import, validated before publishing</span>
+                <span className="mt-1 text-[11px] text-[#8b8b8b]">OpenAPI source import, validated before publishing</span>
               </label>
               {loadedFileName && (
                 <div className="mt-2 flex items-center gap-1.5 rounded-md border border-[#2e2e2e] bg-[#141414] p-2 text-[11px] font-mono text-[#3ecf8e]">
@@ -1136,7 +1150,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
     return '';
   }, [apiKeyOption, approvedRequests, customApiKey]);
 
-  // Auto-generated default headers (like Scalar's defaultHeaders prop)
+  // Auto-generated default headers for the sandbox request builder.
   const autoHeaders = useMemo((): SandboxParameterRow[] => {
     const rows: SandboxParameterRow[] = [
       {
@@ -1780,7 +1794,7 @@ function EndpointBlock({ ep, spec }: { ep: any, spec: any }) {
         )}
       </div>
 
-      {/* Right Column: Code & Responses (Scalar Style) */}
+      {/* Right Column: Code & Responses */}
       <div className="w-full lg:w-[480px] xl:w-[540px] flex flex-col gap-4 flex-shrink-0 sticky top-6">
         {/* Request Box */}
         <div className="rounded-[8px] border border-[#2e2e2e] bg-[#141414] overflow-hidden shadow-lg">
@@ -2093,7 +2107,7 @@ export function ApiDetail() {
           </Link>
           
           <div className="flex items-center gap-3">
-            {role === 'admin' && (
+            {(role === 'admin' || role === 'api_owner') && (
               <>
                 <button
                   type="button"
@@ -2112,6 +2126,10 @@ export function ApiDetail() {
                   <IconEdit className="w-4 h-4 text-[#8b8b8b]" />
                   Edit API
                 </button>
+              </>
+            )}
+            {role === 'admin' && (
+              <>
                 <button
                   type="button"
                   onClick={() => setIsDeleteOpen(true)}
@@ -2129,6 +2147,12 @@ export function ApiDetail() {
             >
               <IconDownload className="w-4 h-4 text-[#8b8b8b]" /> Download Spec
             </a>
+            <Link
+              to={`/docs/${api.id}`}
+              className="h-[30px] px-3 flex items-center gap-2 border border-[#2e2e2e] bg-[#1c1c1c] hover:bg-[#2e2e2e] rounded-[6px] text-[12.5px] font-medium text-[#ededed] transition-colors"
+            >
+              <IconExternalLink className="w-4 h-4 text-[#8b8b8b]" /> API Docs
+            </Link>
             <button onClick={() => setIsModalOpen(true)} className="h-[30px] px-3 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-[6px] text-[12.5px] transition-colors">
               Request Access
             </button>
@@ -2374,7 +2398,7 @@ export function ApiDetail() {
                 </div>
                 <h3 className="text-[16px] font-semibold text-white">Launch Sandbox Client</h3>
                 <p className="mt-2 max-w-xl text-[13px] leading-6 text-[#8b8b8b]">
-                  The simulator opens as a bottom popout like Scalar’s API client, keeping the request builder and response console in view.
+                  The simulator opens as a bottom popout, keeping the request builder and response console in view.
                 </p>
                 <button
                   type="button"
