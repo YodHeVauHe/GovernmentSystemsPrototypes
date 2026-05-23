@@ -73,7 +73,7 @@ function sensitivityBadgeClass(value?: string | null) {
 }
 
 function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void }) {
-  const { mdaId, mdas } = useUser();
+  const { user, mdaId, mdas } = useUser();
   const { addNotification } = useNotifications();
   const [purpose, setPurpose] = useState('');
   const [legalBasis, setLegalBasis] = useState('');
@@ -108,7 +108,7 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         api_id: api.id,
-        consumer_mda_id: mdaId,
+        consumer_mda_id: mdaId || null,
         purpose,
         requested_fields: selectedFields.join(', '),
         volume_tier: volumeTier,
@@ -124,10 +124,11 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
       return body;
     })
     .then(() => {
+      const requesterName = requestingMda?.shortName || user?.requested_organization || user?.full_name || 'Your account';
       addNotification({
         type: 'access',
         title: 'Access request submitted',
-        message: `${requestingMda?.shortName || 'Your agency'} requested access to ${api.name}.`,
+        message: `${requesterName} requested access to ${api.name}.`,
       });
       setStatus('success');
     })
@@ -140,6 +141,7 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
   };
 
   const requestingMda = mdas.find(m => m.id === mdaId);
+  const requesterLabel = requestingMda ? `${requestingMda.name} (${requestingMda.shortName})` : user?.requested_organization || user?.full_name || 'your account';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
@@ -148,7 +150,7 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
           <div>
             <h2 className="text-[16px] font-medium text-white">Request API Access</h2>
             <p className="text-[12px] text-[#8b8b8b] mt-0.5">
-              Requesting access as <span className="text-[#3ecf8e] font-semibold">{requestingMda?.name} ({requestingMda?.shortName})</span>
+              Requesting access as <span className="text-[#3ecf8e] font-semibold">{requesterLabel}</span>
             </p>
           </div>
           <button onClick={onClose} className="text-[#8b8b8b] hover:text-white transition-colors">
@@ -1126,7 +1128,7 @@ function getServerBasePath(spec: any, apiId: string) {
 }
 
 function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: any[], spec: any }) {
-  const { mdaId } = useUser();
+  const { user, mdaId } = useUser();
   const [approvedRequests, setApprovedRequests] = useState<any[]>([]);
   const [apiKeyOption, setApiKeyOption] = useState<'approved' | 'custom' | 'none'>('approved');
   const [customApiKey, setCustomApiKey] = useState('');
@@ -1148,7 +1150,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
         // Filter approved for active representing MDA and current API
         const approved = data.filter((r: any) => 
           r.api_id === api.id &&
-          r.consumer_mda_id === mdaId &&
+          (mdaId ? r.consumer_mda_id === mdaId : r.consumer_user_id === user?.id) &&
           r.status === 'APPROVED' &&
           r.api_key &&
           (r.api_key_status || 'ACTIVE') === 'ACTIVE' &&
@@ -1157,7 +1159,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
         setApprovedRequests(approved);
       })
       .catch(err => console.error(err));
-  }, [api.id, mdaId]);
+  }, [api.id, mdaId, user?.id]);
 
   useEffect(() => {
     fetchApprovedKeys();

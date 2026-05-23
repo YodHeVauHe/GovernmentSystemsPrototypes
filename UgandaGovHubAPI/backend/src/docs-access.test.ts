@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import {
+  canDownloadOpenApiAsset,
   canViewApiDocs,
   ensureDocsSchema,
   listVisibleDocsApis,
@@ -33,7 +34,9 @@ db.exec(`
 
   CREATE TABLE access_requests (
     id TEXT PRIMARY KEY,
-    consumer_mda_id TEXT NOT NULL,
+    consumer_mda_id TEXT,
+    consumer_user_id TEXT,
+    consumer_type TEXT,
     api_id TEXT NOT NULL,
     status TEXT,
     api_key TEXT,
@@ -67,11 +70,17 @@ db.prepare(`
 
 db.prepare(`
   INSERT INTO access_requests (
-    id, consumer_mda_id, api_id, status, api_key, api_key_status, api_key_expires_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    id, consumer_mda_id, consumer_type, api_id, status, api_key, api_key_status, api_key_expires_at
+  ) VALUES (?, ?, 'mda', ?, ?, ?, ?, ?)
 `).run('req-approved', 'mda-06', 'api-restricted', 'APPROVED', 'govhub_test_key', 'ACTIVE', null);
+db.prepare(`
+  INSERT INTO access_requests (
+    id, consumer_user_id, consumer_type, api_id, status, api_key, api_key_status, api_key_expires_at
+  ) VALUES (?, ?, 'user', ?, ?, ?, ?, ?)
+`).run('req-public-approved', 'usr-public', 'api-restricted', 'APPROVED', 'govhub_test_public_key', 'ACTIVE', null);
 
 const developer = { id: 'usr-dev', status: 'APPROVED' as const, role: 'developer' as const, mda_id: 'mda-06' };
+const publicDeveloper = { id: 'usr-public', status: 'APPROVED' as const, role: 'developer' as const, mda_id: null };
 const otherDeveloper = { id: 'usr-other', status: 'APPROVED' as const, role: 'developer' as const, mda_id: 'mda-04' };
 const pendingDeveloper = { id: 'usr-pending', status: 'PENDING_REVIEW' as const, role: null, mda_id: null };
 const owner = { id: 'usr-owner', status: 'APPROVED' as const, role: 'api_owner' as const, mda_id: 'mda-01' };
@@ -92,11 +101,20 @@ assert.deepEqual(canViewApiDocs(db, admin, 'api-restricted'), { allowed: true, v
 assert.deepEqual(canViewApiDocs(db, reviewer, 'api-restricted'), { allowed: true, visibility: 'restricted' });
 assert.deepEqual(canViewApiDocs(db, owner, 'api-restricted'), { allowed: true, visibility: 'restricted' });
 assert.deepEqual(canViewApiDocs(db, developer, 'api-restricted'), { allowed: true, visibility: 'restricted' });
+assert.deepEqual(canViewApiDocs(db, publicDeveloper, 'api-restricted'), { allowed: true, visibility: 'restricted' });
 assert.equal(deniedCode(canViewApiDocs(db, otherDeveloper, 'api-restricted')), 'FORBIDDEN');
 assert.equal(deniedCode(canViewApiDocs(db, developer, 'missing-api')), 'NOT_FOUND');
 
+assert.equal(canDownloadOpenApiAsset(db, null, '/openapi/public.yaml').allowed, true);
+assert.equal(deniedCode(canDownloadOpenApiAsset(db, null, '/openapi/restricted.yaml')), 'UNAUTHENTICATED');
+assert.equal(canDownloadOpenApiAsset(db, developer, '/openapi/restricted.yaml').allowed, true);
+assert.equal(canDownloadOpenApiAsset(db, publicDeveloper, '/openapi/restricted.yaml').allowed, true);
+assert.equal(deniedCode(canDownloadOpenApiAsset(db, otherDeveloper, '/openapi/restricted.yaml')), 'FORBIDDEN');
+assert.equal(deniedCode(canDownloadOpenApiAsset(db, admin, '/openapi/missing.yaml')), 'NOT_FOUND');
+
 assert.deepEqual(listVisibleDocsApis(db, null).map(api => api.id), ['api-public']);
 assert.deepEqual(listVisibleDocsApis(db, developer).map(api => api.id), ['api-auth', 'api-public', 'api-restricted']);
+assert.deepEqual(listVisibleDocsApis(db, publicDeveloper).map(api => api.id), ['api-auth', 'api-public', 'api-restricted']);
 assert.deepEqual(listVisibleDocsApis(db, otherDeveloper).map(api => api.id), ['api-auth', 'api-public']);
 assert.deepEqual(listVisibleDocsApis(db, admin).map(api => api.id), ['api-auth', 'api-public', 'api-restricted']);
 

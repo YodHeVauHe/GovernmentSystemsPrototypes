@@ -2,3 +2,9 @@ backend/data/*.db
 .env
 backend/.env
 frontend/.env
+
+# Generated knowledge graph output
+graphify-out/
+.graphify/
+.agents/
+.codex/

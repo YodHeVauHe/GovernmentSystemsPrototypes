@@ -19,6 +19,8 @@ import {
 import { 
   IconShield, 
   IconKey, 
+  IconList,
+  IconGridDots,
   IconListDetails, 
   IconGridPattern, 
   IconChartBar, 
@@ -51,6 +53,32 @@ function toDateTimeLocalValue(value?: string) {
 
 function fromDateTimeLocalValue(value: string) {
   return value ? new Date(value).toISOString() : undefined;
+}
+
+function formatRemainingDuration(value?: string | null) {
+  if (!value) return '';
+  const expiresAt = new Date(value).getTime();
+  if (Number.isNaN(expiresAt)) return '';
+
+  const diffMs = expiresAt - Date.now();
+  if (diffMs <= 0) return 'expired';
+
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+  const days = Math.ceil(diffMs / dayMs);
+  if (days >= 1) return `${days}d`;
+
+  const hours = Math.ceil(diffMs / hourMs);
+  if (hours >= 1) return `${hours}h`;
+
+  return `${Math.ceil(diffMs / minuteMs)}m`;
+}
+
+function formatTokenPreview(value?: string | null) {
+  if (!value) return '';
+  if (value.length <= 24) return value;
+  return `${value.slice(0, 14)}...${value.slice(-8)}`;
 }
 
 type TrafficBucket = {
@@ -360,7 +388,7 @@ async function fetchDashboardJson(path: string) {
 
 export default function DashboardPage() {
   const [searchParams] = useSearchParams();
-  const { role, mdaId, mdas } = useUser();
+  const { user, role, mdaId, mdas } = useUser();
   const { addNotification } = useNotifications();
   const [requests, setRequests] = useState<any[]>([]);
   const [accountRequests, setAccountRequests] = useState<any[]>([]);
@@ -375,6 +403,7 @@ export default function DashboardPage() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [filterMda, setFilterMda] = useState<string>('ALL');
   const [accountStatusFilter, setAccountStatusFilter] = useState<string>('ALL');
+  const [accountViewMode, setAccountViewMode] = useState<'list' | 'grid'>('list');
   const [timeRange, setTimeRange] = useState('7d');
   const [keyExpiryInputs, setKeyExpiryInputs] = useState<Record<string, string>>({});
   const [dashboardLoading, setDashboardLoading] = useState(true);
@@ -388,9 +417,10 @@ export default function DashboardPage() {
     }
 
     const canViewOversight = role === 'admin' || role === 'reviewer';
+    const canViewAnalytics = canViewOversight || role === 'developer';
     Promise.all([
       fetchDashboardJson('/api/access'),
-      canViewOversight ? fetchDashboardJson('/api/access/audit-logs') : Promise.resolve([]),
+      canViewAnalytics ? fetchDashboardJson('/api/access/audit-logs') : Promise.resolve([]),
       canViewOversight ? fetchDashboardJson('/api/access/matrix') : Promise.resolve([]),
       role === 'admin' ? fetchDashboardJson('/api/admin/users') : Promise.resolve({ users: [] }),
     ])
@@ -705,10 +735,13 @@ export default function DashboardPage() {
   // Admin sees all
   // Developer sees their own requests
   const currentMda = mdas.find(m => m.id === mdaId);
-  const activeCredentialRequests = requests.filter(r => r.consumer_mda_id === mdaId && r.status === 'APPROVED' && r.api_key && (r.api_key_status || 'ACTIVE') === 'ACTIVE');
+  const isCurrentConsumerRequest = (request: any) => (
+    mdaId ? request.consumer_mda_id === mdaId : request.consumer_user_id === user?.id
+  );
+  const activeCredentialRequests = requests.filter(r => isCurrentConsumerRequest(r) && r.status === 'APPROVED' && r.api_key && (r.api_key_status || 'ACTIVE') === 'ACTIVE');
   const visibleRequests = requests.filter(req => {
     if (role === 'developer') {
-      return req.consumer_mda_id === mdaId;
+      return isCurrentConsumerRequest(req);
     }
     if (role === 'api_owner') {
       // Find APIs that belong to the active owner's MDA
@@ -922,7 +955,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {(role === 'reviewer' || role === 'admin') && (
+        {(role === 'developer' || role === 'reviewer' || role === 'admin') && (
           <button
             onClick={() => setActiveTab('analytics')}
             className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
@@ -1105,42 +1138,145 @@ export default function DashboardPage() {
         {!dashboardLoading && !dashboardError && activeTab === 'accounts' && role === 'admin' && (
           <div className="flex h-full min-h-0 flex-col gap-4">
             <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
-              <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
+              <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
                   <h2 className="text-[15px] font-semibold text-white">Accounts</h2>
-                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Review every account, update access, change status, request more information, or delete accounts when required.</p>
+                  <p className="mt-0.5 max-w-[520px] text-[12px] leading-5 text-[#8b8b8b]">Review every account, update access, change status, request more information, or delete accounts when required.</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-1 rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-1">
-                  {[
-                    ['ALL', 'All'],
-                    ['PENDING_REVIEW', 'Pending'],
-                    ['APPROVED', 'Approved'],
-                    ['REJECTED', 'Rejected'],
-                    ['SUSPENDED', 'Suspended'],
-                  ].map(([value, label]) => {
-                    const count = value === 'ALL' ? accountRequests.length : accountStatusCounts[value] || 0;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setAccountStatusFilter(value)}
-                        className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors ${
-                          accountStatusFilter === value ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
-                        }`}
-                      >
-                        {label}
-                        {count > 0 && (
-                          <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                            value === 'PENDING_REVIEW' ? 'bg-orange-500 text-white' : 'bg-[#2e2e2e] text-[#b5b5b5]'
-                          }`}>
-                            {count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+                  <div className="flex flex-wrap items-center gap-1 rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-1">
+                    {[
+                      ['ALL', 'All'],
+                      ['PENDING_REVIEW', 'Pending'],
+                      ['APPROVED', 'Approved'],
+                      ['REJECTED', 'Rejected'],
+                      ['SUSPENDED', 'Suspended'],
+                    ].map(([value, label]) => {
+                      const count = value === 'ALL' ? accountRequests.length : accountStatusCounts[value] || 0;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setAccountStatusFilter(value)}
+                          className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors ${
+                            accountStatusFilter === value ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
+                          }`}
+                        >
+                          {label}
+                          {count > 0 && (
+                            <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                              value === 'PENDING_REVIEW' ? 'bg-orange-500 text-white' : 'bg-[#2e2e2e] text-[#b5b5b5]'
+                            }`}>
+                              {count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-1 rounded-lg border border-[#2e2e2e] bg-[#141414] p-1">
+                    <button
+                      type="button"
+                      aria-label="Account card view"
+                      onClick={() => setAccountViewMode('grid')}
+                      className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                        accountViewMode === 'grid' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
+                      }`}
+                    >
+                      <IconGridDots className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Account list view"
+                      onClick={() => setAccountViewMode('list')}
+                      className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                        accountViewMode === 'list' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
+                      }`}
+                    >
+                      <IconList className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
+              {accountViewMode === 'grid' ? (
+                <div className="min-h-0 flex-1 overflow-auto p-4">
+                  {filteredAccountRequests.length === 0 ? (
+                    <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-dashed border-[#2e2e2e] bg-[#141414] px-4 text-center text-[13px] text-[#8b8b8b]">
+                      No accounts match this filter.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      {filteredAccountRequests.map(account => {
+                        const selectedRole = accountRoleInputs[account.id] || account.role || account.requested_role || 'developer';
+                        const needsMda = approvalRequiresMda(account.account_type, selectedRole);
+                        const selectedMda = accountMdaInputs[account.id] || account.mda_id || account.requested_mda_id || (needsMda ? mdas[0]?.id : '') || '';
+                        const primaryActionLabel =
+                          accountReviewing === account.id ? 'Saving...' :
+                          account.status === 'APPROVED' ? 'Update' :
+                          account.status === 'SUSPENDED' || account.status === 'REJECTED' ? 'Restore' :
+                          'Approve';
+
+                        return (
+                          <div key={account.id} className="flex min-h-[236px] flex-col rounded-lg border border-[#2e2e2e] bg-[#181818] p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-[14px] font-semibold text-white" title={account.full_name}>{account.full_name}</div>
+                                <div className="mt-0.5 truncate text-[12px] text-[#8b8b8b]" title={account.email}>{account.email}</div>
+                              </div>
+                              <AccountStatusBadge status={account.status} />
+                            </div>
+                            <div className="mt-4 grid grid-cols-2 gap-3 text-[12px]">
+                              <div className="min-w-0">
+                                <div className="font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Account Type</div>
+                                <div className="mt-1 truncate capitalize text-[#ededed]" title={String(account.account_type || '').replace(/_/g, ' ')}>{String(account.account_type || '').replace(/_/g, ' ')}</div>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Organization</div>
+                                <div className="mt-1 truncate text-[#ededed]" title={account.requested_organization}>{account.requested_organization}</div>
+                              </div>
+                              <div className="col-span-2 min-w-0">
+                                <div className="font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Purpose</div>
+                                <div className="mt-1 line-clamp-2 text-[#b5b5b5]" title={account.requested_purpose}>{account.requested_purpose}</div>
+                              </div>
+                            </div>
+                            <div className="mt-auto grid grid-cols-2 gap-3 border-t border-[#2e2e2e] pt-4">
+                              <select value={selectedRole} onChange={event => setAccountRoleInputs(current => ({ ...current, [account.id]: event.target.value }))} className="h-[32px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none focus:border-[#444]">
+                                <option value="developer">Developer</option>
+                                <option value="api_owner">API Owner</option>
+                                <option value="reviewer">Reviewer</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                              <select value={selectedMda} disabled={!needsMda} onChange={event => setAccountMdaInputs(current => ({ ...current, [account.id]: event.target.value }))} className="h-[32px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none focus:border-[#444] disabled:opacity-40">
+                                {!needsMda && <option value="">Not applicable</option>}
+                                {mdas.map(mda => <option key={mda.id} value={mda.id}>{mda.shortName}</option>)}
+                              </select>
+                              <button type="button" onClick={() => handleApproveAccount(account)} disabled={accountReviewing === account.id} className="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:opacity-50">
+                                <IconCircleCheck className="h-3.5 w-3.5" />
+                                {primaryActionLabel}
+                              </button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button type="button" disabled={accountReviewing === account.id} className="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-md border border-[#2e2e2e] px-2.5 text-[12px] font-semibold text-[#ededed] transition-colors hover:bg-[#2e2e2e] disabled:opacity-50">
+                                    <IconDotsVertical className="h-4 w-4" />
+                                    More
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-48 border-[#2e2e2e] bg-[#1c1c1c] text-[#ededed]">
+                                  <DropdownMenuItem onClick={() => handleNeedsInfoAccount(account)} className="flex cursor-pointer items-center gap-2 text-[12px] focus:bg-[#2e2e2e] focus:text-white"><IconClock className="h-3.5 w-3.5" />Needs information</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleRejectAccount(account)} className="flex cursor-pointer items-center gap-2 text-[12px] text-orange-300 focus:bg-orange-400/10 focus:text-orange-200"><IconX className="h-3.5 w-3.5" />Reject account</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleSuspendAccount(account)} className="flex cursor-pointer items-center gap-2 text-[12px] text-red-300 focus:bg-red-400/10 focus:text-red-200"><IconBan className="h-3.5 w-3.5" />Suspend account</DropdownMenuItem>
+                                  <DropdownMenuSeparator className="bg-[#2e2e2e]" />
+                                  <DropdownMenuItem onClick={() => handleDeleteAccount(account)} className="flex cursor-pointer items-center gap-2 text-[12px] text-red-300 focus:bg-red-400/10 focus:text-red-200"><IconTrash className="h-3.5 w-3.5" />Delete permanently</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
               <div className="min-h-0 flex-1 overflow-auto">
                 <Table className="min-w-[1120px]">
                   <TableHeader>
@@ -1269,6 +1405,7 @@ export default function DashboardPage() {
                   </TableBody>
                 </Table>
               </div>
+              )}
             </div>
           </div>
         )}
@@ -1282,14 +1419,14 @@ export default function DashboardPage() {
                 <p className="text-[12px] text-[#8b8b8b] mt-0.5">Use these keys inside headers (<code>X-GovHub-API-Key</code>) to query mock registries.</p>
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
-                    <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Authorized API</TableHead>
-                    <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Purpose</TableHead>
-                    <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Status</TableHead>
-                    <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Sandbox Token</TableHead>
-                    <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4 text-right">Actions</TableHead>
+                    <TableHead className="h-9 w-[22%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Authorized API</TableHead>
+                    <TableHead className="h-9 w-[18%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Purpose</TableHead>
+                    <TableHead className="h-9 w-[16%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Status</TableHead>
+                    <TableHead className="h-9 w-[34%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Sandbox Token</TableHead>
+                    <TableHead className="h-9 w-[10%] px-4 text-right text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1309,16 +1446,19 @@ export default function DashboardPage() {
                         </span>
                         {req.api_key_expires_at && (
                           <div className="mt-1 text-[11px] text-[#8b8b8b]">
-                            Expires {new Date(req.api_key_expires_at).toLocaleString()}
+                            Expires in {formatRemainingDuration(req.api_key_expires_at)}
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="py-3.5 px-4 font-mono text-[12.5px] text-[#3ecf8e]">
-                        <div className="flex items-center gap-2">
-                          <span>{req.api_key}</span>
+                      <TableCell className="max-w-0 whitespace-normal px-4 py-3.5 font-mono text-[12.5px] text-[#3ecf8e]">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="block min-w-0 max-w-full truncate leading-5" title={req.api_key}>
+                            {formatTokenPreview(req.api_key)}
+                          </span>
                           <button
                             onClick={() => copyToClipboard(req.api_key)}
-                            className="text-[#8b8b8b] hover:text-white p-1 rounded hover:bg-[#2e2e2e] transition-colors"
+                            className="shrink-0 rounded p-1 text-[#8b8b8b] transition-colors hover:bg-[#2e2e2e] hover:text-white"
+                            title="Copy full token"
                           >
                             <IconCopy className="w-3.5 h-3.5" />
                           </button>

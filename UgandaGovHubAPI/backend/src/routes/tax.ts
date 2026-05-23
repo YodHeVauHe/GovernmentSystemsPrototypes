@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
+import { generatePublicId } from '../ids';
 
 export const taxRouter = Router();
 
@@ -16,7 +17,7 @@ taxRouter.post('/tin-status', (req, res) => {
       status: 'COMPLIANT',
       issuing_authority: 'Uganda Revenue Authority',
       valid_until: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-      reference_id: `cl-${Date.now()}`
+      reference_id: generatePublicId('cl')
     });
   }
 
@@ -24,7 +25,7 @@ taxRouter.post('/tin-status', (req, res) => {
     status: 'NON_COMPLIANT',
     issuing_authority: 'Uganda Revenue Authority',
     remarks: 'Outstanding returns or arrears detected.',
-    reference_id: `cl-${Date.now()}`
+    reference_id: generatePublicId('cl')
   });
 });
 

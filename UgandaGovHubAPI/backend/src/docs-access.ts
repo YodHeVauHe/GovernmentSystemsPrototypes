@@ -37,18 +37,19 @@ export function resolveDocsVisibility(api: Pick<ApiVisibilityRow, 'docs_visibili
 }
 
 function hasApprovedConsumerAccess(db: Database.Database, user: DocsAccessUser, apiId: string) {
-  if (!user.mda_id) return false;
+  const consumerColumn = user.mda_id ? 'consumer_mda_id' : 'consumer_user_id';
+  const consumerId = user.mda_id || user.id;
   const record = db.prepare(`
     SELECT id
     FROM access_requests
     WHERE api_id = ?
-      AND consumer_mda_id = ?
+      AND ${consumerColumn} = ?
       AND status = 'APPROVED'
       AND api_key IS NOT NULL
       AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
       AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
     LIMIT 1
-  `).get(apiId, user.mda_id, new Date().toISOString());
+  `).get(apiId, consumerId, new Date().toISOString());
   return Boolean(record);
 }
 
@@ -89,6 +90,32 @@ export function canViewApiDocs(db: Database.Database, user: DocsAccessUser | nul
     message: 'This API documentation is restricted to approved access groups.',
     visibility,
   };
+}
+
+function normalizedOpenApiPath(assetPath: string) {
+  const normalized = assetPath.startsWith('/openapi/') ? assetPath : `/openapi/${assetPath.replace(/^\/+/, '')}`;
+  if (!normalized.startsWith('/openapi/') || normalized.includes('..')) return null;
+  return normalized;
+}
+
+export function canDownloadOpenApiAsset(db: Database.Database, user: DocsAccessUser | null | undefined, assetPath: string): DocsDecision {
+  const openapiPath = normalizedOpenApiPath(assetPath);
+  if (!openapiPath) {
+    return { allowed: false, code: 'NOT_FOUND', message: 'API documentation was not found.' };
+  }
+
+  let api = db.prepare('SELECT id FROM apis WHERE openapi_spec_path = ?').get(openapiPath) as { id: string } | undefined;
+  if (!api) {
+    try {
+      api = db.prepare('SELECT api_id as id FROM api_versions WHERE openapi_spec_path = ?').get(openapiPath) as { id: string } | undefined;
+    } catch {
+      api = undefined;
+    }
+  }
+  if (!api) {
+    return { allowed: false, code: 'NOT_FOUND', message: 'API documentation was not found.' };
+  }
+  return canViewApiDocs(db, user, api.id);
 }
 
 export type DocsApiListItem = ApiVisibilityRow & Record<string, unknown> & { docs_visibility: DocsVisibility };

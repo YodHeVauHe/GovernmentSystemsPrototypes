@@ -57,7 +57,9 @@ db.exec(`
 
   CREATE TABLE access_requests (
     id TEXT PRIMARY KEY,
-    consumer_mda_id TEXT NOT NULL,
+    consumer_mda_id TEXT,
+    consumer_user_id TEXT,
+    consumer_type TEXT DEFAULT 'mda',
     api_id TEXT NOT NULL,
     purpose TEXT,
     status TEXT,
@@ -71,6 +73,7 @@ db.exec(`
     environment TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (consumer_mda_id) REFERENCES mdas (id),
+    FOREIGN KEY (consumer_user_id) REFERENCES users (id),
     FOREIGN KEY (api_id) REFERENCES apis (id)
   );
 
@@ -78,6 +81,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     event_type TEXT NOT NULL,
     mda_id TEXT,
+    consumer_user_id TEXT,
     api_id TEXT,
     request_id TEXT,
     details TEXT,

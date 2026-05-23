@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
+import { generatePublicId } from '../ids';
 
 export const identityRouter = Router();
 
@@ -17,7 +18,7 @@ identityRouter.post('/verify-nin', (req, res) => {
       status: 'MATCH',
       confidence_score: 1.0,
       remarks: 'All provided fields matched the registry.',
-      transaction_id: `tx-${Date.now()}`
+      transaction_id: generatePublicId('tx')
     });
   }
 
@@ -26,7 +27,7 @@ identityRouter.post('/verify-nin', (req, res) => {
       status: 'NO_MATCH',
       confidence_score: 0.0,
       remarks: 'NIN not found or details completely mismatched.',
-      transaction_id: `tx-${Date.now()}`
+      transaction_id: generatePublicId('tx')
     });
   }
 
@@ -35,7 +36,7 @@ identityRouter.post('/verify-nin', (req, res) => {
     status: 'PARTIAL_MATCH',
     confidence_score: 0.75,
     remarks: 'Name match fuzzy. Review required.',
-    transaction_id: `tx-${Date.now()}`
+    transaction_id: generatePublicId('tx')
   });
 });
 

@@ -4,6 +4,8 @@ import { IconArrowLeft, IconCheck, IconCircleCheck, IconCode, IconLink, IconLoad
 import { toast } from 'sonner';
 import { useNotifications } from '../context/NotificationContext';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+
 const slugify = (text: string) => {
   return text
     .toString()
@@ -74,7 +76,7 @@ export function AddApiPage() {
     setLoading(true);
     setValidationError('');
     try {
-      const response = await fetch('http://localhost:4000/api/catalog/validate-spec', {
+      const response = await fetch(`${API_BASE}/api/catalog/validate-spec`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -115,7 +117,7 @@ export function AddApiPage() {
     }
 
     try {
-      const response = await fetch('http://localhost:4000/api/catalog', {
+      const response = await fetch(`${API_BASE}/api/catalog`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
