@@ -65,6 +65,22 @@ async function run() {
     assert.equal(signup.body.user.status, 'PENDING_REVIEW');
     assert.equal(signup.body.token, undefined);
 
+    const publicDeveloperSignup = await request(baseUrl, '/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({
+        full_name: 'Sam Civic',
+        email: 'sam@example.com',
+        password: 'StrongPass123!',
+        account_type: 'public_developer',
+        requested_role: 'developer',
+        requested_mda_id: null,
+        requested_organization: 'Independent Civic Developer',
+        requested_purpose: 'Build a public-facing service using approved APIs',
+      }),
+    });
+    assert.equal(publicDeveloperSignup.response.status, 201);
+    assert.equal(publicDeveloperSignup.body.user.requested_mda_id, null);
+
     const login = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email: 'jane@example.go.ug', password: 'StrongPass123!' }),
@@ -95,7 +111,17 @@ async function run() {
       headers: { authorization: `Bearer ${adminLogin.body.token}` },
     });
     assert.equal(users.response.status, 200);
-    assert.equal(users.body.users.length, 1);
+    assert.equal(users.body.users.length, 2);
+
+    const publicDeveloperApproval = await request(baseUrl, `/api/admin/users/${publicDeveloperSignup.body.user.id}/approve`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${adminLogin.body.token}` },
+      body: JSON.stringify({ role: 'developer', mda_id: null }),
+    });
+    assert.equal(publicDeveloperApproval.response.status, 200);
+    assert.equal(publicDeveloperApproval.body.user.status, 'APPROVED');
+    assert.equal(publicDeveloperApproval.body.user.role, 'developer');
+    assert.equal(publicDeveloperApproval.body.user.mda_id, null);
 
     const approval = await request(baseUrl, `/api/admin/users/${signup.body.user.id}/approve`, {
       method: 'POST',

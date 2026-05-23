@@ -29,6 +29,11 @@ function getUserById(db: Database.Database, id: string) {
   return db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any;
 }
 
+function approvalRequiresMda(accountType: string | null | undefined, role: string) {
+  const normalizedAccountType = normalizeAccountType(accountType || '');
+  return role === 'api_owner' || normalizedAccountType === 'government_employee' || normalizedAccountType === 'mda_api_owner';
+}
+
 function validateSignup(body: any) {
   const required = ['full_name', 'email', 'password', 'account_type', 'requested_role', 'requested_organization', 'requested_purpose'];
   for (const field of required) {
@@ -222,19 +227,22 @@ export function adminUsersRouter(db: Database.Database) {
     if (!isUserRole(role)) {
       return res.status(400).json({ error: 'A valid role is required.' });
     }
-    if ((role === 'developer' || role === 'api_owner') && (!mda_id || typeof mda_id !== 'string')) {
-      return res.status(400).json({ error: 'mda_id is required for this role.' });
-    }
 
     const existing = getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
+
+    const needsMda = approvalRequiresMda(existing.account_type, role);
+    const approvedMdaId = needsMda ? mda_id || existing.requested_mda_id || null : null;
+    if (needsMda && (!approvedMdaId || typeof approvedMdaId !== 'string')) {
+      return res.status(400).json({ error: 'mda_id is required for this account type and role.' });
+    }
 
     db.prepare(`
       UPDATE users
       SET status = 'APPROVED', role = ?, mda_id = ?, reviewed_by = ?, reviewed_at = ?,
           rejection_reason = NULL, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(role, mda_id || existing.requested_mda_id || null, req.user!.id, new Date().toISOString(), req.params.id);
+    `).run(role, approvedMdaId, req.user!.id, new Date().toISOString(), req.params.id);
     db.prepare("UPDATE user_profiles SET verification_status = 'verified', review_notes = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?").run(req.params.id);
 
     res.json({ user: sanitizeUser(getUserById(db, req.params.id)) });

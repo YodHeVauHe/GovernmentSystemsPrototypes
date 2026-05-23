@@ -79,6 +79,11 @@ function getAnalyticsStart(range: string) {
   return new Date(Date.now() - hours * 60 * 60 * 1000);
 }
 
+function approvalRequiresMda(accountType: string | null | undefined, role: string) {
+  const normalizedAccountType = accountType === 'government' ? 'government_employee' : accountType;
+  return role === 'api_owner' || normalizedAccountType === 'government_employee' || normalizedAccountType === 'mda_api_owner';
+}
+
 function getTimeRangeLabel(range: string) {
   if (range === '24h') return 'Last 24 Hours';
   if (range === '30d') return 'Last 30 Days';
@@ -434,7 +439,7 @@ export default function DashboardPage() {
   const handleApproveAccount = (user: any) => {
     const nextRole = accountRoleInputs[user.id] || user.requested_role;
     const nextMda = accountMdaInputs[user.id] || user.requested_mda_id || mdas[0]?.id || '';
-    const needsMda = nextRole === 'developer' || nextRole === 'api_owner';
+    const needsMda = approvalRequiresMda(user.account_type, nextRole);
     setAccountReviewing(user.id);
 
     fetch(`${API_BASE}/api/admin/users/${user.id}/approve`, {
@@ -951,20 +956,20 @@ export default function DashboardPage() {
               <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex justify-between items-center">
                 <div>
                   <h2 className="text-[15px] font-semibold text-white">Pending Account Requests</h2>
-                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Review new signup applications, assign role and MDA privileges, then approve or reject access.</p>
+                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Review new signup applications, assign role privileges, and assign MDA privileges only where the account type requires them.</p>
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
-                <Table className="min-w-[1180px]">
+                <Table className="min-w-[1040px]">
                   <TableHeader>
                     <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
-                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Applicant</TableHead>
-                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Account Type</TableHead>
-                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Organization</TableHead>
-                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Purpose</TableHead>
-                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Approve As</TableHead>
-                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Assigned MDA</TableHead>
-                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4 text-right">Action</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Applicant</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Account Type</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Organization</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Purpose</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Approve As</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Assigned MDA</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3 text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -976,30 +981,30 @@ export default function DashboardPage() {
                       </TableRow>
                     ) : accountRequests.map(user => {
                       const selectedRole = accountRoleInputs[user.id] || user.requested_role || 'developer';
-                      const selectedMda = accountMdaInputs[user.id] || user.requested_mda_id || mdas[0]?.id || '';
-                      const needsMda = selectedRole === 'developer' || selectedRole === 'api_owner';
+                      const needsMda = approvalRequiresMda(user.account_type, selectedRole);
+                      const selectedMda = accountMdaInputs[user.id] || user.requested_mda_id || (needsMda ? mdas[0]?.id : '') || '';
 
                       return (
                         <TableRow key={user.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
-                          <TableCell className="py-3.5 px-4">
+                          <TableCell className="py-3.5 px-3">
                             <div className="font-semibold text-[13px] text-[#ededed]">{user.full_name}</div>
                             <div className="mt-0.5 text-[12px] text-[#8b8b8b]">{user.email}</div>
                           </TableCell>
-                          <TableCell className="py-3.5 px-4 text-[13px] text-[#ededed]">
+                          <TableCell className="py-3.5 px-3 text-[13px] text-[#ededed]">
                             <div className="capitalize">{String(user.account_type || '').replace(/_/g, ' ')}</div>
                             <div className="mt-0.5 text-[11px] text-[#8b8b8b]">Requested {user.requested_role}</div>
                           </TableCell>
-                          <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] max-w-[180px] truncate" title={user.requested_organization}>
+                          <TableCell className="py-3.5 px-3 text-[13px] text-[#8b8b8b] max-w-[150px] truncate" title={user.requested_organization}>
                             {user.requested_organization}
                           </TableCell>
-                          <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] max-w-[220px] truncate" title={user.requested_purpose}>
+                          <TableCell className="py-3.5 px-3 text-[13px] text-[#8b8b8b] max-w-[180px] truncate" title={user.requested_purpose}>
                             {user.requested_purpose}
                           </TableCell>
-                          <TableCell className="py-3.5 px-4">
+                          <TableCell className="py-3.5 px-3">
                             <select
                               value={selectedRole}
                               onChange={event => setAccountRoleInputs(current => ({ ...current, [user.id]: event.target.value }))}
-                              className="h-[30px] w-[142px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none focus:border-[#444]"
+                              className="h-[30px] w-[102px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none focus:border-[#444]"
                             >
                               <option value="developer">Developer</option>
                               <option value="api_owner">API Owner</option>
@@ -1007,19 +1012,20 @@ export default function DashboardPage() {
                               <option value="admin">Admin</option>
                             </select>
                           </TableCell>
-                          <TableCell className="py-3.5 px-4">
+                          <TableCell className="py-3.5 px-3">
                             <select
                               value={selectedMda}
                               disabled={!needsMda}
                               onChange={event => setAccountMdaInputs(current => ({ ...current, [user.id]: event.target.value }))}
-                              className="h-[30px] w-[190px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none focus:border-[#444] disabled:opacity-40"
+                              className="h-[30px] w-[96px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none focus:border-[#444] disabled:opacity-40"
                             >
+                              {!needsMda && <option value="">Not applicable</option>}
                               {mdas.map(mda => (
                                 <option key={mda.id} value={mda.id}>{mda.shortName}</option>
                               ))}
                             </select>
                           </TableCell>
-                          <TableCell className="py-3.5 px-4 text-right">
+                          <TableCell className="py-3.5 px-3 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 type="button"
