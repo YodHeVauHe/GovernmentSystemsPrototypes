@@ -15,12 +15,14 @@ import { drivingPermitRouter } from './routes/driving-permit';
 import { compositeRouter } from './routes/composite';
 import { ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
 import { deleteSpecFiles, ensureAdminSchema, removeExistingSpecFiles } from './admin';
-import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers, requireAuth } from './auth';
+import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers, optionalAuth, requireAuth } from './auth';
 import { adminUsersRouter, authRouter } from './routes/auth';
 import { requireApiManager } from './access-control';
 import { ensureAccountVerificationSchema } from './account-verification';
 import { ensureDocsSchema } from './docs-access';
+import { canDownloadOpenApiAsset } from './docs-access';
 import { docsRouter } from './routes/docs';
+import { generatePublicId } from './ids';
 
 dotenv.config();
 
@@ -48,8 +50,15 @@ ensureDemoUsers(db);
 ensureAccountVerificationSchema(db);
 ensureDocsSchema(db);
 
-// Serve static OpenAPI files
-app.use('/openapi', express.static(path.join(__dirname, '../openapi')));
+// Serve static OpenAPI files through the same visibility policy used by /api/docs.
+app.use('/openapi', optionalAuth(db), (req, res, next) => {
+  const decision = canDownloadOpenApiAsset(db, req.user, `/openapi${req.path}`);
+  if (!decision.allowed) {
+    const status = decision.code === 'UNAUTHENTICATED' ? 401 : decision.code === 'NOT_FOUND' ? 404 : 403;
+    return res.status(status).json({ error: decision.message, code: decision.code });
+  }
+  next();
+}, express.static(path.join(__dirname, '../openapi')));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'Uganda GovHub API Mock Sandbox' });
@@ -162,7 +171,7 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
         INSERT INTO audit_logs (id, event_type, api_id, details)
         VALUES (?, ?, ?, ?)
       `).run(
-        `audit-${Date.now()}`,
+        generatePublicId('audit'),
         'API_VERSION_PUBLISHED',
         req.params.id,
         JSON.stringify({ version, make_current: shouldMakeCurrent, endpoints_count: metadata.endpointsCount })
@@ -191,7 +200,7 @@ app.post('/api/catalog/:id/versions/:version/current', requireAuth(db, ['admin',
       db.prepare(`
         INSERT INTO audit_logs (id, event_type, api_id, details)
         VALUES (?, ?, ?, ?)
-      `).run(`audit-${Date.now()}`, 'API_VERSION_PROMOTED', req.params.id, JSON.stringify({ version: req.params.version }));
+      `).run(generatePublicId('audit'), 'API_VERSION_PROMOTED', req.params.id, JSON.stringify({ version: req.params.version }));
     });
 
     transaction();
@@ -216,7 +225,7 @@ app.delete('/api/catalog/:id/versions/:version', requireAuth(db, ['admin', 'api_
     db.prepare(`
       INSERT INTO audit_logs (id, event_type, api_id, details)
       VALUES (?, ?, ?, ?)
-    `).run(`audit-${Date.now()}`, 'API_VERSION_DELETED', req.params.id, JSON.stringify({ version: req.params.version }));
+    `).run(generatePublicId('audit'), 'API_VERSION_DELETED', req.params.id, JSON.stringify({ version: req.params.version }));
 
     res.json({ success: true, version: req.params.version });
   } catch (err: any) {
@@ -226,7 +235,7 @@ app.delete('/api/catalog/:id/versions/:version', requireAuth(db, ['admin', 'api_
 });
 
 // Get parsed OpenAPI spec by API ID
-app.get('/api/catalog/:id/spec', (req, res) => {
+app.get('/api/catalog/:id/spec', optionalAuth(db), (req, res) => {
   try {
     const requestedVersion = typeof req.query.version === 'string' ? req.query.version : null;
     const api = requestedVersion
@@ -234,6 +243,11 @@ app.get('/api/catalog/:id/spec', (req, res) => {
       : db.prepare('SELECT openapi_spec_path FROM apis WHERE id = ?').get(req.params.id) as any;
     if (!api || !api.openapi_spec_path) {
       return res.status(404).json({ error: 'API spec not found' });
+    }
+    const decision = canDownloadOpenApiAsset(db, req.user, api.openapi_spec_path);
+    if (!decision.allowed) {
+      const status = decision.code === 'UNAUTHENTICATED' ? 401 : decision.code === 'NOT_FOUND' ? 404 : 403;
+      return res.status(status).json({ error: decision.message, code: decision.code });
     }
     
     const filePath = path.join(__dirname, '..', api.openapi_spec_path);
@@ -382,7 +396,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
         INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
         VALUES (?, ?, ?, ?, ?)
       `).run(
-        `audit-${Date.now()}`,
+        generatePublicId('audit'),
         'API_UPDATED',
         owning_mda_id ?? existing.owning_mda_id,
         req.params.id,
@@ -419,7 +433,7 @@ app.delete('/api/catalog/:id', requireAuth(db, ['admin']), (req, res) => {
         INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
         VALUES (?, ?, ?, ?, ?)
       `).run(
-        `audit-${Date.now()}`,
+        generatePublicId('audit'),
         'API_DELETED',
         api.owning_mda_id,
         req.params.id,
@@ -599,7 +613,7 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
       INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
       VALUES (?, ?, ?, ?, ?)
     `);
-    const auditId = `audit-${Date.now()}`;
+    const auditId = generatePublicId('audit');
     auditStmt.run(
       auditId,
       'API_REGISTERED',
@@ -630,6 +644,16 @@ app.use('/api/v1/tax', taxRouter);
 app.use('/api/v1/business', businessRouter);
 app.use('/api/v1/transport/driving-permit', drivingPermitRouter);
 app.use('/api/v1/service-uganda', compositeRouter);
+app.use('/api/v1', (req, res) => {
+  res.json({
+    requestId: res.getHeader('X-Correlation-ID'),
+    status: 'ok',
+    sandbox: true,
+    message: 'Dynamic sandbox mock response generated from a registered OpenAPI server path.',
+    path: req.originalUrl,
+    method: req.method,
+  });
+});
 
 export const server = app.listen(port, host, () => {
   console.log(`Backend running at http://${host}:${port}`);

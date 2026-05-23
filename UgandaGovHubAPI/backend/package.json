@@ -9,10 +9,11 @@
     "test:auth": "ts-node src/auth.test.ts",
     "test:auth-routes": "ts-node src/auth-routes.test.ts",
     "test:access-control": "ts-node src/access-control.test.ts",
+    "test:ids": "ts-node src/ids.test.ts",
     "test:account-verification": "ts-node src/account-verification.test.ts",
     "test:versioning": "ts-node src/versioning.test.ts",
     "test:docs-access": "ts-node src/docs-access.test.ts",
-    "test": "npm run test:auth && npm run test:access-control && npm run test:account-verification && npm run test:versioning && npm run test:auth-routes && npm run test:docs-access"
+    "test": "npm run test:auth && npm run test:access-control && npm run test:ids && npm run test:account-verification && npm run test:versioning && npm run test:auth-routes && npm run test:docs-access"
   },
   "keywords": [],
   "author": "",

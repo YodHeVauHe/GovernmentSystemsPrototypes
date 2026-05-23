@@ -1,6 +1,7 @@
 import assert from 'assert/strict';
 import {
   computeApiKeyAccess,
+  resolveSandboxApiId,
   getDefaultApiKeyExpiry,
   normalizeExpiryInput,
   removeExistingSpecFiles,
@@ -65,5 +66,13 @@ assert.deepEqual(
 assert.deepEqual(removeExistingSpecFiles(['/openapi/a.yaml', '/openapi/a.yaml', null, '../bad.yaml']), [
   '/openapi/a.yaml',
 ]);
+
+assert.equal(resolveSandboxApiId('/api/v1/identity/verify-nin'), 'api-nira-01');
+assert.equal(resolveSandboxApiId('/api/v1/registry/status', [
+  { id: 'api-custom-01', sandbox_base_path: '/api/v1/registry' },
+]), 'api-custom-01');
+assert.equal(resolveSandboxApiId('/api/v1/unknown', [
+  { id: 'api-custom-01', sandbox_base_path: '/api/v1/registry' },
+]), null);
 
 console.log('admin tests passed');

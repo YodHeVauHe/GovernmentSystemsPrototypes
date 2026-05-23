@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { logAuditEvent } from '../audit';
+import { generateApiKey, generatePublicId } from '../ids';
 import { normalizeExpiryInput } from '../admin';
 import { requireAuth } from '../auth';
-import { buildAccessRequestList, canReviewAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
+import { buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
 
 export function accessRouter(db: Database.Database) {
 const router = Router();
@@ -21,18 +21,36 @@ router.post('/', requireAuth(db, ['developer', 'admin']), (req, res) => {
   if (!mdaDecision.allowed) {
     return res.status(403).json({ error: mdaDecision.message, code: mdaDecision.code });
   }
+  const apiDecision = canSubmitAccessRequest(db, api_id);
+  if (!apiDecision.allowed) {
+    return res.status(404).json({ error: apiDecision.message, code: apiDecision.code });
+  }
 
-  const id = `req-${Date.now()}`;
+  const id = generatePublicId('req');
   
   try {
     const stmt = db.prepare(`
-      INSERT INTO access_requests (id, consumer_mda_id, api_id, purpose, status, requested_fields, volume_tier, legal_basis, environment) 
-      VALUES (?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
+      INSERT INTO access_requests (
+        id, consumer_mda_id, consumer_user_id, consumer_type, api_id, purpose,
+        status, requested_fields, volume_tier, legal_basis, environment
+      ) 
+      VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
     `);
-    stmt.run(id, mdaDecision.mdaId, api_id, purpose, requested_fields || null, volume_tier || null, legal_basis || null, environment || 'sandbox');
+    stmt.run(
+      id,
+      mdaDecision.mdaId || null,
+      mdaDecision.userId || null,
+      mdaDecision.consumerType || 'mda',
+      api_id,
+      purpose,
+      requested_fields || null,
+      volume_tier || null,
+      legal_basis || null,
+      environment || 'sandbox'
+    );
 
     // Log the audit event
-    logAuditEvent(db, 'ACCESS_REQUESTED', mdaDecision.mdaId!, api_id, id, {
+    logAuditEvent(db, 'ACCESS_REQUESTED', mdaDecision.mdaId || mdaDecision.userId!, api_id, id, {
       purpose,
       requested_fields,
       volume_tier,
@@ -60,7 +78,7 @@ router.get('/', requireAuth(db, ['admin', 'api_owner', 'reviewer', 'developer'])
 router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), (req, res) => {
   const id = String(req.params.id);
   const { api_key_expires_at } = req.body || {};
-  const apiKey = `govhub_test_${crypto.randomBytes(12).toString('hex')}`;
+  const apiKey = generateApiKey();
 
   try {
     const expiresAt = normalizeExpiryInput(api_key_expires_at);
@@ -179,9 +197,9 @@ router.post('/audit-logs', requireAuth(db, ['admin']), (req, res) => {
 });
 
 // Get Audit Logs
-router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer']), (req, res) => {
+router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), (req, res) => {
   try {
-    res.json(listAuditLogs(db));
+    res.json(listAuditLogs(db, req.user!));
   } catch (err: any) {
     console.error(err);
     res.status(500).json({ error: `Failed to fetch audit logs: ${err.message}` });

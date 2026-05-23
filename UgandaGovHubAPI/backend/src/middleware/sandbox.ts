@@ -1,16 +1,37 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
-import { computeApiKeyAccess } from '../admin';
+import fs from 'fs';
+import path from 'path';
+import yaml from 'js-yaml';
+import { computeApiKeyAccess, resolveSandboxApiId, type SandboxApiMapping } from '../admin';
 import { logAuditEvent } from '../audit';
 
-function getApiIdFromPath(url: string): string | null {
-  if (url.includes('/identity')) return 'api-nira-01';
-  if (url.includes('/tax')) return 'api-ura-01';
-  if (url.includes('/business')) return 'api-ursb-01';
-  if (url.includes('/transport/driving-permit')) return 'api-mowt-01';
-  if (url.includes('/service-uganda')) return 'api-moict-01';
-  return null;
+function getDynamicSandboxMappings(db: Database.Database): SandboxApiMapping[] {
+  const rows = db.prepare('SELECT id, openapi_spec_path FROM apis WHERE sandbox_available = 1 AND openapi_spec_path IS NOT NULL').all() as any[];
+  return rows.flatMap(row => {
+    try {
+      const specPath = path.join(__dirname, '../..', String(row.openapi_spec_path).replace(/^\/+/, ''));
+      if (!fs.existsSync(specPath)) return [];
+      const spec = yaml.load(fs.readFileSync(specPath, 'utf8')) as any;
+      const serverUrl = spec?.servers?.[0]?.url;
+      if (!serverUrl) return [];
+      let sandboxPath = '';
+      try {
+        sandboxPath = new URL(serverUrl).pathname;
+      } catch {
+        sandboxPath = serverUrl.startsWith('/') ? serverUrl : '';
+      }
+      sandboxPath = sandboxPath.replace(/\/$/, '');
+      return sandboxPath ? [{ id: row.id, sandbox_base_path: sandboxPath }] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function getApiIdFromPath(db: Database.Database, url: string): string | null {
+  return resolveSandboxApiId(url, getDynamicSandboxMappings(db));
 }
 
 export function sandboxMiddleware(db: Database.Database) {
@@ -33,7 +54,7 @@ export function sandboxMiddleware(db: Database.Database) {
 
   // Enforce API Key
   const apiKey = req.headers['x-govhub-api-key'] as string;
-  const apiId = getApiIdFromPath(req.originalUrl);
+  const apiId = getApiIdFromPath(db, req.originalUrl);
 
   if (!apiKey) {
     logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
@@ -46,7 +67,7 @@ export function sandboxMiddleware(db: Database.Database) {
 
   // Look up API Key in database
   const requestRecord = db.prepare(`
-    SELECT consumer_mda_id, api_id, status, api_key_status, api_key_expires_at, api_key_revoked_at
+    SELECT consumer_mda_id, consumer_user_id, api_id, status, api_key_status, api_key_expires_at, api_key_revoked_at
     FROM access_requests
     WHERE api_key = ?
   `).get(apiKey) as any;
@@ -64,6 +85,7 @@ export function sandboxMiddleware(db: Database.Database) {
   // Enforce endpoint/scope verification
   if (!accessDecision.allowed && accessDecision.code === 'UNAUTHORIZED_ENDPOINT') {
     logAuditEvent(db, 'SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
+      consumer_user_id: requestRecord.consumer_user_id,
       reason: accessDecision.message,
       path: req.originalUrl,
       method: req.method,
@@ -74,6 +96,7 @@ export function sandboxMiddleware(db: Database.Database) {
 
   // Key is valid and authorized
   logAuditEvent(db, 'SANDBOX_CALL_ALLOWED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
+    consumer_user_id: requestRecord.consumer_user_id,
     path: req.originalUrl,
     method: req.method
   });
