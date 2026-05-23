@@ -24,11 +24,31 @@ A Ministry of Health service team needs to determine whether a citizen or suppli
 - **Reviewer:** Represents MoICT governance or compliance review.
 - **Admin:** Represents MoICT platform administration, including API registration and catalog governance.
 
+## Demo Accounts
+
+Use the seeded accounts below for a repeatable local demo:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Platform admin | `admin@ict.go.ug` | `AdminPass123!` |
+| MDA developer | `demo.developer@govhub.go.ug` | `DemoDeveloper123!` |
+| NIRA API owner | `demo.api.owner@nira.go.ug` | `DemoApiOwner123!` |
+| Compliance reviewer | `demo.reviewer@govhub.go.ug` | `DemoReviewer123!` |
+
+Run the demo locally with:
+
+```bash
+npm run seed
+npm run dev
+```
+
+The frontend runs on the Vite URL shown in the terminal. The backend sandbox API defaults to `http://127.0.0.1:4000`.
+
 ## Core Demo Flow
 
 ### 1. Discover Government APIs
 
-The presenter opens the Interoperability Catalog and shows the available API products:
+Log in as the MDA developer, then open the Interoperability Catalog at `/`. Show the available API products:
 
 - NIRA Identity Verification API
 - URA Tax Compliance Status API
@@ -36,11 +56,11 @@ The presenter opens the Interoperability Catalog and shows the available API pro
 - MoWT Driving Permit Verification API
 - Service Uganda Composite Eligibility
 
-The key message is that MDAs can discover standard, documented services from one place instead of relying on informal integrations.
+The key message is that MDAs can discover standard, documented services from one place instead of relying on informal integrations. The catalog supports search and filters by sector, lifecycle, sensitivity, and compliance status.
 
 ### 2. Inspect Governance Metadata
 
-The presenter opens an API detail view and highlights:
+Open an API detail view, then show the governance tab and API summary fields:
 
 - Owning MDA
 - Sector
@@ -55,9 +75,11 @@ The presenter opens an API detail view and highlights:
 
 The key message is that GovHub treats APIs as governed public infrastructure, not just technical endpoints.
 
+The API detail view also exposes version metadata, downloadable OpenAPI assets where visibility permits, and a print-friendly governance summary.
+
 ### 3. Request Access
 
-As a developer from MoH, the presenter requests access to an API and provides:
+As the MDA developer, request sandbox access to an API and provide:
 
 - Business purpose
 - Legal basis
@@ -69,44 +91,51 @@ The key message is that access requests must be explicit, purposeful, and review
 
 ### 4. Review and Approve
 
-As an API owner or MoICT reviewer, the presenter reviews pending access requests and approves or denies them. Approved requests create controlled access channels and can issue sandbox credentials.
+Log in as the platform admin or NIRA API owner and open `/dashboard`. Review the pending access request and approve it. Approval generates a scoped sandbox API key with expiry controls.
 
 The key message is that each data-owning MDA remains accountable for access to its datasets.
 
+After approval, return as the developer, open the same API detail page, and use the sandbox try-it panel with the approved key. The sandbox returns correlation IDs, rate-limit headers, and structured errors for denied calls.
+
 ### 5. Demonstrate the Interoperability Matrix
 
-The presenter opens the interoperability matrix to show which consuming MDAs have approved access to which source APIs.
+As the admin or reviewer, open the Interoperability Matrix tab in `/dashboard` to show which consuming MDAs have approved active access to which source APIs.
 
 The key message is that MoICT can see the active government data-sharing map across agencies.
 
 ### 6. Inspect Audit Logs
 
-The presenter opens audit logs and shows platform events such as:
+Open the Audit Trails and Analytics tabs in `/dashboard` and show platform events such as:
 
 - Access requested
 - Access approved or denied
 - API registered
 - Sandbox activity
+- API key generated, revoked, deleted, or expiry updated
 
 The key message is that GovHub provides traceability for policy, security, and compliance oversight.
 
 ### 7. Register a New API
 
-As a MoICT admin, the presenter uses the Add API flow to validate an OpenAPI specification, capture governance metadata, and register the API into the catalog.
+As a MoICT admin or authorized API owner, open `/catalog/add`. Use the Add API flow to validate an OpenAPI specification, capture governance metadata, and register the API into the catalog.
 
 The key message is that new ministry APIs can be onboarded through a standardized validation and governance process.
 
+The current implementation supports registering a new API, editing catalog metadata, managing OpenAPI versions, selecting a current version, and deleting non-current versions.
+
 ## Recommended Live Demo Script
 
-1. Start as a MoH developer and open the catalog.
+1. Start as the seeded MDA developer and open the catalog.
 2. Search for NIRA Identity Verification API.
 3. Open the API detail view and explain the statutory basis and data minimization controls.
 4. Submit an access request for service eligibility verification.
-5. Switch to API owner or reviewer mode.
+5. Log out and log in as the platform admin or NIRA API owner.
 6. Approve the pending request.
-7. Open the interoperability matrix and show the new approved channel.
-8. Open audit logs and show the event trail.
-9. Switch to admin mode and register a draft API from an OpenAPI specification.
+7. Log back in as the developer and run a sandbox request with the approved key.
+8. Attempt a sandbox call without a key or with the wrong API key to show a denied structured response.
+9. Log in as admin or reviewer and open the interoperability matrix to show the new approved channel.
+10. Open audit logs and analytics to show the event trail and sandbox call outcomes.
+11. As admin, register a draft API from an OpenAPI specification.
 
 ## Success Criteria
 
@@ -118,6 +147,25 @@ The demo is successful when the audience can see:
 - A visible matrix of approved data-sharing channels.
 - Audit logs for accountability.
 - A repeatable onboarding process for new ministry APIs.
+
+## Current Demo Readiness
+
+The demo is aligned with the current app for the core ministry flow:
+
+- Catalog discovery for five seeded government APIs.
+- Governance metadata and OpenAPI documentation per API.
+- Access request, approval, API key issuance, expiry, revocation, and deletion.
+- Sandbox try-it execution with approved keys.
+- Denied sandbox responses for missing, expired, revoked, or incorrectly scoped keys.
+- Audit logs, analytics, and interoperability matrix in the dashboard.
+- API registration and OpenAPI validation through the Add API flow.
+
+Known gaps that should not be promised in a live demo:
+
+- There is no one-click role switcher; role changes are demonstrated by logging in as the seeded accounts.
+- End-to-end Playwright demo automation is not present.
+- Accessibility checks are not automated in the current verification scripts.
+- Code samples are available in the API detail sandbox/docs experience, but full generated cURL, JavaScript, Python, and Java SDK-style samples are not a complete feature.
 
 ## Positioning for Ministry Stakeholders
 
