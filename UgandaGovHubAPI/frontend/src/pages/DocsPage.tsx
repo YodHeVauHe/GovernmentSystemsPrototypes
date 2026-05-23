@@ -1,23 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  IconArrowRight,
   IconBook2,
   IconBuildingBank,
   IconCar,
   IconCertificate,
   IconCashBanknote,
+  IconGridDots,
   IconHeartbeat,
   IconId,
+  IconList,
   IconLock,
   IconNetwork,
-  IconPageBreak,
   IconSearch,
   IconShieldCheck,
   IconShoppingCart,
   IconWorld,
 } from '@tabler/icons-react';
 import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
@@ -102,6 +103,20 @@ function MetadataTag({ children, tone = 'neutral' }: { children: React.ReactNode
   );
 }
 
+function LifecycleBadge({ value }: { value: string | null }) {
+  const lifecycle = value || 'Draft';
+  const toneClass =
+    lifecycle === 'Production' ? 'text-[#3ecf8e] border-[#3ecf8e]/20 bg-[#3ecf8e]/5' :
+    lifecycle === 'Beta' ? 'text-blue-400 border-blue-400/20 bg-blue-400/5' :
+    'text-orange-400 border-orange-400/20 bg-orange-400/5';
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-mono uppercase ${toneClass}`}>
+      {lifecycle}
+    </span>
+  );
+}
+
 function sensitivityTone(value?: string | null): 'low' | 'medium' | 'high' {
   const normalized = (value || '').toLowerCase();
   if (normalized.includes('high')) return 'high';
@@ -115,28 +130,12 @@ function docsAccessText(value: DocsVisibility) {
   return 'Only administrators, compliance reviewers, owning MDA API owners, and approved consuming MDAs can open these docs.';
 }
 
-function ShareUrl({ apiId }: { apiId: string }) {
-  const url = typeof window !== 'undefined' ? `${window.location.origin}/docs/${apiId}` : `/docs/${apiId}`;
-  const path = `/docs/${apiId}`;
-
-  return (
-    <Link
-      to={path}
-      onClick={event => event.stopPropagation()}
-      className="mt-4 flex min-w-0 items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] px-3 py-2 text-[12px] text-[#b5b5b5] hover:border-[#3ecf8e]/45 hover:text-white"
-      title={url}
-    >
-      <span className="min-w-0 flex-1 truncate">{url}</span>
-      <IconArrowRight className="size-4 shrink-0 text-[#8b8b8b] transition-transform group-hover:translate-x-0.5 group-hover:text-[#3ecf8e]" />
-    </Link>
-  );
-}
-
 export function DocsPage() {
   const [apis, setApis] = useState<DocsApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   useEffect(() => {
     setLoading(true);
@@ -176,14 +175,34 @@ export function DocsPage() {
               Browse OpenAPI documentation for registered Ministries, Departments, and Agencies. Visibility is controlled per API.
             </p>
           </div>
-          <div className="relative w-full max-w-[380px]">
-            <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8b8b8b]" />
-            <Input
-              value={query}
-              onChange={event => setQuery(event.target.value)}
-              placeholder="Search docs..."
-              className="h-10 border-[#2e2e2e] bg-[#141414] pl-9 text-sm"
-            />
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-[320px] lg:w-[380px]">
+              <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8b8b8b]" />
+              <Input
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+                placeholder="Search docs..."
+                className="h-10 border-[#2e2e2e] bg-[#141414] pl-9 text-sm"
+              />
+            </div>
+            <div className="flex w-fit items-center gap-1 rounded-lg border border-[#2e2e2e] bg-[#141414] p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`rounded-[6px] p-1.5 transition-all ${viewMode === 'grid' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'}`}
+                aria-label="Grid view"
+              >
+                <IconGridDots className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`rounded-[6px] p-1.5 transition-all ${viewMode === 'list' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'}`}
+                aria-label="List view"
+              >
+                <IconList className="size-4" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -211,44 +230,81 @@ export function DocsPage() {
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          <div className="grid gap-4 lg:grid-cols-2">
-            {filteredApis.map(api => (
-              <Link
-                key={api.id}
-                to={`/docs/${api.id}`}
-                className="group flex min-h-[268px] flex-col rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-5 transition-colors hover:border-[#3ecf8e]/45 hover:bg-[#202020]"
-              >
-                <div className="flex items-start justify-between gap-4">
+          {!loading && !error && filteredApis.length > 0 && viewMode === 'list' ? (
+            <div className="overflow-hidden rounded-lg border border-[#2e2e2e] bg-[#1c1c1c]">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10">
+                    <TableRow className="border-b border-[#2e2e2e] bg-[#141414] hover:bg-transparent">
+                      <TableHead className="h-10 min-w-[280px] px-4 text-[11px] font-mono uppercase tracking-widest text-[#8b8b8b]">API Name</TableHead>
+                      <TableHead className="h-10 min-w-[170px] px-4 text-[11px] font-mono uppercase tracking-widest text-[#8b8b8b]">Visibility</TableHead>
+                      <TableHead className="h-10 min-w-[150px] px-4 text-[11px] font-mono uppercase tracking-widest text-[#8b8b8b]">Sector</TableHead>
+                      <TableHead className="h-10 min-w-[150px] px-4 text-[11px] font-mono uppercase tracking-widest text-[#8b8b8b]">Classification</TableHead>
+                      <TableHead className="h-10 min-w-[150px] px-4 text-[11px] font-mono uppercase tracking-widest text-[#8b8b8b]">Sensitivity</TableHead>
+                      <TableHead className="h-10 min-w-[130px] px-4 text-[11px] font-mono uppercase tracking-widest text-[#8b8b8b]">Lifecycle</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredApis.map(api => (
+                      <TableRow key={api.id} className="border-b border-[#2e2e2e] transition-colors last:border-b-0 hover:bg-[#2e2e2e]/30">
+                        <TableCell className="px-4 py-3.5 text-left">
+                          <Link to={`/docs/${api.id}`} className="block text-[14px] font-semibold text-[#ededed] transition-colors hover:text-[#3ecf8e]">
+                            {api.name}
+                          </Link>
+                          <p className="mt-0.5 max-w-[360px] truncate text-[12px] text-[#8b8b8b]">{api.description}</p>
+                        </TableCell>
+                        <TableCell className="px-4 py-3.5">
+                          <VisibilityBadge value={api.docs_visibility} />
+                        </TableCell>
+                        <TableCell className="px-4 py-3.5">
+                          <SectorBadge sector={api.sector} />
+                        </TableCell>
+                        <TableCell className="px-4 py-3.5">
+                          <MetadataTag>{api.security_classification || 'Unclassified'}</MetadataTag>
+                        </TableCell>
+                        <TableCell className="px-4 py-3.5">
+                          <MetadataTag tone={sensitivityTone(api.sensitivity_level)}>
+                            {api.sensitivity_level || 'Unknown'} sensitivity
+                          </MetadataTag>
+                        </TableCell>
+                        <TableCell className="px-4 py-3.5">
+                          <LifecycleBadge value={api.lifecycle_status} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {!loading && !error && filteredApis.map(api => (
+                <Link
+                  key={api.id}
+                  to={`/docs/${api.id}`}
+                  className="group flex min-h-[210px] flex-col rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-5 transition-colors hover:border-[#3ecf8e]/45 hover:bg-[#202020]"
+                >
                   <div className="min-w-0">
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <div className="mb-2 flex items-start justify-between gap-3">
                       <VisibilityBadge value={api.docs_visibility} />
-                      {api.lifecycle_status && (
-                        <span className="inline-flex h-7 items-center rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] font-mono uppercase text-[#8b8b8b]">
-                          {api.lifecycle_status}
-                        </span>
-                      )}
+                      <LifecycleBadge value={api.lifecycle_status} />
                     </div>
                     <h2 className="truncate text-[17px] font-semibold text-white group-hover:text-[#3ecf8e]">{api.name}</h2>
                     <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#8b8b8b]">{api.description}</p>
                   </div>
-                  <span className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] font-medium text-[#b5b5b5] group-hover:border-[#3ecf8e]/45 group-hover:text-white">
-                    <IconPageBreak className="size-3.5 text-[#3ecf8e]" />
-                    Open
-                  </span>
-                </div>
-                <div className="mt-auto border-t border-[#2e2e2e] pt-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <SectorBadge sector={api.sector} />
-                    <MetadataTag>{api.security_classification || 'Unclassified'}</MetadataTag>
-                    <MetadataTag tone={sensitivityTone(api.sensitivity_level)}>
-                      {api.sensitivity_level || 'Unknown'} sensitivity
-                    </MetadataTag>
+                  <div className="mt-auto border-t border-[#2e2e2e] pt-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SectorBadge sector={api.sector} />
+                      <MetadataTag>{api.security_classification || 'Unclassified'}</MetadataTag>
+                      <MetadataTag tone={sensitivityTone(api.sensitivity_level)}>
+                        {api.sensitivity_level || 'Unknown'} sensitivity
+                      </MetadataTag>
+                    </div>
                   </div>
-                  <ShareUrl apiId={api.id} />
-                </div>
-              </Link>
-            ))}
-          </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

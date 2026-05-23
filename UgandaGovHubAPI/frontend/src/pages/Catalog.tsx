@@ -17,7 +17,12 @@ import {
   IconTerminal2,
   IconGitBranch,
   IconBuildingBank,
+  IconCar,
+  IconCashBanknote,
+  IconCertificate,
   IconFileCertificate,
+  IconHeartbeat,
+  IconId,
   IconPlus,
   IconEdit,
   IconTrash,
@@ -27,7 +32,9 @@ import {
   IconCode,
   IconLoader,
   IconCheck,
-  IconExternalLink
+  IconExternalLink,
+  IconNetwork,
+  IconShoppingCart
 } from '@tabler/icons-react';
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -35,6 +42,27 @@ import { generatePublicId } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+
+function SectorBadge({ sector }: { sector: string }) {
+  const value = sector || 'MDA API';
+  const normalized = value.toLowerCase();
+  const Icon =
+    normalized.includes('identity') ? IconId :
+    normalized.includes('transport') ? IconCar :
+    normalized.includes('finance') || normalized.includes('tax') ? IconCashBanknote :
+    normalized.includes('commerce') || normalized.includes('business') ? IconCertificate :
+    normalized.includes('health') ? IconHeartbeat :
+    normalized.includes('procurement') ? IconShoppingCart :
+    normalized.includes('integration') ? IconNetwork :
+    IconBuildingBank;
+
+  return (
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] font-medium text-[#b5b5b5]">
+      <Icon className="size-3.5 text-[#3ecf8e]" />
+      {value}
+    </span>
+  );
+}
 
 function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void }) {
   const { mdaId, mdas } = useUser();
@@ -944,10 +972,10 @@ export function Catalog() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredApis.map(api => (
-            <Link key={api.id} to={`/api/${api.id}`} className="rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-6 hover:border-[#444] transition-all block group text-left relative overflow-hidden">
+            <Link key={api.id} to={`/api/${api.id}`} className="flex min-h-[220px] flex-col rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-6 hover:border-[#444] transition-all group text-left relative overflow-hidden">
               <div className="absolute top-0 right-0 h-1.5 w-full bg-gradient-to-r from-transparent via-[#2e2e2e] to-[#3ecf8e]/30 group-hover:to-[#3ecf8e]/60 transition-all"></div>
               <div className="flex justify-between items-start mb-4">
-                <span className="text-[12px] font-mono text-[#8b8b8b]">{api.sector}</span>
+                <SectorBadge sector={api.sector} />
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border uppercase
                   ${api.lifecycle_status === 'Production' ? 'text-[#3ecf8e] border-[#3ecf8e]/20' : 
                     api.lifecycle_status === 'Beta' ? 'text-blue-400 border-blue-400/20' : 
