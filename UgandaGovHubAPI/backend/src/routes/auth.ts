@@ -293,5 +293,25 @@ export function adminUsersRouter(db: Database.Database) {
     res.json({ user: sanitizeUser(getUserById(db, req.params.id)) });
   });
 
+  router.delete('/:id', (req, res) => {
+    const existing = getUserById(db, req.params.id);
+    if (!existing) return res.status(404).json({ error: 'User not found.' });
+    if (existing.id === req.user!.id) {
+      return res.status(400).json({ error: 'Administrators cannot delete their own account.', code: 'CANNOT_DELETE_SELF' });
+    }
+
+    const deletedUser = sanitizeUser(existing);
+    const deleteAccount = db.transaction(() => {
+      db.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(new Date().toISOString(), existing.id);
+      db.prepare('DELETE FROM verification_documents WHERE user_id = ?').run(existing.id);
+      db.prepare('DELETE FROM user_profiles WHERE user_id = ?').run(existing.id);
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(existing.id);
+      db.prepare('DELETE FROM users WHERE id = ?').run(existing.id);
+    });
+
+    deleteAccount();
+    res.json({ deleted: true, user: deletedUser });
+  });
+
   return router;
 }

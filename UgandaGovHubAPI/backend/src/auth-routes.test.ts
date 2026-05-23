@@ -33,7 +33,7 @@ async function request(baseUrl: string, path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   if (!headers.has('content-type') && init.body) headers.set('content-type', 'application/json');
   const response = await fetch(`${baseUrl}${path}`, { ...init, headers });
-  const body = await response.json();
+  const body = await response.json().catch(() => ({}));
   return { response, body };
 }
 
@@ -44,7 +44,7 @@ async function close(server: Server) {
 }
 
 async function run() {
-  const { server, baseUrl } = await startApp();
+  const { db, server, baseUrl } = await startApp();
 
   try {
     const signup = await request(baseUrl, '/api/auth/signup', {
@@ -137,6 +137,31 @@ async function run() {
     });
     assert.equal(allowed.response.status, 200);
     assert.equal(allowed.body.ok, true);
+
+    const allUsers = await request(baseUrl, '/api/admin/users', {
+      headers: { authorization: `Bearer ${adminLogin.body.token}` },
+    });
+    assert.equal(allUsers.response.status, 200);
+    assert.equal(allUsers.body.users.some((user: any) => user.status === 'APPROVED'), true);
+    assert.equal(allUsers.body.users.some((user: any) => user.status === 'PENDING_REVIEW'), false);
+
+    const selfDelete = await request(baseUrl, `/api/admin/users/${adminLogin.body.user.id}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${adminLogin.body.token}` },
+    });
+    assert.equal(selfDelete.response.status, 400);
+    assert.equal(selfDelete.body.code, 'CANNOT_DELETE_SELF');
+
+    const deletePublicDeveloper = await request(baseUrl, `/api/admin/users/${publicDeveloperSignup.body.user.id}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${adminLogin.body.token}` },
+    });
+    assert.equal(deletePublicDeveloper.response.status, 200);
+    assert.equal(deletePublicDeveloper.body.deleted, true);
+    assert.equal(deletePublicDeveloper.body.user.id, publicDeveloperSignup.body.user.id);
+    assert.equal((db.prepare('SELECT COUNT(*) as count FROM users WHERE id = ?').get(publicDeveloperSignup.body.user.id) as any).count, 0);
+    assert.equal((db.prepare('SELECT COUNT(*) as count FROM sessions WHERE user_id = ?').get(publicDeveloperSignup.body.user.id) as any).count, 0);
+    assert.equal((db.prepare('SELECT COUNT(*) as count FROM user_profiles WHERE user_id = ?').get(publicDeveloperSignup.body.user.id) as any).count, 0);
   } finally {
     await close(server);
   }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   IconBook2,
   IconBuildingBank,
@@ -131,10 +131,11 @@ function docsAccessText(value: DocsVisibility) {
 }
 
 export function DocsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [apis, setApis] = useState<DocsApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [query, setQuery] = useState('');
+  const query = searchParams.get('q') || '';
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   useEffect(() => {
@@ -161,6 +162,16 @@ export function DocsPage() {
     ].some(value => String(value || '').toLowerCase().includes(needle)));
   }, [apis, query]);
 
+  const updateSearch = (value: string) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (value.trim()) {
+      nextParams.set('q', value);
+    } else {
+      nextParams.delete('q');
+    }
+    setSearchParams(nextParams);
+  };
+
   return (
     <div className="h-full overflow-hidden bg-[#181818] text-[#ededed]">
       <div className="mx-auto flex h-full w-full max-w-[1280px] flex-col gap-6 p-4 lg:p-8">
@@ -180,7 +191,7 @@ export function DocsPage() {
               <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8b8b8b]" />
               <Input
                 value={query}
-                onChange={event => setQuery(event.target.value)}
+                onChange={event => updateSearch(event.target.value)}
                 placeholder="Search docs..."
                 className="h-10 border-[#2e2e2e] bg-[#141414] pl-9 text-sm"
               />
