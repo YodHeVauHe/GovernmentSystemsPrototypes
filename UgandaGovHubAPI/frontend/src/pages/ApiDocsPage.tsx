@@ -69,12 +69,6 @@ function visibilityLabel(value: DocsVisibility) {
   return 'Restricted docs';
 }
 
-function visibilityIcon(value: DocsVisibility) {
-  if (value === 'public') return IconWorld;
-  if (value === 'authenticated') return IconShieldCheck;
-  return IconLock;
-}
-
 function docsAccessText(value: DocsVisibility) {
   if (value === 'public') return 'This documentation can be shared publicly. Access to production data may still require an approved API key.';
   if (value === 'authenticated') return 'This documentation is available to approved GovHub users. API calls still follow the access request and key approval process.';
@@ -469,7 +463,6 @@ export function ApiDocsPage() {
     operations.forEach(operation => groups.set(operation.tag, [...(groups.get(operation.tag) || []), operation]));
     return Array.from(groups.entries());
   }, [operations]);
-  const VisibilityIcon = api ? visibilityIcon(api.docs_visibility) : IconShieldCheck;
   const canEditDocs = role === 'admin' || role === 'api_owner';
 
   if (loading) {
@@ -485,7 +478,7 @@ export function ApiDocsPage() {
             <IconArrowLeft className="size-4" />
             Back to API Docs
           </Link>
-          <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-8">
+          <div className="flex min-h-[180px] flex-col items-center justify-center rounded-lg border border-[#2e2e2e] bg-[#141414] p-8 text-center">
             <div className="mb-4 flex size-10 items-center justify-center rounded-md border border-amber-400/25 bg-amber-400/10 text-amber-300">
               <IconLock className="size-5" />
             </div>
@@ -538,7 +531,13 @@ export function ApiDocsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="mr-2 text-[24px] font-semibold tracking-tight text-white">{api.name}</h1>
           <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] font-medium text-[#b5b5b5]">
-            <VisibilityIcon className="size-3.5 text-[#3ecf8e]" />
+            {api.docs_visibility === 'public' ? (
+              <IconWorld className="size-3.5 text-[#3ecf8e]" />
+            ) : api.docs_visibility === 'authenticated' ? (
+              <IconShieldCheck className="size-3.5 text-[#3ecf8e]" />
+            ) : (
+              <IconLock className="size-3.5 text-[#3ecf8e]" />
+            )}
             {visibilityLabel(api.docs_visibility)}
           </span>
           <span className="inline-flex h-7 items-center rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[11px] font-mono uppercase text-[#8b8b8b]">

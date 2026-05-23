@@ -64,6 +64,14 @@ function SectorBadge({ sector }: { sector: string }) {
   );
 }
 
+function sensitivityBadgeClass(value?: string | null) {
+  const normalized = (value || '').toLowerCase();
+  if (normalized.includes('high')) return 'border-red-400/25 bg-red-400/5 text-red-300';
+  if (normalized.includes('medium')) return 'border-amber-400/25 bg-amber-400/5 text-amber-300';
+  if (normalized.includes('low')) return 'border-[#3ecf8e]/25 bg-[#3ecf8e]/5 text-[#3ecf8e]';
+  return 'border-[#2e2e2e] bg-[#141414] text-[#b5b5b5]';
+}
+
 function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void }) {
   const { mdaId, mdas } = useUser();
   const { addNotification } = useNotifications();
@@ -976,13 +984,18 @@ export function Catalog() {
               <div className="absolute top-0 right-0 h-1.5 w-full bg-gradient-to-r from-transparent via-[#2e2e2e] to-[#3ecf8e]/30 group-hover:to-[#3ecf8e]/60 transition-all"></div>
               <div className="flex justify-between items-start mb-4">
                 <SectorBadge sector={api.sector} />
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border uppercase
-                  ${api.lifecycle_status === 'Production' ? 'text-[#3ecf8e] border-[#3ecf8e]/20' : 
-                    api.lifecycle_status === 'Beta' ? 'text-blue-400 border-blue-400/20' : 
-                    'text-orange-400 border-orange-400/20'}
-                `}>
-                  {api.lifecycle_status}
-                </span>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border uppercase
+                    ${api.lifecycle_status === 'Production' ? 'text-[#3ecf8e] border-[#3ecf8e]/20' : 
+                      api.lifecycle_status === 'Beta' ? 'text-blue-400 border-blue-400/20' : 
+                      'text-orange-400 border-orange-400/20'}
+                  `}>
+                    {api.lifecycle_status}
+                  </span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border uppercase ${sensitivityBadgeClass(api.sensitivity_level)}`}>
+                    {api.sensitivity_level}
+                  </span>
+                </div>
               </div>
               <h2 className="font-semibold text-[16px] text-white group-hover:text-[#3ecf8e] transition-colors mb-2">{api.name}</h2>
               <p className="text-[#8b8b8b] text-[13px] line-clamp-2 mb-6 leading-relaxed">
@@ -2008,6 +2021,7 @@ export function ApiDetail() {
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'docs' | 'gov' | 'try'>('docs');
   const [showPrintView, setShowPrintView] = useState(false);
+  const [accessRequests, setAccessRequests] = useState<any[]>([]);
 
   const logAuditEvent = useCallback((eventType: string, mdaId: string | null, apiId: string | null, requestId: string, details: any) => {
     fetch(`${API_BASE}/api/access/audit-logs`, {
@@ -2059,6 +2073,18 @@ export function ApiDetail() {
       .catch(err => console.error(err));
   }, [id, selectedVersion]);
 
+  useEffect(() => {
+    if (!id) return;
+    fetch(`${API_BASE}/api/access`)
+      .then(async res => {
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+      })
+      .then(data => setAccessRequests(data))
+      .catch(() => setAccessRequests([]));
+  }, [id, role, mdaId]);
+
   if (!api || !spec) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-[#181818] text-left text-[#ededed]">
@@ -2088,6 +2114,15 @@ export function ApiDetail() {
 
   const activeVersion = versions.find(version => version.version === selectedVersion);
   const canManageCurrentApi = role === 'admin' || (role === 'api_owner' && api?.owning_mda_id === mdaId);
+  const isHighSensitivityApi = String(api.sensitivity_level || '').toLowerCase().includes('high');
+  const hasActiveApprovedAccess = accessRequests.some(request =>
+    request.api_id === api.id &&
+    request.status === 'APPROVED' &&
+    request.api_key &&
+    (request.api_key_status || 'ACTIVE') === 'ACTIVE' &&
+    (!request.api_key_expires_at || new Date(request.api_key_expires_at).getTime() > Date.now())
+  );
+  const canViewSensitiveApi = !isHighSensitivityApi || role === 'admin' || role === 'reviewer' || canManageCurrentApi || hasActiveApprovedAccess;
   const specUrl = `${API_BASE}${activeVersion?.openapi_spec_path || api.openapi_spec_path}`;
   const refreshDetail = () => {
     setIsEditOpen(false);
@@ -2221,7 +2256,7 @@ export function ApiDetail() {
           `}>
             {api.lifecycle_status}
           </span>
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono border border-red-500/20 text-red-400 bg-red-500/5 uppercase">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono border uppercase ${sensitivityBadgeClass(api.sensitivity_level)}`}>
             SENSITIVITY: {api.sensitivity_level}
           </span>
           {versions.length > 0 && (
@@ -2298,7 +2333,8 @@ export function ApiDetail() {
       </div>
 
       {/* Tab Contents */}
-      <div className="min-h-0 flex-1 overflow-hidden bg-[#181818]/30">
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#181818]/30">
+        <div className={`h-full ${canViewSensitiveApi ? '' : 'pointer-events-none select-none blur-sm opacity-30'}`}>
         {activeTab === 'docs' && (
           <div className="flex h-full min-h-0 flex-col">
             <div className="shrink-0 px-4 lg:px-8 py-5">
@@ -2465,9 +2501,30 @@ export function ApiDetail() {
             </div>
           </div>
         )}
+        </div>
+        {!canViewSensitiveApi && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#181818]/45 px-4 backdrop-blur-[2px]">
+            <div className="flex max-w-md flex-col items-center rounded-xl border border-red-400/25 bg-[#141414]/95 p-6 text-center shadow-2xl">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-red-400/25 bg-red-400/10 text-red-300">
+                <IconLock className="h-6 w-6" />
+              </div>
+              <h2 className="text-[17px] font-semibold text-white">Access required for high sensitivity API</h2>
+              <p className="mt-2 text-[13px] leading-6 text-[#b5b5b5]">
+                This API contains high-sensitivity data contracts. Request and receive approval before viewing technical details or using the sandbox.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(true)}
+                className="mt-5 inline-flex h-9 items-center rounded-md bg-[#3ecf8e] px-4 text-[13px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90"
+              >
+                Request Access
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <SandboxClientModal
-        open={isSandboxOpen}
+        open={canViewSensitiveApi && isSandboxOpen}
         onClose={() => setIsSandboxOpen(false)}
         api={api}
         endpoints={endpoints}
