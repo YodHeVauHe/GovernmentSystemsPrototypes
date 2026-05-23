@@ -21,6 +21,23 @@ function formatNotificationTime(value: string) {
   })
 }
 
+function formatRoleLabel(role: string | null) {
+  if (!role) return "Public"
+
+  const labels: Record<string, string> = {
+    admin: "Admin",
+    api_owner: "API Owner",
+    developer: "Developer",
+    reviewer: "Compliance Reviewer",
+  }
+
+  return labels[role] || role
+    .split("_")
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ")
+}
+
 export function SiteHeader() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -83,7 +100,7 @@ export function SiteHeader() {
           <IconUserCircle className="w-4 h-4 text-[#3ecf8e]" />
           <div className="flex items-center gap-1.5 text-[12px]">
             <span className="font-medium text-[#ededed]">
-              {user ? role.replace("_", " ") : "Public"}
+              {user ? formatRoleLabel(role) : "Public"}
             </span>
             <span className="text-[#444] font-mono">|</span>
             <span className="text-[#8b8b8b]">{currentMda?.shortName || "Visitor"}</span>
