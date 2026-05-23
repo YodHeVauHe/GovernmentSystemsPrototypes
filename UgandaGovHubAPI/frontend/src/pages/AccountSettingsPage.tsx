@@ -325,9 +325,11 @@ export function AccountSettingsPage() {
                   <div className="rounded-md border border-[#2e2e2e] bg-[#181818] p-4 text-sm text-[#8b8b8b]">No notifications.</div>
                 ) : notifications.map(notification => (
                   <div key={notification.id} className="rounded-md border border-[#2e2e2e] bg-[#181818] p-4">
-                    <div className="text-sm font-semibold text-white">{notification.title}</div>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="text-sm font-semibold text-white">{notification.title}</div>
+                      <div className="shrink-0 text-right text-xs text-[#8b8b8b]">{new Date(notification.createdAt).toLocaleString()}</div>
+                    </div>
                     <div className="mt-1 text-sm text-[#b5b5b5]">{notification.message}</div>
-                    <div className="mt-2 text-xs text-[#8b8b8b]">{new Date(notification.createdAt).toLocaleString()}</div>
                   </div>
                 ))}
               </div>
