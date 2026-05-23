@@ -144,7 +144,7 @@ export function AccountSettingsPage() {
     ['organization', IconBuildingBank, 'Organization'],
     ['documents', IconFileCertificate, 'Documents'],
     ['privileges', IconShieldCheck, 'Privileges'],
-    ['notifications', IconBell, `Notifications${unreadCount ? ` (${unreadCount})` : ''}`],
+    ['notifications', IconBell, 'Notifications'],
     ['flow', IconClipboardCheck, 'Flow'],
   ] as const;
 
@@ -176,6 +176,11 @@ export function AccountSettingsPage() {
             >
               <Icon className="size-4" />
               {label}
+              {id === 'notifications' && unreadCount > 0 && (
+                <span className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#3ecf8e] px-1.5 text-[11px] font-semibold text-black">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
           ))}
         </div>

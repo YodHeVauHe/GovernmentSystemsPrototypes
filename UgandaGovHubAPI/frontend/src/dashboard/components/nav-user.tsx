@@ -28,6 +28,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { useUser } from "@/context/UserContext"
+import { useNotifications } from "@/context/NotificationContext"
 import { Link, useNavigate } from "react-router-dom"
 
 export function NavUser({
@@ -41,6 +42,7 @@ export function NavUser({
 }) {
   const { isMobile } = useSidebar()
   const { isAuthenticated, logout } = useUser()
+  const { unreadCount } = useNotifications()
   const navigate = useNavigate()
 
   const handleLogout = async () => {
@@ -103,9 +105,14 @@ export function NavUser({
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link to={isAuthenticated ? "/account/settings" : "/login"}>
-                <IconNotification />
-                Notifications
+                <Link to={isAuthenticated ? "/account/settings?tab=notifications" : "/login"}>
+                  <IconNotification />
+                  <span className="flex-1">Notifications</span>
+                  {unreadCount > 0 && (
+                    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#3ecf8e] px-1.5 text-[11px] font-semibold text-black">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
