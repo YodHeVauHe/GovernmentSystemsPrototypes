@@ -249,6 +249,41 @@ function CodeBlock({ value }: { value: unknown }) {
   );
 }
 
+function humanizeFieldName(name: string) {
+  return name.replace(/[_-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function fieldDescription(name: string, schema: any, required: boolean) {
+  if (schema?.description) return schema.description;
+
+  const label = humanizeFieldName(name);
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const type = schemaLabel(schema);
+  const requirement = required ? ' Required for this request or response.' : '';
+
+  if (schema?.enum?.length) {
+    return `${label} must be one of: ${schema.enum.join(', ')}.${requirement}`;
+  }
+
+  if (normalized.includes('verified')) return `Shows whether ${label.replace(/ Verified$/i, '') || 'the submitted details'} passed verification.${requirement}`;
+  if (normalized.includes('eligible')) return `Shows whether the record or applicant is eligible for the documented service.${requirement}`;
+  if (normalized.includes('remarks') || normalized.includes('message')) return `Human-readable message explaining the result, warning, or next action.${requirement}`;
+  if (normalized === 'status' || normalized.endsWith('status')) return `Current status value returned by the provider system.${requirement}`;
+  if (normalized.includes('reason')) return `Explanation for the returned decision or status.${requirement}`;
+  if (normalized.includes('permit')) return `Driving permit value used to identify or describe the permit record.${requirement}`;
+  if (normalized.includes('nin')) return `National Identification Number value used to match the citizen record.${requirement}`;
+  if (normalized.includes('tin')) return `Tax Identification Number value used to match the taxpayer record.${requirement}`;
+  if (normalized.includes('brn')) return `Business Registration Number value used to match the company record.${requirement}`;
+  if (normalized.includes('date') || normalized.includes('expiry') || normalized.includes('until')) return `Date or time value for ${label.toLowerCase()}.${requirement}`;
+  if (normalized.includes('name') || normalized.includes('surname')) return `Name value used for matching, display, or verification.${requirement}`;
+  if (normalized.includes('class')) return `Category or class assigned by the provider system.${requirement}`;
+  if (schema?.type === 'boolean') return `True or false value for ${label.toLowerCase()}.${requirement}`;
+  if (schema?.type === 'integer' || schema?.type === 'number') return `Numeric value for ${label.toLowerCase()}.${requirement}`;
+  if (schema?.type === 'array') return `List of ${schemaLabel(schema.items).toLowerCase()} values for ${label.toLowerCase()}.${requirement}`;
+
+  return `${label} value as a ${type} field.${requirement}`;
+}
+
 function SchemaViewer({ schema, spec, depth = 0 }: { schema: any; spec: OpenApiSpec; depth?: number }) {
   const resolved = resolveRef(spec, schema);
   const properties = resolved?.properties || {};
@@ -270,15 +305,17 @@ function SchemaViewer({ schema, spec, depth = 0 }: { schema: any; spec: OpenApiS
   return (
     <div className="rounded-md border border-[#2e2e2e] bg-[#141414]">
       {Object.entries(properties).map(([name, child]) => (
-        <div key={name} className="grid gap-3 border-b border-[#2e2e2e] p-3 last:border-b-0 md:grid-cols-[220px_1fr]">
+        <div key={name} className="grid gap-3 border-b border-[#2e2e2e] p-3 last:border-b-0 md:grid-cols-[220px_minmax(0,1fr)]">
           <div>
             <div className="font-mono text-[12px] text-white">{name}</div>
             <div className="mt-1 text-[11px] text-[#8b8b8b]">
               {schemaLabel(child)}{required.has(name) ? ' · required' : ''}
             </div>
           </div>
-          <div className="min-w-0">
-            {(child as any)?.description && <p className="mb-2 text-[12px] leading-5 text-[#b5b5b5]">{(child as any).description}</p>}
+          <div className="min-w-0 text-[12px] leading-5 text-[#b5b5b5]">
+            <p className={depth < 2 && ((child as any)?.properties || (child as any)?.items || (child as any)?.$ref) ? 'mb-2' : ''}>
+              {fieldDescription(name, child, required.has(name))}
+            </p>
             {depth < 2 && ((child as any)?.properties || (child as any)?.items || (child as any)?.$ref) && (
               <SchemaViewer schema={child} spec={spec} depth={depth + 1} />
             )}

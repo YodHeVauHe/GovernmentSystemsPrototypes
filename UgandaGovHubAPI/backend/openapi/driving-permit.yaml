@@ -116,7 +116,10 @@ components:
       properties:
         verified:
           type: boolean
+          description: Whether the submitted permit details matched the MoWT permit registry.
         remarks:
           type: string
+          description: Human-readable result message explaining the match, mismatch, or permit issue.
         status:
           type: string
+          description: Current permit status returned by the registry, such as ACTIVE, SUSPENDED, EXPIRED, or REVOKED.
