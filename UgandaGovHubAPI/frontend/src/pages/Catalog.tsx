@@ -31,6 +31,7 @@ import {
 } from '@tabler/icons-react';
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
+import { generatePublicId } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
@@ -1162,7 +1163,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
   };
 
   // Stable correlation ID base (doesn't change on re-render)
-  const correlationIdBase = useRef(`tx-client-${Date.now()}`);
+  const correlationIdBase = useRef(generatePublicId('tx_client'));
 
   // Resolve current API key value for auto header display
   const resolvedKey = useMemo(() => {
@@ -1268,7 +1269,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
       key = customApiKey;
     }
 
-    const correlationId = `tx-client-${Date.now()}`;
+    const correlationId = generatePublicId('tx_client');
 
     let requestBody: BodyInit | undefined;
     if (canSendBody && bodyText.trim()) {
@@ -2010,7 +2011,7 @@ export function ApiDetail() {
       .then(res => res.json())
       .then(data => {
         setApi(data);
-        logAuditEvent('API_VIEWED', null, id || null, `tx-view-${Date.now()}`, { api_name: data.name });
+        logAuditEvent('API_VIEWED', null, id || null, generatePublicId('tx_view'), { api_name: data.name });
       })
       .catch(err => console.error(err));
   }, [id, logAuditEvent]);

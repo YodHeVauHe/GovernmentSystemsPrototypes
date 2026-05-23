@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
+import { generatePublicId } from '@/lib/utils';
 
 export type AppNotificationType = 'api' | 'access' | 'key' | 'account';
 
@@ -51,7 +52,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       const next = [
         {
           ...notification,
-          id: `notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: generatePublicId('notification'),
           createdAt: new Date().toISOString(),
           read: false,
         },
