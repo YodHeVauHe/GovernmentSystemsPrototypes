@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useUser } from '../context/UserContext';
@@ -82,6 +82,20 @@ function getAnalyticsStart(range: string) {
 function approvalRequiresMda(accountType: string | null | undefined, role: string) {
   const normalizedAccountType = accountType === 'government' ? 'government_employee' : accountType;
   return role === 'api_owner' || normalizedAccountType === 'government_employee' || normalizedAccountType === 'mda_api_owner';
+}
+
+function AccountStatusBadge({ status }: { status: string }) {
+  const toneClass =
+    status === 'APPROVED' ? 'border-[#3ecf8e]/20 bg-[#3ecf8e]/5 text-[#3ecf8e]' :
+    status === 'PENDING_REVIEW' ? 'border-orange-400/20 bg-orange-400/5 text-orange-300' :
+    status === 'SUSPENDED' ? 'border-red-400/20 bg-red-400/5 text-red-300' :
+    'border-[#2e2e2e] bg-[#141414] text-[#b5b5b5]';
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-mono uppercase ${toneClass}`}>
+      {status.replace(/_/g, ' ')}
+    </span>
+  );
 }
 
 function getTimeRangeLabel(range: string) {
@@ -345,6 +359,7 @@ async function fetchDashboardJson(path: string) {
 }
 
 export default function DashboardPage() {
+  const [searchParams] = useSearchParams();
   const { role, mdaId, mdas } = useUser();
   const { addNotification } = useNotifications();
   const [requests, setRequests] = useState<any[]>([]);
@@ -359,10 +374,12 @@ export default function DashboardPage() {
   const [accountMdaInputs, setAccountMdaInputs] = useState<Record<string, string>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [filterMda, setFilterMda] = useState<string>('ALL');
+  const [accountStatusFilter, setAccountStatusFilter] = useState<string>('ALL');
   const [timeRange, setTimeRange] = useState('7d');
   const [keyExpiryInputs, setKeyExpiryInputs] = useState<Record<string, string>>({});
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState('');
+  const dashboardSearch = (searchParams.get('q') || '').trim().toLowerCase();
 
   const fetchDashboardData = useCallback((showLoading = false) => {
     if (showLoading) {
@@ -375,7 +392,7 @@ export default function DashboardPage() {
       fetchDashboardJson('/api/access'),
       canViewOversight ? fetchDashboardJson('/api/access/audit-logs') : Promise.resolve([]),
       canViewOversight ? fetchDashboardJson('/api/access/matrix') : Promise.resolve([]),
-      role === 'admin' ? fetchDashboardJson('/api/admin/users?status=PENDING_REVIEW') : Promise.resolve({ users: [] }),
+      role === 'admin' ? fetchDashboardJson('/api/admin/users') : Promise.resolve({ users: [] }),
     ])
       .then(([accessData, auditData, matrixData, userData]) => {
         setRequests(accessData);
@@ -472,7 +489,7 @@ export default function DashboardPage() {
   };
 
   const handleRejectAccount = (user: any) => {
-    const reason = prompt(`Reject ${user.full_name}'s account request? Add a short reason:`);
+    const reason = prompt(`Reject ${user.full_name}'s account? Add a short reason:`);
     if (reason === null) return;
     setAccountReviewing(user.id);
 
@@ -500,6 +517,83 @@ export default function DashboardPage() {
       .catch(err => {
         toast.error('Rejection failed', {
           description: err instanceof Error ? err.message : 'Failed to reject account',
+        });
+      })
+      .finally(() => setAccountReviewing(null));
+  };
+
+  const handleNeedsInfoAccount = (user: any) => {
+    const notes = prompt(`Request more information from ${user.full_name}:`, user.account?.profile?.review_notes || '');
+    if (notes === null) return;
+    setAccountReviewing(user.id);
+
+    fetch(`${API_BASE}/api/admin/users/${user.id}/needs-more-information`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes }),
+    })
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to request more information');
+        return result;
+      })
+      .then(() => {
+        toast.success('More information requested', {
+          description: `${user.full_name}'s verification profile was returned for updates.`,
+        });
+        fetchDashboardData();
+      })
+      .catch(err => {
+        toast.error('Request failed', {
+          description: err instanceof Error ? err.message : 'Failed to request more information',
+        });
+      })
+      .finally(() => setAccountReviewing(null));
+  };
+
+  const handleSuspendAccount = (user: any) => {
+    if (!confirm(`Suspend ${user.full_name}'s account? They will lose platform access until restored.`)) return;
+    setAccountReviewing(user.id);
+
+    fetch(`${API_BASE}/api/admin/users/${user.id}/suspend`, { method: 'POST' })
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to suspend account');
+        return result;
+      })
+      .then(() => {
+        toast.success('Account suspended', {
+          description: `${user.full_name} can no longer access protected workflows.`,
+        });
+        fetchDashboardData();
+      })
+      .catch(err => {
+        toast.error('Suspension failed', {
+          description: err instanceof Error ? err.message : 'Failed to suspend account',
+        });
+      })
+      .finally(() => setAccountReviewing(null));
+  };
+
+  const handleDeleteAccount = (user: any) => {
+    if (!confirm(`Permanently delete ${user.full_name}'s account? This removes their profile, documents, and sessions. This cannot be undone.`)) return;
+    setAccountReviewing(user.id);
+
+    fetch(`${API_BASE}/api/admin/users/${user.id}`, { method: 'DELETE' })
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to delete account');
+        return result;
+      })
+      .then(() => {
+        toast.success('Account deleted', {
+          description: `${user.full_name}'s account was permanently removed.`,
+        });
+        fetchDashboardData();
+      })
+      .catch(err => {
+        toast.error('Delete failed', {
+          description: err instanceof Error ? err.message : 'Failed to delete account',
         });
       })
       .finally(() => setAccountReviewing(null));
@@ -611,6 +705,7 @@ export default function DashboardPage() {
   // Admin sees all
   // Developer sees their own requests
   const currentMda = mdas.find(m => m.id === mdaId);
+  const activeCredentialRequests = requests.filter(r => r.consumer_mda_id === mdaId && r.status === 'APPROVED' && r.api_key && (r.api_key_status || 'ACTIVE') === 'ACTIVE');
   const visibleRequests = requests.filter(req => {
     if (role === 'developer') {
       return req.consumer_mda_id === mdaId;
@@ -621,12 +716,69 @@ export default function DashboardPage() {
       return req.api_id.startsWith(`api-${currentMda?.shortName.toLowerCase()}`);
     }
     return true; // Admin and Reviewer see all
+  }).filter(req => {
+    if (!dashboardSearch) return true;
+    return [
+      req.mda_name,
+      req.api_name,
+      req.legal_basis,
+      req.purpose,
+      req.volume_tier,
+      req.requested_fields,
+      req.status,
+      req.api_key_status,
+    ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
   });
 
   const visibleLogs = auditLogs.filter(log => {
     if (filterMda !== 'ALL' && log.mda_id !== filterMda) return false;
     return true;
+  }).filter(log => {
+    if (!dashboardSearch) return true;
+    return [
+      log.event_type,
+      log.mda_name,
+      log.api_name,
+      log.request_id,
+      log.correlation_id,
+      log.details,
+    ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
   });
+
+  const filteredAccountRequests = accountRequests.filter(user => {
+    if (accountStatusFilter === 'ALL') return true;
+    return user.status === accountStatusFilter;
+  }).filter(user => {
+    if (!dashboardSearch) return true;
+    return [
+      user.full_name,
+      user.email,
+      user.account_type,
+      user.status,
+      user.role,
+      user.requested_role,
+      user.requested_organization,
+      user.requested_purpose,
+      user.mda_id,
+      user.requested_mda_id,
+      user.account?.profile?.verification_status,
+    ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
+  });
+  const filteredCredentialRequests = activeCredentialRequests.filter(req => {
+    if (!dashboardSearch) return true;
+    return [
+      req.api_name,
+      req.purpose,
+      req.api_key,
+      req.api_key_status,
+      req.api_key_expires_at,
+    ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
+  });
+  const accountStatusCounts = accountRequests.reduce((counts, user) => {
+    counts[user.status] = (counts[user.status] || 0) + 1;
+    return counts;
+  }, {} as Record<string, number>);
+  const pendingAccountCount = accountRequests.filter(user => user.status === 'PENDING_REVIEW').length;
 
   // Calculate statistics
   const totalApproved = requests.filter(r => r.status === 'APPROVED').length;
@@ -726,10 +878,10 @@ export default function DashboardPage() {
             }`}
           >
             <IconCircleCheck className="w-4 h-4" />
-            Account Requests
-            {accountRequests.length > 0 && (
+            Accounts
+            {pendingAccountCount > 0 && (
               <span className="h-4.5 min-w-4.5 px-1 bg-orange-500 text-white font-bold rounded-full text-[10px] flex items-center justify-center">
-                {accountRequests.length}
+                {pendingAccountCount}
               </span>
             )}
           </button>
@@ -953,36 +1105,72 @@ export default function DashboardPage() {
         {!dashboardLoading && !dashboardError && activeTab === 'accounts' && role === 'admin' && (
           <div className="flex h-full min-h-0 flex-col gap-4">
             <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
-              <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex justify-between items-center">
+              <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="text-[15px] font-semibold text-white">Pending Account Requests</h2>
-                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Review new signup applications, assign role privileges, and assign MDA privileges only where the account type requires them.</p>
+                  <h2 className="text-[15px] font-semibold text-white">Accounts</h2>
+                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Review every account, update access, change status, request more information, or delete accounts when required.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1 rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-1">
+                  {[
+                    ['ALL', 'All'],
+                    ['PENDING_REVIEW', 'Pending'],
+                    ['APPROVED', 'Approved'],
+                    ['REJECTED', 'Rejected'],
+                    ['SUSPENDED', 'Suspended'],
+                  ].map(([value, label]) => {
+                    const count = value === 'ALL' ? accountRequests.length : accountStatusCounts[value] || 0;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setAccountStatusFilter(value)}
+                        className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors ${
+                          accountStatusFilter === value ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
+                        }`}
+                      >
+                        {label}
+                        {count > 0 && (
+                          <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                            value === 'PENDING_REVIEW' ? 'bg-orange-500 text-white' : 'bg-[#2e2e2e] text-[#b5b5b5]'
+                          }`}>
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
-                <Table className="min-w-[1040px]">
+                <Table className="min-w-[1120px]">
                   <TableHeader>
                     <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
                       <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Applicant</TableHead>
                       <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Account Type</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Status</TableHead>
                       <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Organization</TableHead>
                       <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Purpose</TableHead>
-                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Approve As</TableHead>
-                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Assigned MDA</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">Role</TableHead>
+                      <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3">MDA</TableHead>
                       <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-3 text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {accountRequests.length === 0 ? (
+                    {filteredAccountRequests.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="h-28 text-center text-[#8b8b8b] text-[13px]">
-                          No pending account requests.
+                        <TableCell colSpan={8} className="h-28 text-center text-[#8b8b8b] text-[13px]">
+                          No accounts match this filter.
                         </TableCell>
                       </TableRow>
-                    ) : accountRequests.map(user => {
-                      const selectedRole = accountRoleInputs[user.id] || user.requested_role || 'developer';
+                    ) : filteredAccountRequests.map(user => {
+                      const selectedRole = accountRoleInputs[user.id] || user.role || user.requested_role || 'developer';
                       const needsMda = approvalRequiresMda(user.account_type, selectedRole);
-                      const selectedMda = accountMdaInputs[user.id] || user.requested_mda_id || (needsMda ? mdas[0]?.id : '') || '';
+                      const selectedMda = accountMdaInputs[user.id] || user.mda_id || user.requested_mda_id || (needsMda ? mdas[0]?.id : '') || '';
+                      const primaryActionLabel =
+                        accountReviewing === user.id ? 'Saving...' :
+                        user.status === 'APPROVED' ? 'Update' :
+                        user.status === 'SUSPENDED' || user.status === 'REJECTED' ? 'Restore' :
+                        'Approve';
 
                       return (
                         <TableRow key={user.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
@@ -993,6 +1181,12 @@ export default function DashboardPage() {
                           <TableCell className="py-3.5 px-3 text-[13px] text-[#ededed]">
                             <div className="capitalize">{String(user.account_type || '').replace(/_/g, ' ')}</div>
                             <div className="mt-0.5 text-[11px] text-[#8b8b8b]">Requested {user.requested_role}</div>
+                          </TableCell>
+                          <TableCell className="py-3.5 px-3">
+                            <AccountStatusBadge status={user.status} />
+                            {user.account?.profile?.verification_status && (
+                              <div className="mt-1 text-[11px] text-[#8b8b8b]">{String(user.account.profile.verification_status).replace(/_/g, ' ')}</div>
+                            )}
                           </TableCell>
                           <TableCell className="py-3.5 px-3 text-[13px] text-[#8b8b8b] max-w-[150px] truncate" title={user.requested_organization}>
                             {user.requested_organization}
@@ -1029,22 +1223,44 @@ export default function DashboardPage() {
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleRejectAccount(user)}
-                                disabled={accountReviewing === user.id}
-                                className="inline-flex h-[28px] items-center gap-1.5 rounded-md border border-red-400/20 px-2.5 text-[12px] font-semibold text-red-300 transition-colors hover:bg-red-400/10 disabled:opacity-50"
-                              >
-                                <IconX className="h-3.5 w-3.5" />
-                                Reject
-                              </button>
-                              <button
-                                type="button"
                                 onClick={() => handleApproveAccount(user)}
                                 disabled={accountReviewing === user.id}
                                 className="inline-flex h-[28px] items-center gap-1.5 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:opacity-50"
                               >
                                 <IconCircleCheck className="h-3.5 w-3.5" />
-                                {accountReviewing === user.id ? 'Saving...' : 'Approve'}
+                                {primaryActionLabel}
                               </button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label="Account actions"
+                                    disabled={accountReviewing === user.id}
+                                    className="inline-flex h-[28px] w-[28px] items-center justify-center rounded-md border border-[#2e2e2e] text-[#8b8b8b] transition-colors hover:bg-[#2e2e2e] hover:text-white disabled:opacity-50"
+                                  >
+                                    <IconDotsVertical className="h-4 w-4" />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-48 border-[#2e2e2e] bg-[#1c1c1c] text-[#ededed]">
+                                  <DropdownMenuItem onClick={() => handleNeedsInfoAccount(user)} className="flex cursor-pointer items-center gap-2 text-[12px] focus:bg-[#2e2e2e] focus:text-white">
+                                    <IconClock className="h-3.5 w-3.5" />
+                                    Needs information
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleRejectAccount(user)} className="flex cursor-pointer items-center gap-2 text-[12px] text-orange-300 focus:bg-orange-400/10 focus:text-orange-200">
+                                    <IconX className="h-3.5 w-3.5" />
+                                    Reject account
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleSuspendAccount(user)} className="flex cursor-pointer items-center gap-2 text-[12px] text-red-300 focus:bg-red-400/10 focus:text-red-200">
+                                    <IconBan className="h-3.5 w-3.5" />
+                                    Suspend account
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator className="bg-[#2e2e2e]" />
+                                  <DropdownMenuItem onClick={() => handleDeleteAccount(user)} className="flex cursor-pointer items-center gap-2 text-[12px] text-red-300 focus:bg-red-400/10 focus:text-red-200">
+                                    <IconTrash className="h-3.5 w-3.5" />
+                                    Delete permanently
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -1077,13 +1293,13 @@ export default function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {requests.filter(r => r.consumer_mda_id === mdaId && r.status === 'APPROVED' && r.api_key && (r.api_key_status || 'ACTIVE') === 'ACTIVE').length === 0 ? (
+                  {filteredCredentialRequests.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="h-28 text-center text-[#8b8b8b] text-[13px]">
-                        No approved API keys found for your agency. Go to the Catalog to submit a request.
+                        {dashboardSearch ? 'No approved API keys match this search.' : 'No approved API keys found for your agency. Go to the Catalog to submit a request.'}
                       </TableCell>
                     </TableRow>
-                  ) : requests.filter(r => r.consumer_mda_id === mdaId && r.status === 'APPROVED' && r.api_key && (r.api_key_status || 'ACTIVE') === 'ACTIVE').map(req => (
+                  ) : filteredCredentialRequests.map(req => (
                     <TableRow key={req.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
                       <TableCell className="py-3.5 px-4 font-semibold text-[13.5px] text-white">{req.api_name}</TableCell>
                       <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] max-w-xs truncate">{req.purpose}</TableCell>

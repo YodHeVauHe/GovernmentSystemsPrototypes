@@ -36,7 +36,21 @@ export function SiteHeader() {
   else if (location.pathname.startsWith("/docs/")) title = "API Docs"
   else if (location.pathname === "/docs") title = "API Docs"
 
-  const updateCatalogSearch = (value: string) => {
+  const isSearchablePage = location.pathname === "/" || location.pathname === "/docs" || location.pathname === "/dashboard"
+  const searchPlaceholder =
+    location.pathname === "/docs" ? "Search docs..." :
+    location.pathname === "/dashboard" ? "Search dashboard..." :
+    "Search catalog..."
+
+  const updatePageSearch = (value: string) => {
+    if (!isSearchablePage) {
+      navigate({
+        pathname: "/",
+        search: value.trim() ? `q=${encodeURIComponent(value.trim())}` : "",
+      })
+      return
+    }
+
     const nextParams = new URLSearchParams(searchParams)
     if (value.trim()) {
       nextParams.set("q", value)
@@ -45,7 +59,7 @@ export function SiteHeader() {
     }
 
     navigate({
-      pathname: "/",
+      pathname: location.pathname,
       search: nextParams.toString(),
     })
   }
@@ -81,8 +95,8 @@ export function SiteHeader() {
           <input 
             type="text" 
             value={search}
-            onChange={event => updateCatalogSearch(event.target.value)}
-            placeholder="Search... Ctrl K" 
+            onChange={event => updatePageSearch(event.target.value)}
+            placeholder={searchPlaceholder}
             className="h-[30px] w-[180px] bg-[#141414] border border-[#2e2e2e] rounded-full pl-8 pr-3 text-[12px] text-white focus:outline-none focus:border-[#444]"
           />
         </div>
