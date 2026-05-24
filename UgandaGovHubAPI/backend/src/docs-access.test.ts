@@ -40,6 +40,7 @@ db.exec(`
     api_id TEXT NOT NULL,
     status TEXT,
     api_key TEXT,
+    api_key_hash TEXT,
     api_key_status TEXT DEFAULT 'ACTIVE',
     api_key_expires_at TEXT
   );
@@ -70,14 +71,14 @@ db.prepare(`
 
 db.prepare(`
   INSERT INTO access_requests (
-    id, consumer_mda_id, consumer_type, api_id, status, api_key, api_key_status, api_key_expires_at
+    id, consumer_mda_id, consumer_type, api_id, status, api_key_hash, api_key_status, api_key_expires_at
   ) VALUES (?, ?, 'mda', ?, ?, ?, ?, ?)
-`).run('req-approved', 'mda-06', 'api-restricted', 'APPROVED', 'govhub_test_key', 'ACTIVE', null);
+`).run('req-approved', 'mda-06', 'api-restricted', 'APPROVED', 'hashed_key', 'ACTIVE', null);
 db.prepare(`
   INSERT INTO access_requests (
-    id, consumer_user_id, consumer_type, api_id, status, api_key, api_key_status, api_key_expires_at
+    id, consumer_user_id, consumer_type, api_id, status, api_key_hash, api_key_status, api_key_expires_at
   ) VALUES (?, ?, 'user', ?, ?, ?, ?, ?)
-`).run('req-public-approved', 'usr-public', 'api-restricted', 'APPROVED', 'govhub_test_public_key', 'ACTIVE', null);
+`).run('req-public-approved', 'usr-public', 'api-restricted', 'APPROVED', 'hashed_public_key', 'ACTIVE', null);
 
 const developer = { id: 'usr-dev', status: 'APPROVED' as const, role: 'developer' as const, mda_id: 'mda-06' };
 const publicDeveloper = { id: 'usr-public', status: 'APPROVED' as const, role: 'developer' as const, mda_id: null };

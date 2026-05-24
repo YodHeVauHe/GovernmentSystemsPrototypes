@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import {
   createSession,
+  clearSessionCookie,
   getBearerToken,
   getSessionUser,
   hashPassword,
@@ -11,6 +12,7 @@ import {
   requireAuth,
   revokeSession,
   sanitizeUser,
+  setSessionCookie,
   verifyPassword,
 } from '../auth';
 import {
@@ -45,6 +47,37 @@ function validateSignup(body: any) {
   if (body.password.length < 10) return 'Password must be at least 10 characters.';
   if (!isUserRole(body.requested_role)) return 'requested_role is invalid.';
   return null;
+}
+
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const LOGIN_LIMIT = Number(process.env.GOVHUB_LOGIN_RATE_LIMIT || 10);
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+function consumeLoginAttempt(key: string, now = Date.now()) {
+  const current = loginAttempts.get(key);
+  if (!current || current.resetAt <= now) {
+    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return true;
+  }
+  if (current.count >= LOGIN_LIMIT) return false;
+  current.count += 1;
+  return true;
+}
+
+function markVerificationChanged(db: Database.Database, userId: string, currentStatus?: string | null) {
+  if (!['submitted_for_review', 'verified'].includes(currentStatus || '')) return;
+  db.prepare(`
+    UPDATE user_profiles
+    SET verification_status = 'needs_more_information',
+        review_notes = 'Verification data changed after submission and must be reviewed again.',
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `).run(userId);
+  db.prepare(`
+    UPDATE users
+    SET status = 'PENDING_REVIEW', role = NULL, mda_id = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(userId);
 }
 
 export function authRouter(db: Database.Database) {
@@ -86,14 +119,21 @@ export function authRouter(db: Database.Database) {
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
+    const normalizedEmail = normalizeEmail(String(email));
+    const attemptKey = `${req.ip || 'unknown'}:${normalizedEmail}`;
+    if (!consumeLoginAttempt(attemptKey)) {
+      return res.status(429).json({ error: 'Too many login attempts. Try again later.', code: 'LOGIN_RATE_LIMITED' });
+    }
 
-    const user = getUserByEmail(db, email);
+    const user = getUserByEmail(db, normalizedEmail);
     if (!user || !verifyPassword(password, user.password_hash)) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
+    loginAttempts.delete(attemptKey);
 
     const token = createSession(db, user.id);
-    res.json({ token, user: sanitizeUser(user) });
+    setSessionCookie(res, token);
+    res.json({ user: sanitizeUser(user) });
   });
 
   router.get('/me', (req, res) => {
@@ -109,6 +149,7 @@ export function authRouter(db: Database.Database) {
   router.post('/logout', (req, res) => {
     const token = getBearerToken(req);
     if (token) revokeSession(db, token);
+    clearSessionCookie(res);
     res.json({ success: true });
   });
 
@@ -144,35 +185,39 @@ export function authRouter(db: Database.Database) {
     }
     next.account_category = normalizeAccountType(next.account_category);
 
-    db.prepare(`
-      UPDATE user_profiles SET
-        account_category = ?, nin = ?, national_id_number = ?, contact_phone = ?, address = ?,
-        organization_name = ?, organization_type = ?, ursb_number = ?, brn = ?, tin = ?,
-        staff_id = ?, department = ?, job_title = ?, supervisor_name = ?, supervisor_email = ?,
-        verification_status = CASE
-          WHEN verification_status IN ('submitted_for_review', 'verified') THEN verification_status
-          ELSE 'draft_profile'
-        END,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = ?
-    `).run(
-      next.account_category,
-      next.nin,
-      next.national_id_number,
-      next.contact_phone,
-      next.address,
-      next.organization_name,
-      next.organization_type,
-      next.ursb_number,
-      next.brn,
-      next.tin,
-      next.staff_id,
-      next.department,
-      next.job_title,
-      next.supervisor_name,
-      next.supervisor_email,
-      req.user!.id
-    );
+    const transaction = db.transaction(() => {
+      db.prepare(`
+        UPDATE user_profiles SET
+          account_category = ?, nin = ?, national_id_number = ?, contact_phone = ?, address = ?,
+          organization_name = ?, organization_type = ?, ursb_number = ?, brn = ?, tin = ?,
+          staff_id = ?, department = ?, job_title = ?, supervisor_name = ?, supervisor_email = ?,
+          verification_status = CASE
+            WHEN verification_status IN ('submitted_for_review', 'verified') THEN verification_status
+            ELSE 'draft_profile'
+          END,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+      `).run(
+        next.account_category,
+        next.nin,
+        next.national_id_number,
+        next.contact_phone,
+        next.address,
+        next.organization_name,
+        next.organization_type,
+        next.ursb_number,
+        next.brn,
+        next.tin,
+        next.staff_id,
+        next.department,
+        next.job_title,
+        next.supervisor_name,
+        next.supervisor_email,
+        req.user!.id
+      );
+      markVerificationChanged(db, req.user!.id, current.profile.verification_status);
+    });
+    transaction();
 
     res.json({ account: getAccountSnapshot(db, req.user!.id) });
   });
@@ -182,7 +227,12 @@ export function authRouter(db: Database.Database) {
     if (!type || !label || !file_name || !mime_type) {
       return res.status(400).json({ error: 'type, label, file_name, and mime_type are required.' });
     }
-    upsertVerificationDocument(db, req.user!.id, { type, label, file_name, mime_type, storage_ref });
+    const current = getAccountSnapshot(db, req.user!.id);
+    const transaction = db.transaction(() => {
+      upsertVerificationDocument(db, req.user!.id, { type, label, file_name, mime_type, storage_ref });
+      markVerificationChanged(db, req.user!.id, current?.profile.verification_status);
+    });
+    transaction();
     res.status(201).json({ account: getAccountSnapshot(db, req.user!.id) });
   });
 
@@ -230,6 +280,10 @@ export function adminUsersRouter(db: Database.Database) {
 
     const existing = getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
+    const snapshot = getAccountSnapshot(db, req.params.id);
+    if (!snapshot || snapshot.profile.verification_status !== 'submitted_for_review') {
+      return res.status(400).json({ error: 'User verification must be submitted for review before approval.', code: 'VERIFICATION_NOT_SUBMITTED' });
+    }
 
     const needsMda = approvalRequiresMda(existing.account_type, role);
     const approvedMdaId = needsMda ? mda_id || existing.requested_mda_id || null : null;

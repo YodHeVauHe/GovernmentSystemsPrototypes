@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type Database from 'better-sqlite3';
 import { logAuditEvent } from '../audit';
 import { generateApiKey, generatePublicId } from '../ids';
-import { normalizeExpiryInput } from '../admin';
+import { computeApiKeyHash, getApiKeyPreview, normalizeExpiryInput } from '../admin';
 import { requireAuth } from '../auth';
 import { buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
 
@@ -94,17 +94,17 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), (req, res) 
 
     const stmt = db.prepare(`
       UPDATE access_requests 
-      SET status = 'APPROVED', api_key = ?, api_key_status = 'ACTIVE', api_key_expires_at = ?, api_key_revoked_at = NULL
+      SET status = 'APPROVED', api_key = NULL, api_key_hash = ?, api_key_preview = ?, api_key_status = 'ACTIVE', api_key_expires_at = ?, api_key_revoked_at = NULL
       WHERE id = ?
     `);
-    stmt.run(apiKey, expiresAt, id);
+    stmt.run(computeApiKeyHash(apiKey), getApiKeyPreview(apiKey), expiresAt, id);
     
     // Log audit events
     logAuditEvent(db, 'ACCESS_APPROVED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
       request_id: id
     });
     logAuditEvent(db, 'API_KEY_GENERATED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
-      api_key_preview: apiKey.substring(0, 15) + '...',
+      api_key_preview: getApiKeyPreview(apiKey),
       api_key_expires_at: expiresAt
     });
 
@@ -120,8 +120,8 @@ router.patch('/:id/key-expiry', requireAuth(db, ['admin']), (req, res) => {
   const { api_key_expires_at } = req.body || {};
 
   try {
-    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key FROM access_requests WHERE id = ?').get(id) as any;
-    if (!requestRecord || !requestRecord.api_key) {
+    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key_hash FROM access_requests WHERE id = ?').get(id) as any;
+    if (!requestRecord || !requestRecord.api_key_hash) {
       return res.status(404).json({ error: 'API key not found' });
     }
 
@@ -143,15 +143,15 @@ router.post('/:id/revoke-key', requireAuth(db, ['admin']), (req, res) => {
   const id = String(req.params.id);
 
   try {
-    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key FROM access_requests WHERE id = ?').get(id) as any;
-    if (!requestRecord || !requestRecord.api_key) {
+    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key_hash, api_key_preview FROM access_requests WHERE id = ?').get(id) as any;
+    if (!requestRecord || !requestRecord.api_key_hash) {
       return res.status(404).json({ error: 'API key not found' });
     }
 
     const revokedAt = new Date().toISOString();
     db.prepare("UPDATE access_requests SET api_key_status = 'REVOKED', api_key_revoked_at = ? WHERE id = ?").run(revokedAt, id);
     logAuditEvent(db, 'API_KEY_REVOKED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
-      api_key_preview: requestRecord.api_key.substring(0, 15) + '...',
+      api_key_preview: requestRecord.api_key_preview,
       api_key_revoked_at: revokedAt
     });
 
@@ -166,15 +166,15 @@ router.delete('/:id/key', requireAuth(db, ['admin']), (req, res) => {
   const id = String(req.params.id);
 
   try {
-    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key FROM access_requests WHERE id = ?').get(id) as any;
-    if (!requestRecord || !requestRecord.api_key) {
+    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key_hash, api_key_preview FROM access_requests WHERE id = ?').get(id) as any;
+    if (!requestRecord || !requestRecord.api_key_hash) {
       return res.status(404).json({ error: 'API key not found' });
     }
 
-    db.prepare("UPDATE access_requests SET api_key = NULL, api_key_status = 'DELETED', api_key_revoked_at = ?, api_key_expires_at = NULL WHERE id = ?")
+    db.prepare("UPDATE access_requests SET api_key = NULL, api_key_hash = NULL, api_key_status = 'DELETED', api_key_revoked_at = ?, api_key_expires_at = NULL WHERE id = ?")
       .run(new Date().toISOString(), id);
     logAuditEvent(db, 'API_KEY_DELETED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
-      api_key_preview: requestRecord.api_key.substring(0, 15) + '...'
+      api_key_preview: requestRecord.api_key_preview
     });
 
     res.json({ id, api_key_status: 'DELETED' });
@@ -186,14 +186,7 @@ router.delete('/:id/key', requireAuth(db, ['admin']), (req, res) => {
 
 // Post an Audit Log Entry
 router.post('/audit-logs', requireAuth(db, ['admin']), (req, res) => {
-  const { eventType, mdaId, apiId, requestId, details } = req.body;
-  try {
-    logAuditEvent(db, eventType, mdaId, apiId, requestId, details);
-    res.status(201).json({ status: 'logged' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to log event' });
-  }
+  res.status(410).json({ error: 'Manual audit log creation is disabled.', code: 'AUDIT_LOG_MANUAL_WRITE_DISABLED' });
 });
 
 // Get Audit Logs
@@ -213,7 +206,7 @@ router.get('/matrix', requireAuth(db, ['admin', 'reviewer']), (req, res) => {
       SELECT consumer_mda_id, api_id, status 
       FROM access_requests 
       WHERE status = 'APPROVED'
-        AND api_key IS NOT NULL
+        AND api_key_hash IS NOT NULL
         AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
         AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
     `).all(new Date().toISOString());

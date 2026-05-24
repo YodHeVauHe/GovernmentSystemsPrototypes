@@ -11,6 +11,7 @@ if (!fs.existsSync(dataDir)) {
 }
 
 const db = new Database(path.join(dataDir, 'govhub.db'));
+process.env.GOVHUB_DEMO_MODE = process.env.GOVHUB_DEMO_MODE || 'true';
 
 console.log('Initializing database schema...');
 
@@ -65,6 +66,8 @@ db.exec(`
     purpose TEXT,
     status TEXT,
     api_key TEXT,
+    api_key_hash TEXT,
+    api_key_preview TEXT,
     api_key_status TEXT DEFAULT 'ACTIVE',
     api_key_expires_at TEXT,
     api_key_revoked_at TEXT,

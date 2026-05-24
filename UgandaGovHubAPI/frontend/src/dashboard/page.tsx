@@ -24,7 +24,6 @@ import {
   IconListDetails, 
   IconGridPattern, 
   IconChartBar, 
-  IconCopy, 
   IconExternalLink,
   IconActivity,
   IconClock,
@@ -73,12 +72,6 @@ function formatRemainingDuration(value?: string | null) {
   if (hours >= 1) return `${hours}h`;
 
   return `${Math.ceil(diffMs / minuteMs)}m`;
-}
-
-function formatTokenPreview(value?: string | null) {
-  if (!value) return '';
-  if (value.length <= 24) return value;
-  return `${value.slice(0, 14)}...${value.slice(-8)}`;
 }
 
 type TrafficBucket = {
@@ -400,7 +393,6 @@ export default function DashboardPage() {
   const [accountReviewing, setAccountReviewing] = useState<string | null>(null);
   const [accountRoleInputs, setAccountRoleInputs] = useState<Record<string, string>>({});
   const [accountMdaInputs, setAccountMdaInputs] = useState<Record<string, string>>({});
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [filterMda, setFilterMda] = useState<string>('ALL');
   const [accountStatusFilter, setAccountStatusFilter] = useState<string>('ALL');
   const [accountViewMode, setAccountViewMode] = useState<'list' | 'grid'>('list');
@@ -704,32 +696,6 @@ export default function DashboardPage() {
       });
   };
 
-  const copyToClipboard = async (key: string) => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(key);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = key;
-        textarea.style.position = 'fixed';
-        textarea.style.left = '-9999px';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
-
-      setCopiedKey(key);
-      toast.success('API key copied');
-      setTimeout(() => setCopiedKey(null), 2000);
-    } catch {
-      toast.error('Copy failed', {
-        description: 'The API key could not be copied to the clipboard.',
-      });
-    }
-  };
-
   // Filter requests depending on role
   // Owner only sees requests for their MDA's APIs
   // Admin sees all
@@ -738,7 +704,7 @@ export default function DashboardPage() {
   const isCurrentConsumerRequest = (request: any) => (
     mdaId ? request.consumer_mda_id === mdaId : request.consumer_user_id === user?.id
   );
-  const activeCredentialRequests = requests.filter(r => isCurrentConsumerRequest(r) && r.status === 'APPROVED' && r.api_key && (r.api_key_status || 'ACTIVE') === 'ACTIVE');
+  const activeCredentialRequests = requests.filter(r => isCurrentConsumerRequest(r) && r.status === 'APPROVED' && r.api_key_preview && (r.api_key_status || 'ACTIVE') === 'ACTIVE');
   const visibleRequests = requests.filter(req => {
     if (role === 'developer') {
       return isCurrentConsumerRequest(req);
@@ -802,7 +768,7 @@ export default function DashboardPage() {
     return [
       req.api_name,
       req.purpose,
-      req.api_key,
+      req.api_key_preview,
       req.api_key_status,
       req.api_key_expires_at,
     ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
@@ -1062,20 +1028,10 @@ export default function DashboardPage() {
                           <div className="flex flex-col items-end gap-2">
                             <div className="flex w-[204px] items-center justify-between gap-1.5 font-mono text-[12px] text-[#8b8b8b]">
                               <span className="min-w-0 truncate">
-                                {req.api_key ? `${req.api_key.substring(0, 12)}...` : 'Key deleted'}
+                                {req.api_key_preview || 'Key deleted'}
                               </span>
-                              {req.api_key && (
-                                <button 
-                                  type="button"
-                                  aria-label="Copy API key"
-                                  onClick={() => copyToClipboard(req.api_key)}
-                                  className="inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md border border-transparent text-[#8b8b8b] transition-colors hover:border-[#2e2e2e] hover:bg-[#2e2e2e] hover:text-white"
-                                >
-                                  <IconCopy className="w-4 h-4" />
-                                </button>
-                              )}
                             </div>
-                            {req.api_key && (
+                            {req.api_key_preview && (
                               <div className="flex w-[204px] items-center justify-start gap-1.5">
                                 <ExpiryDatePicker
                                   value={keyExpiryInputs[req.id] ?? toDateTimeLocalValue(req.api_key_expires_at)}
@@ -1096,14 +1052,6 @@ export default function DashboardPage() {
                                     align="end"
                                     className="w-44 border-[#2e2e2e] bg-[#1c1c1c] text-[#ededed]"
                                   >
-                                    <DropdownMenuItem
-                                      onClick={() => copyToClipboard(req.api_key)}
-                                      className="flex cursor-pointer items-center gap-2 text-[12px] focus:bg-[#2e2e2e] focus:text-white"
-                                    >
-                                      <IconCopy className="h-3.5 w-3.5" />
-                                      Copy key
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator className="bg-[#2e2e2e]" />
                                     <DropdownMenuItem
                                       onClick={() => handleRevokeKey(req.id)}
                                       className="flex cursor-pointer items-center gap-2 text-[12px] text-orange-300 focus:bg-orange-400/10 focus:text-orange-200"
@@ -1452,17 +1400,9 @@ export default function DashboardPage() {
                       </TableCell>
                       <TableCell className="max-w-0 whitespace-normal px-4 py-3.5 font-mono text-[12.5px] text-[#3ecf8e]">
                         <div className="flex min-w-0 items-center gap-2">
-                          <span className="block min-w-0 max-w-full truncate leading-5" title={req.api_key}>
-                            {formatTokenPreview(req.api_key)}
+                          <span className="block min-w-0 max-w-full truncate leading-5" title={req.api_key_preview}>
+                            {req.api_key_preview}
                           </span>
-                          <button
-                            onClick={() => copyToClipboard(req.api_key)}
-                            className="shrink-0 rounded p-1 text-[#8b8b8b] transition-colors hover:bg-[#2e2e2e] hover:text-white"
-                            title="Copy full token"
-                          >
-                            <IconCopy className="w-3.5 h-3.5" />
-                          </button>
-                          {copiedKey === req.api_key && <span className="text-[10px] text-green-400 font-sans">Copied!</span>}
                         </div>
                       </TableCell>
                       <TableCell className="py-3.5 px-4 text-right">

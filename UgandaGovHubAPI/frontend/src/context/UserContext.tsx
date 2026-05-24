@@ -56,7 +56,6 @@ interface UserContextType {
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
-const TOKEN_KEY = 'govhub_auth_token';
 
 export const MDAS_LIST: MDA[] = [
   { id: 'mda-01', name: 'National Identification and Registration Authority', shortName: 'NIRA' },
@@ -76,23 +75,17 @@ async function parseAuthResponse(response: Response) {
 }
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
     window.fetch = (input, init = {}) => {
-      const currentToken = localStorage.getItem(TOKEN_KEY);
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const isApiRequest = url.startsWith('/api') || url.startsWith(API_BASE);
       const headers = new Headers(init.headers);
 
-      if (currentToken && isApiRequest && !headers.has('authorization')) {
-        headers.set('authorization', `Bearer ${currentToken}`);
-      }
-
-      return originalFetch(input, { ...init, headers });
+      return originalFetch(input, { ...init, headers, credentials: isApiRequest ? 'include' : init.credentials });
     };
 
     return () => {
@@ -101,20 +94,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshUser = async () => {
-    const currentToken = localStorage.getItem(TOKEN_KEY);
-    if (!currentToken) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-
     try {
       const body = await parseAuthResponse(await fetch(`${API_BASE}/api/auth/me`));
       setUser(body.user);
-      setToken(currentToken);
     } catch {
-      localStorage.removeItem(TOKEN_KEY);
-      setToken(null);
       setUser(null);
     } finally {
       setLoading(false);
@@ -131,8 +114,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email, password }),
     }));
-    localStorage.setItem(TOKEN_KEY, body.token);
-    setToken(body.token);
     setUser(body.user);
     return body.user as AuthUser;
   };
@@ -148,8 +129,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST' }).catch(() => undefined);
-    localStorage.removeItem(TOKEN_KEY);
-    setToken(null);
     setUser(null);
   };
 
@@ -160,7 +139,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   return (
     <UserContext.Provider value={{
       user,
-      token,
+      token: null,
       loading,
       role,
       mdaId,
