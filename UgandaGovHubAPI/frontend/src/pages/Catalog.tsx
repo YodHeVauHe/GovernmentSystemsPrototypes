@@ -991,7 +991,7 @@ export function Catalog() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredApis.map(api => (
-            <Link key={api.id} to={`/api/${api.id}`} className="flex min-h-[220px] flex-col rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-6 hover:border-[#444] transition-all group text-left relative overflow-hidden">
+            <Link key={api.id} to={`/api/${api.id}`} className="flex min-h-[220px] flex-col rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-5 hover:border-[#444] transition-all group text-left relative overflow-hidden">
               <div className="absolute top-0 right-0 h-1.5 w-full bg-gradient-to-r from-transparent via-[#2e2e2e] to-[#3ecf8e]/30 group-hover:to-[#3ecf8e]/60 transition-all"></div>
               <div className="flex justify-between items-start mb-4">
                 <SectorBadge sector={api.sector} />

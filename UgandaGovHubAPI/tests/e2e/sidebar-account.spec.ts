@@ -25,3 +25,15 @@ test('collapsed sidebar keeps the account menu visually identifiable', async ({ 
   await expect(accountButton).toBeVisible();
   await expect(accountButton.getByTestId('collapsed-account-icon')).toBeVisible();
 });
+
+test('expanded account menu uses the signed-in user initials', async ({ page }) => {
+  await loginAsAdmin(page);
+
+  const accountButton = page.locator('[data-sidebar="footer"] [data-sidebar="menu-button"]');
+  await expect(accountButton).toBeVisible();
+  await expect(accountButton).toContainText('PA');
+  await expect(accountButton).not.toContainText('CN');
+
+  await accountButton.click();
+  await expect(page.getByRole('menu')).toContainText('PA');
+});
