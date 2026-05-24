@@ -5,10 +5,19 @@ import Database from 'better-sqlite3';
 import { ensureAuthSchema, ensureDefaultAdmin, requireApprovedAuth, requireAuth } from './auth';
 import { authRouter, adminUsersRouter } from './routes/auth';
 import { ensureAccountVerificationSchema } from './account-verification';
+import { computeApiKeyHash, ensureAdminSchema } from './admin';
 
 async function startApp() {
   const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE mdas (id TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT NOT NULL);
+    CREATE TABLE apis (id TEXT PRIMARY KEY, name TEXT NOT NULL, owning_mda_id TEXT NOT NULL);
+  `);
+  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-05', 'Ministry of ICT and National Guidance', 'MoICT');
+  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-06', 'Ministry of Health', 'MoH');
+  db.prepare('INSERT INTO apis (id, name, owning_mda_id) VALUES (?, ?, ?)').run('api-nira-01', 'NIRA Identity', 'mda-05');
   ensureAuthSchema(db);
+  ensureAdminSchema(db);
   process.env.GOVHUB_ADMIN_EMAIL = 'admin@ict.go.ug';
   process.env.GOVHUB_ADMIN_PASSWORD = 'AdminPass123!';
   ensureDefaultAdmin(db);
@@ -87,6 +96,20 @@ async function run() {
     assert.equal(publicDeveloperSignup.response.status, 201);
     assert.equal(publicDeveloperSignup.body.user.requested_mda_id, null);
 
+    const adminSignup = await request(baseUrl, '/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({
+        full_name: 'Mallory Admin',
+        email: 'mallory@example.com',
+        password: 'StrongPass123!',
+        account_type: 'public_developer',
+        requested_role: 'admin',
+        requested_organization: 'Independent Civic Developer',
+        requested_purpose: 'Request administrator access',
+      }),
+    });
+    assert.equal(adminSignup.response.status, 400);
+
     const login = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email: 'jane@example.go.ug', password: 'StrongPass123!' }),
@@ -113,6 +136,14 @@ async function run() {
     });
     assert.equal(draftAccount.response.status, 200);
     assert.equal(draftAccount.body.account.profile.verification_status, 'draft_profile');
+
+    const selfAssignAdminCategory = await request(baseUrl, '/api/auth/account/profile', {
+      method: 'PATCH',
+      headers: { cookie: janeCookie },
+      body: JSON.stringify({ account_category: 'admin' }),
+    });
+    assert.equal(selfAssignAdminCategory.response.status, 400);
+    assert.equal(selfAssignAdminCategory.body.code, 'ADMIN_CATEGORY_FORBIDDEN');
 
     const profileUpdate = await request(baseUrl, '/api/auth/account/profile', {
       method: 'PATCH',
@@ -169,6 +200,14 @@ async function run() {
     assert.equal(publicDeveloperApproval.response.status, 400);
     assert.equal(publicDeveloperApproval.body.code, 'VERIFICATION_NOT_SUBMITTED');
 
+    const invalidMdaApproval = await request(baseUrl, `/api/admin/users/${signup.body.user.id}/approve`, {
+      method: 'POST',
+      headers: { cookie: adminCookie },
+      body: JSON.stringify({ role: 'developer', mda_id: 'missing-mda' }),
+    });
+    assert.equal(invalidMdaApproval.response.status, 400);
+    assert.equal(invalidMdaApproval.body.code, 'MDA_NOT_FOUND');
+
     const approval = await request(baseUrl, `/api/admin/users/${signup.body.user.id}/approve`, {
       method: 'POST',
       headers: { cookie: adminCookie },
@@ -197,6 +236,30 @@ async function run() {
     });
     assert.equal(blockedAfterProfileChange.response.status, 403);
     assert.equal(blockedAfterProfileChange.body.code, 'ACCOUNT_NOT_APPROVED');
+
+    db.prepare(`
+      INSERT INTO access_requests (
+        id, consumer_user_id, consumer_type, api_id, purpose, status,
+        api_key_hash, api_key_preview, api_key_status, api_key_expires_at
+      ) VALUES (?, ?, 'user', ?, ?, 'APPROVED', ?, ?, 'ACTIVE', ?)
+    `).run(
+      'req-jane-key',
+      signup.body.user.id,
+      'api-nira-01',
+      'Civic integration',
+      computeApiKeyHash('ghk_jane_secret'),
+      'ghk_jane...',
+      '2026-06-22T10:00:00.000Z'
+    );
+
+    const suspendJane = await request(baseUrl, `/api/admin/users/${signup.body.user.id}/suspend`, {
+      method: 'POST',
+      headers: { cookie: adminCookie },
+    });
+    assert.equal(suspendJane.response.status, 200);
+    const suspendedKey = db.prepare('SELECT api_key_status, api_key_revoked_at FROM access_requests WHERE id = ?').get('req-jane-key') as any;
+    assert.equal(suspendedKey.api_key_status, 'REVOKED');
+    assert.equal(typeof suspendedKey.api_key_revoked_at, 'string');
 
     const allUsers = await request(baseUrl, '/api/admin/users', {
       headers: { cookie: adminCookie },

@@ -69,6 +69,13 @@ function AppShell() {
   const { loading, isAuthenticated, isApproved } = useUser();
   const authPage = ['/login', '/signup', '/account-status'].includes(location.pathname);
   const publicDocsPage = location.pathname === '/docs' || location.pathname.startsWith('/docs/');
+  const [sidebarOpen, setSidebarOpen] = useState(!publicDocsPage);
+
+  useEffect(() => {
+    if (publicDocsPage) {
+      setSidebarOpen(false);
+    }
+  }, [publicDocsPage]);
 
   if (authPage) {
     return (
@@ -94,6 +101,8 @@ function AppShell() {
 
   return (
     <SidebarProvider
+      open={sidebarOpen}
+      onOpenChange={setSidebarOpen}
       style={
         {
           "--sidebar-width": "224px",

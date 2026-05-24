@@ -800,7 +800,7 @@ export default function DashboardPage() {
 
   return (
     <div className="h-full overflow-hidden">
-      <div className="flex h-full min-h-0 flex-col gap-6 p-4 lg:p-8 text-left max-w-[1400px] mx-auto w-full text-[#ededed] relative">
+      <div className="flex h-full min-h-0 flex-col gap-5 p-3 lg:p-5 text-left max-w-[1400px] mx-auto w-full text-[#ededed] relative">
       
       {/* Stats Summary Panel */}
       <div className="grid shrink-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

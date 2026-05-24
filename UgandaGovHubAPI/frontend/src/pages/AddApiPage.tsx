@@ -164,7 +164,7 @@ export function AddApiPage() {
 
   return (
     <div className="h-full overflow-hidden">
-      <div className="w-full max-w-[1280px] h-full mx-auto p-4 lg:p-8 text-[#ededed] flex flex-col">
+      <div className="w-full max-w-[1280px] h-full mx-auto p-3 lg:p-5 text-[#ededed] flex flex-col">
       <div className="mb-3 flex shrink-0 items-center justify-between">
         <Link to="/" className="inline-flex items-center gap-1.5 text-[12px] text-[#8b8b8b] hover:text-white transition-colors">
           <IconArrowLeft className="w-3.5 h-3.5" />

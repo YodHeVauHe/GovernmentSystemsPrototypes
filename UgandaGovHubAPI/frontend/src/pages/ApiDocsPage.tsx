@@ -501,14 +501,14 @@ export function ApiDocsPage() {
   const canEditDocs = role === 'admin' || role === 'api_owner';
 
   if (loading) {
-    return <div className="h-full bg-[#181818] p-6 text-sm text-[#8b8b8b]">Loading API documentation...</div>;
+    return <div className="h-full bg-[#181818] p-5 text-sm text-[#8b8b8b]">Loading API documentation...</div>;
   }
 
   if (error) {
     const needsLogin = code === 'UNAUTHENTICATED';
     return (
       <div className="h-full overflow-auto bg-[#181818] text-[#ededed]">
-        <div className="mx-auto flex w-full max-w-[900px] flex-col gap-5 p-4 lg:p-8">
+        <div className="mx-auto flex w-full max-w-[900px] flex-col gap-4 p-3 lg:p-5">
           <Link to="/docs" className="inline-flex items-center gap-2 text-sm text-[#8b8b8b] hover:text-white">
             <IconArrowLeft className="size-4" />
             Back to API Docs
@@ -531,12 +531,12 @@ export function ApiDocsPage() {
   }
 
   if (!api || !spec) {
-    return <div className="h-full bg-[#181818] p-6 text-sm text-[#8b8b8b]">API documentation was not found.</div>;
+    return <div className="h-full bg-[#181818] p-5 text-sm text-[#8b8b8b]">API documentation was not found.</div>;
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#181818] text-[#ededed]">
-      <div className="shrink-0 border-b border-[#2e2e2e] bg-[#1c1c1c] px-4 py-4 lg:px-8">
+      <div className="shrink-0 border-b border-[#2e2e2e] bg-[#1c1c1c] px-3 py-3 lg:px-5">
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <Link to="/docs" className="inline-flex items-center gap-2 text-sm text-[#8b8b8b] hover:text-white">
             <IconArrowLeft className="size-4" />
@@ -609,7 +609,7 @@ export function ApiDocsPage() {
         </aside>
 
         <main className="min-h-0 overflow-auto">
-          <div className="mx-auto flex max-w-[1100px] flex-col gap-6 p-4 lg:p-8">
+          <div className="mx-auto flex max-w-[1100px] flex-col gap-5 p-3 lg:p-5">
             <section className="rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-5">
               <div className="mb-4">
                 <h2 className="text-[18px] font-semibold text-white">API Guide</h2>

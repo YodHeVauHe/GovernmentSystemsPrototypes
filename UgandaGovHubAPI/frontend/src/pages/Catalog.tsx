@@ -812,7 +812,7 @@ export function Catalog() {
 
   return (
     <div className="h-full overflow-hidden">
-      <div className="w-full h-full p-4 lg:p-8 max-w-[1200px] mx-auto text-[#ededed] flex min-h-0 flex-col">
+      <div className="w-full h-full p-3 lg:p-5 max-w-[1200px] mx-auto text-[#ededed] flex min-h-0 flex-col">
       {/* Header Info */}
       <div className="shrink-0 text-left mb-8">
         <h1 className="text-[26px] font-semibold tracking-tight mb-2 text-white">Interoperability Catalog</h1>
@@ -2093,7 +2093,7 @@ export function ApiDetail() {
   if (!api || !spec) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-[#181818] text-left text-[#ededed]">
-        <div className="shrink-0 border-b border-[#2e2e2e] px-4 py-5 lg:px-8">
+        <div className="shrink-0 border-b border-[#2e2e2e] px-3 py-4 lg:px-5">
           <div className="h-4 w-28 animate-pulse rounded bg-[#2e2e2e]" />
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <div className="h-7 w-80 max-w-full animate-pulse rounded bg-[#2e2e2e]" />
@@ -2103,10 +2103,10 @@ export function ApiDetail() {
           <div className="mt-5 h-4 w-[520px] max-w-full animate-pulse rounded bg-[#242424]" />
           <div className="mt-3 h-3 w-64 max-w-full animate-pulse rounded bg-[#242424]" />
         </div>
-        <div className="shrink-0 border-b border-[#2e2e2e] bg-[#141414] px-4 py-3 lg:px-8">
+        <div className="shrink-0 border-b border-[#2e2e2e] bg-[#141414] px-3 py-3 lg:px-5">
           <div className="h-8 w-[520px] max-w-full animate-pulse rounded bg-[#242424]" />
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden px-4 py-6 lg:px-8">
+        <div className="min-h-0 flex-1 overflow-hidden px-3 py-5 lg:px-5">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="h-40 animate-pulse rounded-lg border border-[#2e2e2e] bg-[#1c1c1c]" />
@@ -2193,7 +2193,7 @@ export function ApiDetail() {
       {isDeleteOpen && <DeleteApiModal api={api} onClose={() => setIsDeleteOpen(false)} />}
       
       {/* Header Area */}
-      <div className="shrink-0 px-4 lg:px-8 py-4 border-b border-[#2e2e2e] bg-[#1c1c1c]">
+      <div className="shrink-0 px-3 lg:px-5 py-3 border-b border-[#2e2e2e] bg-[#1c1c1c]">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
           <Link to="/" className="inline-flex items-center gap-2 text-[13px] text-[#8b8b8b] hover:text-white transition-colors">
             <IconArrowLeft className="w-4 h-4" /> Back to Catalog
@@ -2297,7 +2297,7 @@ export function ApiDetail() {
       </div>
 
       {/* Tabs Menu */}
-      <div className="shrink-0 border-b border-[#2e2e2e] bg-[#141414] px-4 lg:px-8 flex gap-1">
+      <div className="shrink-0 border-b border-[#2e2e2e] bg-[#141414] px-3 lg:px-5 flex gap-1">
         <button
           onClick={() => setActiveTab('docs')}
           className={`h-11 px-4 text-[13.5px] font-medium border-b-2 transition-all flex items-center gap-2 ${
@@ -2343,12 +2343,12 @@ export function ApiDetail() {
         <div className={`h-full ${canViewSensitiveApi ? '' : 'pointer-events-none select-none blur-sm opacity-30'}`}>
         {activeTab === 'docs' && (
           <div className="flex h-full min-h-0 flex-col">
-            <div className="shrink-0 px-4 lg:px-8 py-5">
+            <div className="shrink-0 px-3 lg:px-5 py-4">
               <h2 className="text-[18px] font-semibold text-white mb-2">Endpoint Contracts</h2>
               <p className="text-[13px] text-[#8b8b8b]">Review parameters and examples validated against machine-readable contracts.</p>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 lg:px-8 pb-5 pt-10">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 lg:px-5 pb-4 pt-8">
               <div className="flex flex-col gap-12">
                 {endpoints.map((ep, idx) => (
                   <EndpointBlock key={idx} ep={ep} spec={spec} apiId={api.id} />
@@ -2360,7 +2360,7 @@ export function ApiDetail() {
 
         {activeTab === 'gov' && (
           <div className="flex h-full min-h-0 w-full flex-col">
-            <div className="shrink-0 px-4 lg:px-8 py-5">
+            <div className="shrink-0 px-3 lg:px-5 py-4">
               <div className="flex justify-between items-center border-b border-[#2e2e2e] pb-4">
               <div>
                 <h2 className="text-[18px] font-semibold text-white">Interoperability & Data Protection Compliance</h2>
@@ -2383,7 +2383,7 @@ export function ApiDetail() {
             </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 lg:px-8 pb-5 pt-4">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 lg:px-5 pb-4 pt-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Card 1: Authority & Scope */}
               <div className="p-6 border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl flex flex-col gap-4">
@@ -2481,12 +2481,12 @@ export function ApiDetail() {
 
         {activeTab === 'try' && (
           <div className="flex h-full min-h-0 flex-col">
-            <div className="shrink-0 px-4 lg:px-8 py-5">
+            <div className="shrink-0 px-3 lg:px-5 py-4">
               <h2 className="text-[18px] font-semibold text-white mb-1">Sandbox Console Simulator</h2>
               <p className="text-[13px] text-[#8b8b8b]">Open the sandbox in a front-of-screen client panel so requests, parameters, and responses stay visible.</p>
             </div>
 
-            <div className="min-h-0 flex-1 px-4 lg:px-8 pb-5 pt-1">
+            <div className="min-h-0 flex-1 px-3 lg:px-5 pb-4 pt-1">
               <div className="flex min-h-[260px] flex-col items-center justify-center rounded-xl border border-[#2e2e2e] bg-[#141414] px-6 text-center shadow-lg">
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/10 text-[#3ecf8e]">
                   <IconTerminal2 className="h-6 w-6" />

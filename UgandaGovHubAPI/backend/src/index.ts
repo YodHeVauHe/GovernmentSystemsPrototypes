@@ -16,7 +16,7 @@ import { accessRouter } from './routes/access';
 import { drivingPermitRouter } from './routes/driving-permit';
 import { compositeRouter } from './routes/composite';
 import { ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
-import { deleteSpecFiles, ensureAdminSchema, removeExistingSpecFiles } from './admin';
+import { deleteSpecFiles, ensureAdminSchema, removeExistingSpecFiles, resolveOpenApiFilePath } from './admin';
 import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers, optionalAuth, requireAuth } from './auth';
 import { adminUsersRouter, authRouter } from './routes/auth';
 import { canTransferApiOwnership, requireApiManager } from './access-control';
@@ -31,6 +31,7 @@ dotenv.config();
 const app = express();
 const port = Number(process.env.PORT || 4000);
 const host = process.env.HOST || '127.0.0.1';
+const openapiRoot = path.join(__dirname, '../openapi');
 
 const allowedOrigins = (process.env.GOVHUB_ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
@@ -144,7 +145,7 @@ app.use('/openapi', optionalAuth(db), (req, res, next) => {
     return res.status(status).json({ error: decision.message, code: decision.code });
   }
   next();
-}, express.static(path.join(__dirname, '../openapi')));
+}, express.static(openapiRoot));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'Uganda GovHub API Mock Sandbox' });
@@ -346,7 +347,7 @@ app.get('/api/catalog/:id/spec', optionalAuth(db), (req, res) => {
       return res.status(status).json({ error: decision.message, code: decision.code });
     }
     
-    const filePath = path.join(__dirname, '..', api.openapi_spec_path);
+    const filePath = resolveOpenApiFilePath(openapiRoot, api.openapi_spec_path);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Spec file missing on disk' });
     }
@@ -547,7 +548,7 @@ app.delete('/api/catalog/:id', requireAuth(db, ['admin']), (req, res) => {
     });
 
     transaction();
-    deleteSpecFiles(specPaths, path.join(__dirname, '../openapi'));
+    deleteSpecFiles(specPaths, openapiRoot);
     res.json({ success: true, apiId: req.params.id });
   } catch (err: any) {
     console.error(err);

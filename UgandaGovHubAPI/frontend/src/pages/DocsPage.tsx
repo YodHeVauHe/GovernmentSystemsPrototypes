@@ -174,7 +174,7 @@ export function DocsPage() {
 
   return (
     <div className="h-full overflow-hidden bg-[#181818] text-[#ededed]">
-      <div className="mx-auto flex h-full w-full max-w-[1280px] flex-col gap-6 p-4 lg:p-8">
+      <div className="mx-auto flex h-full w-full max-w-[1280px] flex-col gap-5 p-3 lg:p-5">
         <div className="flex flex-col gap-4 border-b border-[#2e2e2e] pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-3 inline-flex h-8 items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] px-3 text-[12px] font-mono uppercase tracking-wider text-[#3ecf8e]">

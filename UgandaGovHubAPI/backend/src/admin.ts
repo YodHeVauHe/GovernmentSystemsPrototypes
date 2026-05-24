@@ -10,6 +10,8 @@ export type ApiKeyRecord = {
   api_key_revoked_at?: string | null;
   api_id: string;
   consumer_mda_id: string;
+  consumer_user_id?: string | null;
+  consumer_user_status?: string | null;
 };
 
 export type ApiKeyAccessDecision =
@@ -56,6 +58,9 @@ export function computeApiKeyAccess(record: ApiKeyRecord | undefined | null, api
   if (record.api_key_expires_at && new Date(record.api_key_expires_at).getTime() <= now.getTime()) {
     return { allowed: false, code: 'EXPIRED_API_KEY', message: 'The provided API key has expired.' };
   }
+  if (record.consumer_user_id && record.consumer_user_status !== 'APPROVED') {
+    return { allowed: false, code: 'ACCOUNT_NOT_APPROVED', message: 'The API key owner account is not approved.' };
+  }
   if (record.api_id !== apiId) {
     return { allowed: false, code: 'UNAUTHORIZED_ENDPOINT', message: 'The provided API key is not authorized to access this API.' };
   }
@@ -82,6 +87,28 @@ export function resolveSandboxApiId(url: string, mappings: SandboxApiMapping[] =
     .filter(mapping => pathOnly === mapping.sandbox_base_path || pathOnly.startsWith(`${mapping.sandbox_base_path}/`))
     .sort((a, b) => b.sandbox_base_path.length - a.sandbox_base_path.length)[0];
   return match?.id || null;
+}
+
+export function buildRegisteredSandboxMappings(rows: Array<{ id: string; sandbox_available?: number | boolean | null }>): SandboxApiMapping[] {
+  return rows
+    .filter(row => Boolean(row.sandbox_available))
+    .map(row => ({
+      id: row.id,
+      sandbox_base_path: `/api/v1/sandbox/${encodeURIComponent(row.id)}`,
+    }));
+}
+
+export function resolveOpenApiFilePath(openapiRoot: string, specPath: string) {
+  const normalizedRoot = path.resolve(openapiRoot);
+  if (typeof specPath !== 'string' || !specPath.startsWith('/openapi/') || specPath.includes('..')) {
+    throw new Error('Invalid OpenAPI path.');
+  }
+  const relativePath = specPath.replace(/^\/openapi\/+/, '');
+  const absolutePath = path.resolve(normalizedRoot, relativePath);
+  if (absolutePath !== normalizedRoot && !absolutePath.startsWith(`${normalizedRoot}${path.sep}`)) {
+    throw new Error('Invalid OpenAPI path.');
+  }
+  return absolutePath;
 }
 
 export function ensureAdminSchema(db: Database.Database) {

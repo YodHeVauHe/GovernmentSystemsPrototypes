@@ -1,0 +1,9 @@
+Subject: concise summary of the main change
+
+Changes:
+- Explain the first concrete behavior or file-area change.
+- Explain the second concrete behavior or file-area change.
+- Note any user-provided or pre-existing changes included in this commit.
+
+Verification:
+- `command`: result
