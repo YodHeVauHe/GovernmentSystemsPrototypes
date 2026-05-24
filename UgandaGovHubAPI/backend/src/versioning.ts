@@ -24,7 +24,26 @@ export function getSpecSha(specText: string) {
 }
 
 export function parseSpecMetadata(specText: string) {
+  const { metadata } = validateOpenApiSpec(specText);
+  return {
+    version: metadata.version,
+    openapiVersion: metadata.openapiVersion,
+    endpointsCount: metadata.endpointsCount,
+  };
+}
+
+export function validateOpenApiSpec(specText: string) {
   const parsed = yaml.load(specText) as any;
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Specification parsed to an invalid object.');
+  }
+  const openapiVersion = parsed.openapi || parsed.swagger;
+  if (!openapiVersion) {
+    throw new Error('Invalid specification: missing "openapi" or "swagger" version declaration.');
+  }
+  if (!parsed.info || !parsed.info.title) {
+    throw new Error('Invalid specification: missing "info.title" metadata.');
+  }
   const paths = parsed?.paths || {};
   const endpointsCount = Object.keys(paths).reduce((count, route) => {
     const methods = Object.keys(paths[route] || {}).filter(method =>
@@ -34,9 +53,14 @@ export function parseSpecMetadata(specText: string) {
   }, 0);
 
   return {
-    version: parsed?.info?.version || '1.0.0',
-    openapiVersion: parsed?.openapi || parsed?.swagger || 'unknown',
-    endpointsCount,
+    parsed,
+    metadata: {
+      title: parsed.info.title,
+      version: parsed.info.version || '1.0.0',
+      description: parsed.info.description || '',
+      openapiVersion,
+      endpointsCount,
+    },
   };
 }
 

@@ -74,9 +74,9 @@ assert.deepEqual(resolveConsumerMdaForRequest(developer, 'mda-01'), {
   code: 'MDA_IMPERSONATION',
   message: 'Access requests must use the approved MDA assigned to your account.',
 });
-assert.deepEqual(resolveConsumerMdaForRequest(developer, 'mda-06'), { allowed: true, mdaId: 'mda-06', consumerType: 'mda' });
+assert.deepEqual(resolveConsumerMdaForRequest(developer, 'mda-06'), { allowed: true, mdaId: 'mda-06', userId: 'usr-dev', consumerType: 'mda' });
 assert.deepEqual(resolveConsumerMdaForRequest(publicDeveloper, null), { allowed: true, userId: 'usr-public', consumerType: 'user' });
-assert.deepEqual(resolveConsumerMdaForRequest(admin, 'mda-01'), { allowed: true, mdaId: 'mda-01', consumerType: 'mda' });
+assert.deepEqual(resolveConsumerMdaForRequest(admin, 'mda-01'), { allowed: true, mdaId: 'mda-01', userId: 'usr-admin', consumerType: 'mda' });
 assert.equal(canSubmitAccessRequest(db, 'api-nira-01').allowed, true);
 assert.deepEqual(canSubmitAccessRequest(db, 'missing-api'), {
   allowed: false,
