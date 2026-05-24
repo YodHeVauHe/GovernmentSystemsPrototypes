@@ -13,6 +13,7 @@ graphify-out/
 .codex/
 AGENTS.md
 .githooks/
+/test
 
 # Git worktrees
 .worktrees/
