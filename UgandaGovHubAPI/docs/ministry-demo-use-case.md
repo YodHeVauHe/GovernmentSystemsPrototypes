@@ -160,12 +160,12 @@ The demo is aligned with the current app for the core ministry flow:
 - Audit logs, analytics, and interoperability matrix in the dashboard.
 - API registration and OpenAPI validation through the Add API flow.
 
-Known gaps that should not be promised in a live demo:
+Implemented demo support:
 
-- There is no one-click role switcher; role changes are demonstrated by logging in as the seeded accounts.
-- End-to-end Playwright demo automation is not present.
-- Accessibility checks are not automated in the current verification scripts.
-- Code samples are available in the API detail sandbox/docs experience, but full generated cURL, JavaScript, Python, and Java SDK-style samples are not a complete feature.
+- Seeded accounts support presenter role changes through normal login/logout.
+- `npm run test:e2e` runs Playwright automation for the ministry presenter flow.
+- `npm run test:a11y` runs automated axe accessibility checks for core demo pages.
+- API docs and API detail pages include generated cURL, JavaScript, Python, and Java request samples.
 
 ## Positioning for Ministry Stakeholders
 

@@ -8,6 +8,7 @@ import {
   IconShieldCheck,
   IconWorld,
 } from '@tabler/icons-react';
+import { CodeSamples } from '@/components/CodeSamples';
 import { useUser } from '@/context/UserContext';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
@@ -226,6 +227,25 @@ function sampleValue(schema: any, spec: OpenApiSpec): any {
   return 'string';
 }
 
+function requestBodyExample(operation: any, spec: OpenApiSpec) {
+  const content = operation?.requestBody?.content || {};
+  const media = content['application/json'] || Object.values(content)[0] as any;
+  const firstExample = media?.examples ? Object.values(media.examples)[0] as any : null;
+  return media?.example ?? firstExample?.value ?? sampleValue(media?.schema, spec);
+}
+
+function operationSampleUrl(item: Operation, spec: OpenApiSpec) {
+  const serverUrl = spec.servers?.[0]?.url || '/api/v1';
+  try {
+    const path = serverUrl.startsWith('http')
+      ? `${new URL(serverUrl).pathname.replace(/\/$/, '')}${item.path}`
+      : `${serverUrl.replace(/\/$/, '')}${item.path}`;
+    return new URL(path, API_BASE).toString();
+  } catch {
+    return new URL(item.path, API_BASE).toString();
+  }
+}
+
 function MethodBadge({ method }: { method: HttpMethod }) {
   return (
     <span className={`inline-flex h-6 min-w-14 items-center justify-center rounded border px-2 text-[11px] font-bold uppercase ${methodStyles[method]}`}>
@@ -340,6 +360,7 @@ function MediaSchema({ content, spec }: { content: Record<string, any> | undefin
 function OperationBlock({ item, spec }: { item: Operation; spec: OpenApiSpec }) {
   const parameters = item.operation?.parameters || [];
   const responses = item.operation?.responses || {};
+  const hasRequestBody = Boolean(item.operation?.requestBody);
 
   return (
     <section id={item.id} className="scroll-mt-4 rounded-lg border border-[#2e2e2e] bg-[#1c1c1c]">
@@ -400,6 +421,20 @@ function OperationBlock({ item, spec }: { item: Operation; spec: OpenApiSpec }) 
             <MediaSchema content={item.operation.requestBody.content} spec={spec} />
           </div>
         )}
+
+        <div>
+          <h3 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-[#b5b5b5]">Generated Integration Samples</h3>
+          <p className="mb-3 text-[12.5px] leading-5 text-[#8b8b8b]">
+            Use these as starting points after access approval. Replace path placeholders and sample payloads with approved workflow values.
+          </p>
+          <CodeSamples
+            input={{
+              method: item.method,
+              url: operationSampleUrl(item, spec),
+              body: hasRequestBody ? requestBodyExample(item.operation, spec) : undefined,
+            }}
+          />
+        </div>
 
         <div>
           <h3 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-[#b5b5b5]">Responses</h3>
