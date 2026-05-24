@@ -4,14 +4,17 @@ import {
   IconBell,
   IconBuildingBank,
   IconClipboardCheck,
+  IconCircleCheck,
   IconFileCertificate,
   IconFingerprint,
   IconId,
   IconShieldCheck,
   IconUpload,
   IconCheck,
+  IconChecks,
   IconLoader,
   IconFileText,
+  IconTrash,
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -243,17 +246,19 @@ export function AccountSettingsPage() {
     ['notifications', IconBell, 'Notifications'],
     ['flow', IconClipboardCheck, 'Setup Flow'],
   ] as const;
+  const activePaneClassName = 'space-y-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:space-y-0';
+  const paneBodyClassName = 'space-y-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2';
 
   if (loading) {
     return <div className="p-6 text-sm text-[#8b8b8b]">Loading account settings...</div>;
   }
 
   return (
-    <div className="h-full overflow-auto bg-canvas text-foreground">
-      <div className="mx-auto w-full max-w-[1200px] p-4 lg:p-8 space-y-6">
+    <div data-testid="account-settings-page" className="h-full min-h-0 overflow-auto bg-canvas text-foreground lg:overflow-hidden">
+      <div className="mx-auto flex min-h-full w-full max-w-[1200px] flex-col p-3 lg:h-full lg:min-h-0 lg:p-5">
         
         {/* Header section with Verification status */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-border pb-6">
+        <div className="mb-6 flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Account Settings</h1>
             <p className="mt-1 text-sm text-foreground-light">
@@ -284,10 +289,10 @@ export function AccountSettingsPage() {
         </div>
 
         {account && (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div className="grid grid-cols-1 gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:overflow-hidden">
             
             {/* Left Column: Sidebar Cards & Navigation */}
-            <div className="lg:col-span-3 space-y-6">
+            <div className="space-y-6 lg:col-span-3 lg:overflow-hidden">
               
               {/* Profile Card */}
               <div className="bg-card border border-border rounded-xl p-4 text-center shadow-sm relative overflow-hidden">
@@ -309,7 +314,7 @@ export function AccountSettingsPage() {
               </div>
 
               {/* Navigation Pane */}
-              <nav className="flex flex-col space-y-1 bg-card border border-border rounded-xl p-2 shadow-sm">
+              <nav data-testid="account-settings-nav" className="flex flex-col space-y-1 bg-card border border-border rounded-xl p-2 shadow-sm">
                 {tabs.map(([id, Icon, label]) => {
                   const isActive = activeTab === id;
                   return (
@@ -342,13 +347,13 @@ export function AccountSettingsPage() {
             </div>
 
             {/* Right Column: Settings Sections Content */}
-            <div className="lg:col-span-9">
-              <div className="bg-card border border-border rounded-xl p-4 shadow-sm min-h-[500px]">
+            <div className="lg:col-span-9 lg:min-h-0 lg:overflow-hidden">
+              <div className="min-h-[500px] rounded-xl border border-border bg-card p-4 shadow-sm lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden">
                 
                 {/* Profile Tab */}
                 {activeTab === 'profile' && (
-                  <div className="space-y-6">
-                    <div>
+                  <div data-testid="account-settings-active-pane" className={activePaneClassName}>
+                    <div className="shrink-0 pb-6">
                       <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                         <IconId className="text-[#3ecf8e] size-5" />
                         Profile Settings
@@ -357,8 +362,9 @@ export function AccountSettingsPage() {
                         Configure your identity details and account category to ensure appropriate platform authorization.
                       </p>
                     </div>
-                    
-                    <div className="grid gap-6 md:grid-cols-2 pt-4">
+
+                    <div data-testid="account-settings-pane-body" className={paneBodyClassName}>
+                    <div className="grid gap-6 md:grid-cols-2">
                       <div className="space-y-2 md:col-span-2">
                         <Label className="text-foreground-light text-xs font-semibold">Account Category</Label>
                         <select 
@@ -423,13 +429,14 @@ export function AccountSettingsPage() {
                         Save Profile
                       </Button>
                     </div>
+                    </div>
                   </div>
                 )}
 
                 {/* Organization Tab */}
                 {activeTab === 'organization' && (
-                  <div className="space-y-6">
-                    <div>
+                  <div data-testid="account-settings-active-pane" className={activePaneClassName}>
+                    <div className="shrink-0 pb-6">
                       <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                         <IconBuildingBank className="text-[#3ecf8e] size-5" />
                         Organization & MDA Details
@@ -439,7 +446,8 @@ export function AccountSettingsPage() {
                       </p>
                     </div>
 
-                    <div className="grid gap-6 md:grid-cols-2 pt-4">
+                    <div data-testid="account-settings-pane-body" className={paneBodyClassName}>
+                    <div className="grid gap-6 md:grid-cols-2">
                       
                       {/* Section 1: Business Registrations */}
                       <div className="md:col-span-2">
@@ -564,13 +572,14 @@ export function AccountSettingsPage() {
                         Save Organization Details
                       </Button>
                     </div>
+                    </div>
                   </div>
                 )}
 
                 {/* Documents Tab */}
                 {activeTab === 'documents' && (
-                  <div className="space-y-6">
-                    <div>
+                  <div data-testid="account-settings-active-pane" className={activePaneClassName}>
+                    <div className="shrink-0 pb-6">
                       <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                         <IconFileCertificate className="text-[#3ecf8e] size-5" />
                         Verification Documents
@@ -580,6 +589,7 @@ export function AccountSettingsPage() {
                       </p>
                     </div>
 
+                    <div data-testid="account-settings-pane-body" className={paneBodyClassName}>
                     <div className="rounded-xl border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 p-4 flex items-start gap-3">
                       <IconFingerprint className="size-5 text-[#3ecf8e] shrink-0 mt-0.5 animate-pulse" />
                       <div>
@@ -626,13 +636,14 @@ export function AccountSettingsPage() {
                         {account.profile.verification_status === 'submitted_for_review' ? 'Verification Pending Review' : 'Submit for Admin Review'}
                       </Button>
                     </div>
+                    </div>
                   </div>
                 )}
 
                 {/* Privileges Tab */}
                 {activeTab === 'privileges' && (
-                  <div className="space-y-6">
-                    <div>
+                  <div data-testid="account-settings-active-pane" className={activePaneClassName}>
+                    <div className="shrink-0 pb-6">
                       <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                         <IconShieldCheck className="text-[#3ecf8e] size-5" />
                         Security Privileges
@@ -642,7 +653,8 @@ export function AccountSettingsPage() {
                       </p>
                     </div>
 
-                    <div className="grid gap-6 md:grid-cols-2 pt-4">
+                    <div data-testid="account-settings-pane-body" className={paneBodyClassName}>
+                    <div className="grid gap-6 md:grid-cols-2">
                       {/* Access Group Card */}
                       <div className="rounded-xl border border-border bg-background/40 overflow-hidden shadow-sm">
                         <div className="bg-[#3ecf8e]/10 border-b border-border px-4 py-3 flex items-center gap-2">
@@ -702,13 +714,14 @@ export function AccountSettingsPage() {
                         </div>
                       </div>
                     </div>
+                    </div>
                   </div>
                 )}
 
                 {/* Notifications Tab */}
                 {activeTab === 'notifications' && (
-                  <div className="space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div data-testid="account-settings-active-pane" className={activePaneClassName}>
+                    <div className="flex shrink-0 flex-col gap-4 pb-6 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                           <IconBell className="text-[#3ecf8e] size-5" />
@@ -724,22 +737,25 @@ export function AccountSettingsPage() {
                           <Button 
                             variant="outline" 
                             onClick={markAllRead}
-                            className="h-8 text-xs font-semibold border-border bg-card text-foreground hover:bg-background transition-colors"
+                            className="h-8 gap-1.5 text-xs font-semibold border-border bg-card text-foreground hover:bg-background transition-colors"
                           >
+                            <IconChecks className="size-3.5" />
                             Mark all read
                           </Button>
                           <Button 
                             variant="outline" 
                             onClick={clearNotifications}
-                            className="h-8 text-xs font-semibold border-border bg-card text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
+                            className="h-8 gap-1.5 text-xs font-semibold border-border bg-card text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
                           >
+                            <IconTrash className="size-3.5" />
                             Clear all
                           </Button>
                         </div>
                       )}
                     </div>
 
-                    <div className="space-y-3 pt-4">
+                    <div data-testid="account-settings-pane-body" className={paneBodyClassName}>
+                    <div className="space-y-3">
                       {notifications.length === 0 ? (
                         <div className="rounded-xl border border-dashed border-border bg-background/20 p-12 text-center flex flex-col items-center justify-center">
                           <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-foreground-muted mb-3">
@@ -765,13 +781,14 @@ export function AccountSettingsPage() {
                         ))
                       )}
                     </div>
+                    </div>
                   </div>
                 )}
 
                 {/* Setup Flow Tab */}
                 {activeTab === 'flow' && (
-                  <div className="space-y-6">
-                    <div>
+                  <div data-testid="account-settings-active-pane" className={activePaneClassName}>
+                    <div className="shrink-0 pb-6">
                       <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                         <IconClipboardCheck className="text-[#3ecf8e] size-5" />
                         Verification Stepper
@@ -781,7 +798,8 @@ export function AccountSettingsPage() {
                       </p>
                     </div>
 
-                    <div className="relative border-l border-border ml-4 pl-6 space-y-6 py-2 pt-4">
+                    <div data-testid="account-settings-pane-body" className={paneBodyClassName}>
+                    <div className="relative border-l border-border ml-4 pl-6 space-y-6 py-2">
                       {[
                         {
                           title: 'Account Registration',
@@ -826,14 +844,14 @@ export function AccountSettingsPage() {
                         return (
                           <div key={idx} className="relative">
                             {/* Bullet circle */}
-                            <div className={`absolute -left-[35px] top-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full border text-[9px] font-bold transition-all ${
+                            <div className={`absolute -left-[35px] top-0.5 flex h-[18px] w-[18px] items-center justify-center text-[9px] font-bold leading-none transition-all ${
                               isCompleted 
-                                ? 'bg-[#3ecf8e] border-[#3ecf8e] text-black shadow-sm'
+                                ? 'text-[#3ecf8e]'
                                 : isActive
-                                  ? 'bg-background border-[#3ecf8e] text-[#3ecf8e] ring-4 ring-[#3ecf8e]/10'
-                                  : 'bg-background border-border text-foreground-muted'
+                                  ? 'rounded-full border bg-background border-[#3ecf8e] text-[#3ecf8e] ring-4 ring-[#3ecf8e]/10'
+                                  : 'rounded-full border bg-background border-border text-foreground-muted'
                             }`}>
-                              {isCompleted ? '✓' : idx + 1}
+                              {isCompleted ? <IconCircleCheck className="size-[18px]" strokeWidth={2.25} /> : idx + 1}
                             </div>
                             
                             <div className={`space-y-1 ${isActive ? 'opacity-100' : isCompleted ? 'opacity-90' : 'opacity-60'}`}>
@@ -851,6 +869,7 @@ export function AccountSettingsPage() {
                           </div>
                         );
                       })}
+                    </div>
                     </div>
                   </div>
                 )}
