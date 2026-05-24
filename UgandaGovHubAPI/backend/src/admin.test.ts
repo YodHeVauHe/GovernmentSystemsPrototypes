@@ -88,6 +88,23 @@ assert.deepEqual(
   ),
   { allowed: false, code: 'ACCOUNT_NOT_APPROVED', message: 'The API key owner account is not approved.' }
 );
+assert.deepEqual(
+  computeApiKeyAccess(
+    {
+      status: 'APPROVED',
+      api_key_status: 'ACTIVE',
+      api_key_expires_at: '2026-05-21T11:00:00.000Z',
+      api_key_revoked_at: null,
+      api_id: 'api-nira-01',
+      consumer_mda_id: 'mda-06',
+      consumer_user_id: 'usr-mda-suspended',
+      consumer_user_status: 'SUSPENDED',
+    },
+    'api-nira-01',
+    now
+  ),
+  { allowed: false, code: 'ACCOUNT_NOT_APPROVED', message: 'The API key owner account is not approved.' }
+);
 
 assert.deepEqual(removeExistingSpecFiles(['/openapi/a.yaml', '/openapi/a.yaml', null, '../bad.yaml']), [
   '/openapi/a.yaml',
