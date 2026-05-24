@@ -1166,7 +1166,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
           r.api_id === api.id &&
           (mdaId ? r.consumer_mda_id === mdaId : r.consumer_user_id === user?.id) &&
           r.status === 'APPROVED' &&
-          r.api_key &&
+          r.api_key_preview &&
           (r.api_key_status || 'ACTIVE') === 'ACTIVE' &&
           (!r.api_key_expires_at || new Date(r.api_key_expires_at).getTime() > Date.now())
         );
@@ -1224,10 +1224,10 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
 
   // Resolve current API key value for auto header display
   const resolvedKey = useMemo(() => {
-    if (apiKeyOption === 'approved') return approvedRequests[0]?.api_key || '';
+    if (apiKeyOption === 'approved') return '';
     if (apiKeyOption === 'custom') return customApiKey;
     return '';
-  }, [apiKeyOption, approvedRequests, customApiKey]);
+  }, [apiKeyOption, customApiKey]);
 
   // Auto-generated default headers for the sandbox request builder.
   const autoHeaders = useMemo((): SandboxParameterRow[] => {
@@ -1321,7 +1321,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
     // Resolve API Key
     let key = '';
     if (apiKeyOption === 'approved') {
-      key = approvedRequests[0]?.api_key || '';
+      key = '';
     } else if (apiKeyOption === 'custom') {
       key = customApiKey;
     }
@@ -1513,7 +1513,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
               {apiKeyOption === 'approved' && (
                 approvedRequests.length > 0 ? (
                   <span className="text-[11px] text-[#3ecf8e] font-mono truncate max-w-[200px]">
-                    {approvedRequests[0].api_key.substring(0, 20)}...
+                    {approvedRequests[0].api_key_preview} saved. Paste full key as custom to call.
                   </span>
                 ) : (
                   <span className="text-[11px] text-orange-400">No approved keys</span>
@@ -2123,7 +2123,7 @@ export function ApiDetail() {
   const hasActiveApprovedAccess = accessRequests.some(request =>
     request.api_id === api.id &&
     request.status === 'APPROVED' &&
-    request.api_key &&
+    request.api_key_preview &&
     (request.api_key_status || 'ACTIVE') === 'ACTIVE' &&
     (!request.api_key_expires_at || new Date(request.api_key_expires_at).getTime() > Date.now())
   );

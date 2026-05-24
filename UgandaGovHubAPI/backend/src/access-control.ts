@@ -43,7 +43,9 @@ export function resolveConsumerMdaForRequest(user: AccessUser, requestedMdaId?: 
 export function buildAccessRequestList(db: Database.Database, user: AccessUser) {
   const baseSelect = `
     SELECT
-      r.*,
+      r.id, r.consumer_mda_id, r.consumer_user_id, r.consumer_type, r.api_id, r.purpose,
+      r.status, r.api_key_preview, r.api_key_status, r.api_key_expires_at, r.api_key_revoked_at,
+      r.requested_fields, r.volume_tier, r.legal_basis, r.environment, r.created_at,
       a.name as api_name,
       a.owning_mda_id,
       COALESCE(m.name, consumer.requested_organization, consumer.full_name, r.consumer_user_id) as mda_name,
@@ -97,8 +99,8 @@ export function listAuditLogs(db: Database.Database, user?: AccessUser) {
 }
 
 export function canReviewAccessRequest(db: Database.Database, user: AccessUser, requestId: string): GuardDecision {
-  const statusCheck = db.prepare('SELECT status, api_key, api_key_status FROM access_requests WHERE id = ?').get(requestId) as any;
-  if (statusCheck && (statusCheck.status !== 'PENDING' || statusCheck.api_key || ['REVOKED', 'DELETED'].includes(statusCheck.api_key_status || ''))) {
+  const statusCheck = db.prepare('SELECT status, api_key, api_key_hash, api_key_status FROM access_requests WHERE id = ?').get(requestId) as any;
+  if (statusCheck && (statusCheck.status !== 'PENDING' || statusCheck.api_key || statusCheck.api_key_hash || ['REVOKED', 'DELETED'].includes(statusCheck.api_key_status || ''))) {
     return {
       allowed: false,
       code: 'REQUEST_ALREADY_FINALIZED',
@@ -112,7 +114,7 @@ export function canReviewAccessRequest(db: Database.Database, user: AccessUser, 
   }
 
   const request = db.prepare(`
-    SELECT r.id, r.status, r.api_key, r.api_key_status
+    SELECT r.id, r.status, r.api_key, r.api_key_hash, r.api_key_status
     FROM access_requests r
     JOIN apis a ON a.id = r.api_id
     WHERE r.id = ? AND a.owning_mda_id = ?
@@ -135,6 +137,15 @@ export function canManageApi(db: Database.Database, user: AccessUser, apiId: str
     return { allowed: false, code: 'FORBIDDEN', message: 'API owners can only manage APIs owned by their MDA.' };
   }
   return { allowed: true };
+}
+
+export function canTransferApiOwnership(user: AccessUser): GuardDecision {
+  if (user.role === 'admin') return { allowed: true };
+  return {
+    allowed: false,
+    code: 'OWNER_TRANSFER_FORBIDDEN',
+    message: 'Only platform administrators can transfer API ownership.',
+  };
 }
 
 export function requireApiManager(db: Database.Database, getApiId: (req: Request) => string) {

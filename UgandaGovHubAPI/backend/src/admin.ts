@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 export type ApiKeyRecord = {
   status: string;
@@ -19,6 +20,14 @@ export function getDefaultApiKeyExpiry(now = new Date()) {
   const expiry = new Date(now);
   expiry.setUTCDate(expiry.getUTCDate() + 30);
   return expiry;
+}
+
+export function computeApiKeyHash(apiKey: string) {
+  return crypto.createHash('sha256').update(apiKey).digest('hex');
+}
+
+export function getApiKeyPreview(apiKey: string) {
+  return `${apiKey.slice(0, 8)}...${apiKey.slice(-4)}`;
 }
 
 export function normalizeExpiryInput(input?: string | null, now = new Date()) {
@@ -86,6 +95,8 @@ export function ensureAdminSchema(db: Database.Database) {
       purpose TEXT,
       status TEXT,
       api_key TEXT,
+      api_key_hash TEXT,
+      api_key_preview TEXT,
       api_key_status TEXT DEFAULT 'ACTIVE',
       api_key_expires_at TEXT,
       api_key_revoked_at TEXT,
@@ -124,6 +135,8 @@ export function ensureAdminSchema(db: Database.Database) {
         purpose TEXT,
         status TEXT,
         api_key TEXT,
+        api_key_hash TEXT,
+        api_key_preview TEXT,
         api_key_status TEXT DEFAULT 'ACTIVE',
         api_key_expires_at TEXT,
         api_key_revoked_at TEXT,
@@ -139,12 +152,12 @@ export function ensureAdminSchema(db: Database.Database) {
 
       INSERT INTO access_requests_next (
         id, consumer_mda_id, consumer_user_id, consumer_type, api_id, purpose,
-        status, api_key, api_key_status, api_key_expires_at, api_key_revoked_at,
+        status, api_key, api_key_hash, api_key_preview, api_key_status, api_key_expires_at, api_key_revoked_at,
         requested_fields, volume_tier, legal_basis, environment, created_at
       )
       SELECT
         id, consumer_mda_id, NULL, 'mda', api_id, purpose,
-        status, api_key, api_key_status, api_key_expires_at, api_key_revoked_at,
+        status, api_key, NULL, NULL, api_key_status, api_key_expires_at, api_key_revoked_at,
         requested_fields, volume_tier, legal_basis, environment, created_at
       FROM access_requests;
 
@@ -162,10 +175,18 @@ export function ensureAdminSchema(db: Database.Database) {
   };
 
   addColumn('api_key_status', "TEXT DEFAULT 'ACTIVE'");
+  addColumn('api_key_hash', 'TEXT');
+  addColumn('api_key_preview', 'TEXT');
   addColumn('api_key_expires_at', 'TEXT');
   addColumn('api_key_revoked_at', 'TEXT');
   addColumn('consumer_user_id', 'TEXT');
   addColumn('consumer_type', "TEXT DEFAULT 'mda'");
+
+  const plaintextKeys = db.prepare('SELECT id, api_key FROM access_requests WHERE api_key IS NOT NULL AND api_key_hash IS NULL').all() as Array<{ id: string; api_key: string }>;
+  const migrateKey = db.prepare('UPDATE access_requests SET api_key_hash = ?, api_key_preview = ?, api_key = NULL WHERE id = ?');
+  for (const row of plaintextKeys) {
+    migrateKey.run(computeApiKeyHash(row.api_key), getApiKeyPreview(row.api_key), row.id);
+  }
 
   const auditColumns = db.prepare('PRAGMA table_info(audit_logs)').all() as Array<{ name: string }>;
   if (auditColumns.length > 0) {

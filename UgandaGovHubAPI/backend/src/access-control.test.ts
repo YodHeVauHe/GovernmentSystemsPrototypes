@@ -2,6 +2,7 @@ import assert from 'assert/strict';
 import Database from 'better-sqlite3';
 import {
   buildAccessRequestList,
+  canTransferApiOwnership,
   canManageApi,
   canReviewAccessRequest,
   canSubmitAccessRequest,
@@ -28,7 +29,15 @@ db.exec(`
     purpose TEXT,
     status TEXT,
     api_key TEXT,
+    api_key_hash TEXT,
+    api_key_preview TEXT,
     api_key_status TEXT DEFAULT 'ACTIVE',
+    api_key_expires_at TEXT,
+    api_key_revoked_at TEXT,
+    requested_fields TEXT,
+    volume_tier TEXT,
+    legal_basis TEXT,
+    environment TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE audit_logs (
@@ -96,6 +105,18 @@ assert.deepEqual(canReviewAccessRequest(db, niraOwner, 'req-1'), {
 assert.equal(canManageApi(db, admin, 'api-nira-01').allowed, true);
 assert.equal(canManageApi(db, niraOwner, 'api-nira-01').allowed, true);
 assert.equal(canManageApi(db, mohOwner, 'api-nira-01').allowed, false);
+assert.equal(canTransferApiOwnership(admin).allowed, true);
+assert.deepEqual(canTransferApiOwnership(niraOwner), {
+  allowed: false,
+  code: 'OWNER_TRANSFER_FORBIDDEN',
+  message: 'Only platform administrators can transfer API ownership.',
+});
+db.prepare("UPDATE access_requests SET status = 'APPROVED', api_key = ?, api_key_hash = ?, api_key_preview = ?, api_key_status = 'ACTIVE' WHERE id = ?")
+  .run(null, 'hash-value', 'ghk_1234...', 'req-public');
+const publicRequests = buildAccessRequestList(db, publicDeveloper) as any[];
+assert.equal(publicRequests[0].api_key, undefined);
+assert.equal(publicRequests[0].api_key_hash, undefined);
+assert.equal(publicRequests[0].api_key_preview, 'ghk_1234...');
 assert.equal(listAuditLogs(db)[0].mda_name, 'MoH');
 assert.equal(listAuditLogs(db)[0].api_name, 'NIRA Identity');
 

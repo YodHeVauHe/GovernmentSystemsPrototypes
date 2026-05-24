@@ -45,7 +45,7 @@ function hasApprovedConsumerAccess(db: Database.Database, user: DocsAccessUser, 
     WHERE api_id = ?
       AND ${consumerColumn} = ?
       AND status = 'APPROVED'
-      AND api_key IS NOT NULL
+      AND (api_key_hash IS NOT NULL OR api_key IS NOT NULL)
       AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
       AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
     LIMIT 1

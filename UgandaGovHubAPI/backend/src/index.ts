@@ -6,6 +6,8 @@ import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
 import crypto from 'crypto';
+import dns from 'dns/promises';
+import net from 'net';
 import { sandboxMiddleware } from './middleware/sandbox';
 import { identityRouter } from './routes/identity';
 import { taxRouter } from './routes/tax';
@@ -17,10 +19,10 @@ import { ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion }
 import { deleteSpecFiles, ensureAdminSchema, removeExistingSpecFiles } from './admin';
 import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers, optionalAuth, requireAuth } from './auth';
 import { adminUsersRouter, authRouter } from './routes/auth';
-import { requireApiManager } from './access-control';
+import { canTransferApiOwnership, requireApiManager } from './access-control';
 import { ensureAccountVerificationSchema } from './account-verification';
 import { ensureDocsSchema } from './docs-access';
-import { canDownloadOpenApiAsset } from './docs-access';
+import { canDownloadOpenApiAsset, canViewApiDocs, listVisibleDocsApis } from './docs-access';
 import { docsRouter } from './routes/docs';
 import { generatePublicId } from './ids';
 
@@ -30,7 +32,17 @@ const app = express();
 const port = Number(process.env.PORT || 4000);
 const host = process.env.HOST || '127.0.0.1';
 
+const allowedOrigins = (process.env.GOVHUB_ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
 app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Origin is not allowed by CORS.'));
+  },
+  credentials: true,
   exposedHeaders: [
     'X-Correlation-ID',
     'X-RateLimit-Limit',
@@ -38,10 +50,11 @@ app.use(cors({
     'X-RateLimit-Reset',
   ],
 }));
-app.use(express.json());
+app.use(express.json({ limit: process.env.GOVHUB_JSON_LIMIT || '1mb' }));
 
 // Initialize SQLite Database
 export const db = new Database(path.join(__dirname, '../data/govhub.db'));
+db.pragma('foreign_keys = ON');
 ensureAdminSchema(db);
 ensureApiVersionSchema(db);
 ensureAuthSchema(db);
@@ -49,6 +62,79 @@ ensureDefaultAdmin(db);
 ensureDemoUsers(db);
 ensureAccountVerificationSchema(db);
 ensureDocsSchema(db);
+
+function statusForDocsDecision(code: string) {
+  if (code === 'UNAUTHENTICATED') return 401;
+  if (code === 'NOT_FOUND') return 404;
+  return 403;
+}
+
+function isPrivateIp(address: string) {
+  const family = net.isIP(address);
+  if (family === 4) {
+    const parts = address.split('.').map(Number);
+    const [a, b] = parts;
+    return (
+      a === 10 ||
+      a === 127 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      a === 0
+    );
+  }
+  if (family === 6) {
+    const normalized = address.toLowerCase();
+    return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:');
+  }
+  return true;
+}
+
+async function assertSafeSpecUrl(specUrl: string) {
+  const parsed = new URL(specUrl);
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('Only http and https spec URLs are supported.');
+  }
+  const allowedHosts = (process.env.GOVHUB_SPEC_URL_HOSTS || '')
+    .split(',')
+    .map(hostname => hostname.trim().toLowerCase())
+    .filter(Boolean);
+  if (allowedHosts.length && !allowedHosts.includes(parsed.hostname.toLowerCase())) {
+    throw new Error('Spec URL host is not allowed.');
+  }
+  const addresses = await dns.lookup(parsed.hostname, { all: true, verbatim: false });
+  if (!addresses.length || addresses.some(address => isPrivateIp(address.address))) {
+    throw new Error('Spec URL resolves to a blocked private or local address.');
+  }
+}
+
+async function fetchSpecFromUrl(specUrl: string) {
+  await assertSafeSpecUrl(specUrl);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.GOVHUB_SPEC_FETCH_TIMEOUT_MS || 5000));
+  try {
+    const response = await fetch(specUrl, { signal: controller.signal, redirect: 'error' });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch spec from URL: ${response.statusText}`);
+    }
+    const maxBytes = Number(process.env.GOVHUB_SPEC_MAX_BYTES || 1024 * 1024);
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && Number(contentLength) > maxBytes) {
+      throw new Error('Specification content is too large.');
+    }
+    const content = await response.text();
+    if (Buffer.byteLength(content, 'utf8') > maxBytes) {
+      throw new Error('Specification content is too large.');
+    }
+    return content;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function mdaExists(mdaId: string) {
+  return Boolean(db.prepare('SELECT id FROM mdas WHERE id = ?').get(mdaId));
+}
 
 // Serve static OpenAPI files through the same visibility policy used by /api/docs.
 app.use('/openapi', optionalAuth(db), (req, res, next) => {
@@ -69,9 +155,9 @@ app.use('/api/admin/users', adminUsersRouter(db));
 app.use('/api/docs', docsRouter(db));
 
 // Seed API Catalog route
-app.get('/api/catalog', (req, res) => {
+app.get('/api/catalog', optionalAuth(db), (req, res) => {
   try {
-    const apis = db.prepare('SELECT * FROM apis').all();
+    const apis = listVisibleDocsApis(db, req.user);
     res.json(apis);
   } catch (err) {
     res.status(500).json({ error: 'Database not initialized' });
@@ -79,9 +165,14 @@ app.get('/api/catalog', (req, res) => {
 });
 
 // Get single API by ID
-app.get('/api/catalog/:id', (req, res) => {
+app.get('/api/catalog/:id', optionalAuth(db), (req, res) => {
   try {
-    const api = db.prepare('SELECT * FROM apis WHERE id = ?').get(req.params.id);
+    const apiId = String(req.params.id);
+    const decision = canViewApiDocs(db, req.user, apiId);
+    if (!decision.allowed) {
+      return res.status(statusForDocsDecision(decision.code)).json({ error: decision.message, code: decision.code });
+    }
+    const api = db.prepare('SELECT * FROM apis WHERE id = ?').get(apiId);
     if (!api) {
       return res.status(404).json({ error: 'API not found' });
     }
@@ -91,9 +182,14 @@ app.get('/api/catalog/:id', (req, res) => {
   }
 });
 
-app.get('/api/catalog/:id/versions', (req, res) => {
+app.get('/api/catalog/:id/versions', optionalAuth(db), (req, res) => {
   try {
-    const current = db.prepare('SELECT spec_sha FROM api_versions WHERE api_id = ? AND is_current = 1').get(req.params.id) as any;
+    const apiId = String(req.params.id);
+    const decision = canViewApiDocs(db, req.user, apiId);
+    if (!decision.allowed) {
+      return res.status(statusForDocsDecision(decision.code)).json({ error: decision.message, code: decision.code });
+    }
+    const current = db.prepare('SELECT spec_sha FROM api_versions WHERE api_id = ? AND is_current = 1').get(apiId) as any;
     const versions = db.prepare(`
       SELECT
         id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
@@ -101,7 +197,7 @@ app.get('/api/catalog/:id/versions', (req, res) => {
       FROM api_versions
       WHERE api_id = ?
       ORDER BY is_current DESC, created_at DESC
-    `).all(req.params.id) as any[];
+    `).all(apiId) as any[];
 
     res.json(versions.map(version => ({
       ...version,
@@ -293,6 +389,15 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
     if (!existing) {
       return res.status(404).json({ error: 'API not found' });
     }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'owning_mda_id')) {
+      const ownerTransferDecision = canTransferApiOwnership(req.user!);
+      if (!ownerTransferDecision.allowed) {
+        return res.status(403).json({ error: ownerTransferDecision.message, code: ownerTransferDecision.code });
+      }
+      if (typeof owning_mda_id !== 'string' || !mdaExists(owning_mda_id)) {
+        return res.status(400).json({ error: 'owning_mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
+      }
+    }
     const hasDocsVisibilityPatch = Object.prototype.hasOwnProperty.call(req.body, 'docs_visibility');
     const normalizedDocsVisibility = typeof docs_visibility === 'string' && docs_visibility.trim()
       ? docs_visibility.trim().toLowerCase()
@@ -455,11 +560,11 @@ app.post('/api/catalog/validate-spec', requireAuth(db, ['admin', 'api_owner']), 
   try {
     let content = specText || '';
     if (specUrl) {
-      const response = await fetch(specUrl);
-      if (!response.ok) {
-        return res.status(400).json({ valid: false, error: `Failed to fetch spec from URL: ${response.statusText}` });
+      try {
+        content = await fetchSpecFromUrl(specUrl);
+      } catch (fetchErr: any) {
+        return res.status(400).json({ valid: false, error: fetchErr.message || 'Failed to fetch spec from URL.' });
       }
-      content = await response.text();
     }
 
     if (!content || !content.trim()) {
@@ -539,8 +644,11 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
     compliance_status
   } = req.body;
 
-  if (!name || !owning_mda_id || !openapi_spec) {
+    if (!name || !owning_mda_id || !openapi_spec) {
     return res.status(400).json({ error: 'Missing mandatory fields: name, owning_mda_id, and openapi_spec are required.' });
+  }
+  if (!mdaExists(owning_mda_id)) {
+    return res.status(400).json({ error: 'owning_mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
   }
   if (req.user?.role === 'api_owner' && req.user.mda_id !== owning_mda_id) {
     return res.status(403).json({ error: 'API owners can only register APIs for their approved MDA.', code: 'MDA_IMPERSONATION' });
@@ -621,7 +729,8 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
       id,
       JSON.stringify({
         api_name: name,
-        registered_by_role: 'admin',
+        registered_by_role: req.user?.role || 'unknown',
+        registered_by_user_id: req.user?.id || null,
         sector,
         sensitivity_level
       })

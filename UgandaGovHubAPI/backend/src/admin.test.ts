@@ -1,6 +1,7 @@
 import assert from 'assert/strict';
 import Database from 'better-sqlite3';
 import {
+  computeApiKeyHash,
   computeApiKeyAccess,
   ensureAdminSchema,
   resolveSandboxApiId,
@@ -10,6 +11,9 @@ import {
 } from './admin';
 
 const now = new Date('2026-05-21T10:00:00.000Z');
+
+assert.equal(computeApiKeyHash('ghk_test_secret').length, 64);
+assert.equal(computeApiKeyHash('ghk_test_secret'), computeApiKeyHash('ghk_test_secret'));
 
 assert.equal(getDefaultApiKeyExpiry(now).toISOString(), '2026-06-20T10:00:00.000Z');
 assert.equal(normalizeExpiryInput(undefined, now), '2026-06-20T10:00:00.000Z');

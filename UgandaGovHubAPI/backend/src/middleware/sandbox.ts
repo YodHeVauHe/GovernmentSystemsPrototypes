@@ -4,7 +4,7 @@ import type Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { computeApiKeyAccess, resolveSandboxApiId, type SandboxApiMapping } from '../admin';
+import { computeApiKeyAccess, computeApiKeyHash, getApiKeyPreview, resolveSandboxApiId, type SandboxApiMapping } from '../admin';
 import { logAuditEvent } from '../audit';
 
 function getDynamicSandboxMappings(db: Database.Database): SandboxApiMapping[] {
@@ -32,6 +32,24 @@ function getDynamicSandboxMappings(db: Database.Database): SandboxApiMapping[] {
 
 function getApiIdFromPath(db: Database.Database, url: string): string | null {
   return resolveSandboxApiId(url, getDynamicSandboxMappings(db));
+}
+
+const sandboxRateLimits = new Map<string, { count: number; resetAt: number }>();
+const SANDBOX_RATE_LIMIT = Number(process.env.GOVHUB_SANDBOX_RATE_LIMIT || 100);
+const SANDBOX_RATE_WINDOW_MS = 60 * 1000;
+
+function consumeSandboxQuota(apiKeyHash: string, now = Date.now()) {
+  const current = sandboxRateLimits.get(apiKeyHash);
+  if (!current || current.resetAt <= now) {
+    const resetAt = now + SANDBOX_RATE_WINDOW_MS;
+    sandboxRateLimits.set(apiKeyHash, { count: 1, resetAt });
+    return { allowed: true, remaining: SANDBOX_RATE_LIMIT - 1, resetAt };
+  }
+  if (current.count >= SANDBOX_RATE_LIMIT) {
+    return { allowed: false, remaining: 0, resetAt: current.resetAt };
+  }
+  current.count += 1;
+  return { allowed: true, remaining: SANDBOX_RATE_LIMIT - current.count, resetAt: current.resetAt };
 }
 
 export function sandboxMiddleware(db: Database.Database) {
@@ -65,19 +83,27 @@ export function sandboxMiddleware(db: Database.Database) {
     return sendSandboxError(res, 'MISSING_API_KEY', 'The X-GovHub-API-Key header is missing.', 401);
   }
 
+  const apiKeyHash = computeApiKeyHash(apiKey);
+  const quota = consumeSandboxQuota(apiKeyHash);
+  res.setHeader('X-RateLimit-Remaining', String(Math.max(0, quota.remaining)));
+  res.setHeader('X-RateLimit-Reset', Math.floor(quota.resetAt / 1000));
+  if (!quota.allowed) {
+    return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'The sandbox rate limit for this API key has been exceeded.', 429);
+  }
+
   // Look up API Key in database
   const requestRecord = db.prepare(`
     SELECT consumer_mda_id, consumer_user_id, api_id, status, api_key_status, api_key_expires_at, api_key_revoked_at
     FROM access_requests
-    WHERE api_key = ?
-  `).get(apiKey) as any;
+    WHERE api_key_hash = ?
+  `).get(apiKeyHash) as any;
   const accessDecision = computeApiKeyAccess(requestRecord, apiId);
   if (!accessDecision.allowed && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
     logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
       reason: accessDecision.message,
       path: req.originalUrl,
       method: req.method,
-      provided_key: apiKey.substring(0, 15) + '...'
+      provided_key: getApiKeyPreview(apiKey)
     });
     return sendSandboxError(res, accessDecision.code, accessDecision.message, 403);
   }

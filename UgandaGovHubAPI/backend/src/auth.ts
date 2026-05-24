@@ -43,6 +43,7 @@ declare global {
 }
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+export const SESSION_COOKIE_NAME = 'govhub_session';
 
 function hashToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -107,6 +108,10 @@ export function ensureAuthSchema(db: Database.Database) {
 
 export function ensureDefaultAdmin(db: Database.Database) {
   const email = normalizeEmail(process.env.GOVHUB_ADMIN_EMAIL || 'admin@ict.go.ug');
+  const password = process.env.GOVHUB_ADMIN_PASSWORD;
+  if (!password && process.env.GOVHUB_DEMO_MODE !== 'true') {
+    throw new Error('GOVHUB_ADMIN_PASSWORD is required unless GOVHUB_DEMO_MODE=true.');
+  }
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) return;
 
@@ -120,7 +125,7 @@ export function ensureDefaultAdmin(db: Database.Database) {
     `user-${crypto.randomUUID()}`,
     'Platform Admin',
     email,
-    hashPassword(process.env.GOVHUB_ADMIN_PASSWORD || 'AdminPass123!'),
+    hashPassword(password || 'AdminPass123!'),
     'government',
     'admin',
     'mda-05',
@@ -250,6 +255,7 @@ const demoUsers: DemoUserSeed[] = [
 ];
 
 export function ensureDemoUsers(db: Database.Database) {
+  if (process.env.GOVHUB_DEMO_MODE !== 'true') return;
   for (const demoUser of demoUsers) {
     const email = normalizeEmail(process.env[`${demoUser.envPrefix}_EMAIL`] || demoUser.fallbackEmail);
     const password = process.env[`${demoUser.envPrefix}_PASSWORD`] || demoUser.fallbackPassword;
@@ -314,9 +320,36 @@ export function getSessionUser(db: Database.Database, token: string, now = new D
 
 export function getBearerToken(req: Request) {
   const header = req.headers.authorization || '';
-  if (!header.startsWith('Bearer ')) return null;
-  const token = header.slice('Bearer '.length).trim();
+  if (header.startsWith('Bearer ')) {
+    const bearerToken = header.slice('Bearer '.length).trim();
+    if (bearerToken) return bearerToken;
+  }
+  const cookieHeader = req.headers.cookie || '';
+  const cookies = Object.fromEntries(cookieHeader.split(';').map(cookie => {
+    const [name, ...valueParts] = cookie.trim().split('=');
+    return [name, decodeURIComponent(valueParts.join('='))];
+  }).filter(([name]) => Boolean(name)));
+  const token = cookies[SESSION_COOKIE_NAME];
   return token || null;
+}
+
+export function setSessionCookie(res: Response, token: string) {
+  res.cookie(SESSION_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: SESSION_TTL_MS,
+    path: '/',
+  });
+}
+
+export function clearSessionCookie(res: Response) {
+  res.clearCookie(SESSION_COOKIE_NAME, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  });
 }
 
 export function canAccess(user: AuthUser | null | undefined, roles?: UserRole[]): AccessDecision {
@@ -336,6 +369,13 @@ export function requireAuth(db: Database.Database, roles?: UserRole[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const token = getBearerToken(req);
     const user = token ? getSessionUser(db, token) : null;
+    if (!roles) {
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication is required.', code: 'UNAUTHENTICATED' });
+      }
+      req.user = user;
+      return next();
+    }
     const decision = canAccess(user, roles);
 
     if (!decision.allowed) {
@@ -347,6 +387,8 @@ export function requireAuth(db: Database.Database, roles?: UserRole[]) {
     next();
   };
 }
+
+export const requireApprovedAuth = requireAuth;
 
 export function optionalAuth(db: Database.Database) {
   return (req: Request, _res: Response, next: NextFunction) => {
