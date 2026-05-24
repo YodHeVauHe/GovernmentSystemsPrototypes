@@ -1,6 +1,7 @@
 import assert from 'assert/strict';
 import Database from 'better-sqlite3';
 import {
+  buildRegisteredSandboxMappings,
   computeApiKeyHash,
   computeApiKeyAccess,
   ensureAdminSchema,
@@ -8,6 +9,7 @@ import {
   getDefaultApiKeyExpiry,
   normalizeExpiryInput,
   removeExistingSpecFiles,
+  resolveOpenApiFilePath,
 } from './admin';
 
 const now = new Date('2026-05-21T10:00:00.000Z');
@@ -69,9 +71,30 @@ assert.deepEqual(
   { allowed: false, code: 'EXPIRED_API_KEY', message: 'The provided API key has expired.' }
 );
 
+assert.deepEqual(
+  computeApiKeyAccess(
+    {
+      status: 'APPROVED',
+      api_key_status: 'ACTIVE',
+      api_key_expires_at: '2026-05-21T11:00:00.000Z',
+      api_key_revoked_at: null,
+      api_id: 'api-nira-01',
+      consumer_mda_id: 'mda-06',
+      consumer_user_id: 'usr-suspended',
+      consumer_user_status: 'SUSPENDED',
+    },
+    'api-nira-01',
+    now
+  ),
+  { allowed: false, code: 'ACCOUNT_NOT_APPROVED', message: 'The API key owner account is not approved.' }
+);
+
 assert.deepEqual(removeExistingSpecFiles(['/openapi/a.yaml', '/openapi/a.yaml', null, '../bad.yaml']), [
   '/openapi/a.yaml',
 ]);
+assert.equal(resolveOpenApiFilePath('/srv/app/openapi', '/openapi/a.yaml'), '/srv/app/openapi/a.yaml');
+assert.throws(() => resolveOpenApiFilePath('/srv/app/openapi', '/openapi/../secrets.txt'), /Invalid OpenAPI path/);
+assert.throws(() => resolveOpenApiFilePath('/srv/app/openapi', '/etc/passwd'), /Invalid OpenAPI path/);
 
 assert.equal(resolveSandboxApiId('/api/v1/identity/verify-nin'), 'api-nira-01');
 assert.equal(resolveSandboxApiId('/api/v1/registry/status', [
@@ -80,6 +103,18 @@ assert.equal(resolveSandboxApiId('/api/v1/registry/status', [
 assert.equal(resolveSandboxApiId('/api/v1/unknown', [
   { id: 'api-custom-01', sandbox_base_path: '/api/v1/registry' },
 ]), null);
+assert.deepEqual(buildRegisteredSandboxMappings([
+  { id: 'api-reg-123', sandbox_available: 1 },
+  { id: 'api-offline', sandbox_available: 0 },
+]), [
+  { id: 'api-reg-123', sandbox_base_path: '/api/v1/sandbox/api-reg-123' },
+]);
+assert.equal(resolveSandboxApiId('/api/v1/identity/verify-nin', buildRegisteredSandboxMappings([
+  { id: 'api-evil', sandbox_available: 1 },
+])), null);
+assert.equal(resolveSandboxApiId('/api/v1/sandbox/api-evil/status', buildRegisteredSandboxMappings([
+  { id: 'api-evil', sandbox_available: 1 },
+])), 'api-evil');
 
 const partialDb = new Database(':memory:');
 partialDb.exec(`

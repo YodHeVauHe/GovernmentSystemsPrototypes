@@ -154,7 +154,7 @@ export function AccountSettingsPage() {
 
   return (
     <div className="h-full overflow-auto bg-[#181818] text-[#ededed]">
-      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 p-4 lg:p-8">
+      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5 p-3 lg:p-5">
         <div>
           <h1 className="text-[24px] font-semibold text-white">Account Settings</h1>
           <p className="mt-1 text-sm text-[#8b8b8b]">

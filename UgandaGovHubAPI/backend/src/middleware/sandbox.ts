@@ -1,37 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
-import fs from 'fs';
-import path from 'path';
-import yaml from 'js-yaml';
-import { computeApiKeyAccess, computeApiKeyHash, getApiKeyPreview, resolveSandboxApiId, type SandboxApiMapping } from '../admin';
+import { buildRegisteredSandboxMappings, computeApiKeyAccess, computeApiKeyHash, getApiKeyPreview, resolveSandboxApiId, type SandboxApiMapping } from '../admin';
 import { logAuditEvent } from '../audit';
 
 function getDynamicSandboxMappings(db: Database.Database): SandboxApiMapping[] {
-  const rows = db.prepare('SELECT id, openapi_spec_path FROM apis WHERE sandbox_available = 1 AND openapi_spec_path IS NOT NULL').all() as any[];
-  return rows.flatMap(row => {
-    try {
-      const specPath = path.join(__dirname, '../..', String(row.openapi_spec_path).replace(/^\/+/, ''));
-      if (!fs.existsSync(specPath)) return [];
-      const spec = yaml.load(fs.readFileSync(specPath, 'utf8')) as any;
-      const serverUrl = spec?.servers?.[0]?.url;
-      if (!serverUrl) return [];
-      let sandboxPath = '';
-      try {
-        sandboxPath = new URL(serverUrl).pathname;
-      } catch {
-        sandboxPath = serverUrl.startsWith('/') ? serverUrl : '';
-      }
-      sandboxPath = sandboxPath.replace(/\/$/, '');
-      return sandboxPath ? [{ id: row.id, sandbox_base_path: sandboxPath }] : [];
-    } catch {
-      return [];
-    }
-  });
+  const rows = db.prepare('SELECT id, sandbox_available FROM apis WHERE sandbox_available = 1').all() as any[];
+  return buildRegisteredSandboxMappings(rows);
 }
 
 function getApiIdFromPath(db: Database.Database, url: string): string | null {
-  return resolveSandboxApiId(url, getDynamicSandboxMappings(db));
+  return resolveSandboxApiId(url) || resolveSandboxApiId(url, getDynamicSandboxMappings(db));
 }
 
 const sandboxRateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -93,9 +72,18 @@ export function sandboxMiddleware(db: Database.Database) {
 
   // Look up API Key in database
   const requestRecord = db.prepare(`
-    SELECT consumer_mda_id, consumer_user_id, api_id, status, api_key_status, api_key_expires_at, api_key_revoked_at
-    FROM access_requests
-    WHERE api_key_hash = ?
+    SELECT
+      r.consumer_mda_id,
+      r.consumer_user_id,
+      u.status as consumer_user_status,
+      r.api_id,
+      r.status,
+      r.api_key_status,
+      r.api_key_expires_at,
+      r.api_key_revoked_at
+    FROM access_requests r
+    LEFT JOIN users u ON u.id = r.consumer_user_id
+    WHERE r.api_key_hash = ?
   `).get(apiKeyHash) as any;
   const accessDecision = computeApiKeyAccess(requestRecord, apiId);
   if (!accessDecision.allowed && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {

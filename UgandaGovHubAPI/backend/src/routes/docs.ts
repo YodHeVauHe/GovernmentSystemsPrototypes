@@ -5,6 +5,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { optionalAuth, requireAuth } from '../auth';
 import { canManageApi } from '../access-control';
+import { resolveOpenApiFilePath } from '../admin';
 import { canViewApiDocs, listVisibleDocsApis, resolveDocsVisibility, type DocsVisibility } from '../docs-access';
 
 const visibilityValues = new Set<DocsVisibility>(['public', 'authenticated', 'restricted']);
@@ -78,8 +79,7 @@ export function docsRouter(db: Database.Database) {
         return res.status(404).json({ error: 'OpenAPI document is missing for this API.', code: 'SPEC_NOT_FOUND' });
       }
 
-      const relativeSpecPath = String(api.openapi_spec_path).replace(/^\/+/, '');
-      const filePath = path.join(__dirname, '../..', relativeSpecPath);
+      const filePath = resolveOpenApiFilePath(path.join(__dirname, '../../openapi'), String(api.openapi_spec_path));
       if (!fs.existsSync(filePath)) {
         return res.status(404).json({ error: 'Spec file missing on disk', code: 'SPEC_NOT_FOUND' });
       }

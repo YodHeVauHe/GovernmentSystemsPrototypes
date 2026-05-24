@@ -36,6 +36,40 @@ function approvalRequiresMda(accountType: string | null | undefined, role: strin
   return role === 'api_owner' || normalizedAccountType === 'government_employee' || normalizedAccountType === 'mda_api_owner';
 }
 
+function mdaExists(db: Database.Database, mdaId: string) {
+  return Boolean(db.prepare('SELECT id FROM mdas WHERE id = ?').get(mdaId));
+}
+
+function revokeUserApiKeys(db: Database.Database, userId: string, status: 'REVOKED' | 'DELETED' = 'REVOKED') {
+  try {
+    const revokedAt = new Date().toISOString();
+    if (status === 'DELETED') {
+      db.prepare(`
+        UPDATE access_requests
+        SET api_key = NULL,
+            api_key_hash = NULL,
+            api_key_status = 'DELETED',
+            api_key_revoked_at = ?,
+            api_key_expires_at = NULL,
+            consumer_user_id = NULL
+        WHERE consumer_user_id = ?
+      `).run(revokedAt, userId);
+      return;
+    }
+
+    db.prepare(`
+      UPDATE access_requests
+      SET api_key_status = 'REVOKED',
+          api_key_revoked_at = ?
+      WHERE consumer_user_id = ?
+        AND api_key_hash IS NOT NULL
+        AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
+    `).run(revokedAt, userId);
+  } catch {
+    // Some unit fixtures use only the auth schema.
+  }
+}
+
 function validateSignup(body: any) {
   const required = ['full_name', 'email', 'password', 'account_type', 'requested_role', 'requested_organization', 'requested_purpose'];
   for (const field of required) {
@@ -46,6 +80,7 @@ function validateSignup(body: any) {
   if (!body.email.includes('@')) return 'A valid email is required.';
   if (body.password.length < 10) return 'Password must be at least 10 characters.';
   if (!isUserRole(body.requested_role)) return 'requested_role is invalid.';
+  if (body.requested_role === 'admin') return 'Admin accounts must be created by an existing administrator.';
   return null;
 }
 
@@ -184,6 +219,9 @@ export function authRouter(db: Database.Database) {
       next[key] = Object.prototype.hasOwnProperty.call(req.body, key) ? req.body[key] || null : (current.profile as any)[key];
     }
     next.account_category = normalizeAccountType(next.account_category);
+    if (next.account_category === 'admin') {
+      return res.status(400).json({ error: 'Admin account category cannot be self-assigned.', code: 'ADMIN_CATEGORY_FORBIDDEN' });
+    }
 
     const transaction = db.transaction(() => {
       db.prepare(`
@@ -290,6 +328,9 @@ export function adminUsersRouter(db: Database.Database) {
     if (needsMda && (!approvedMdaId || typeof approvedMdaId !== 'string')) {
       return res.status(400).json({ error: 'mda_id is required for this account type and role.' });
     }
+    if (approvedMdaId && !mdaExists(db, approvedMdaId)) {
+      return res.status(400).json({ error: 'mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
+    }
 
     db.prepare(`
       UPDATE users
@@ -329,6 +370,7 @@ export function adminUsersRouter(db: Database.Database) {
     `).run(req.user!.id, new Date().toISOString(), reason || 'Application rejected by administrator.', req.params.id);
     db.prepare("UPDATE user_profiles SET verification_status = 'rejected', review_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?")
       .run(reason || 'Application rejected by administrator.', req.params.id);
+    revokeUserApiKeys(db, req.params.id);
 
     res.json({ user: sanitizeUser(getUserById(db, req.params.id)) });
   });
@@ -343,6 +385,7 @@ export function adminUsersRouter(db: Database.Database) {
       WHERE id = ?
     `).run(req.user!.id, new Date().toISOString(), req.params.id);
     db.prepare("UPDATE user_profiles SET verification_status = 'suspended', updated_at = CURRENT_TIMESTAMP WHERE user_id = ?").run(req.params.id);
+    revokeUserApiKeys(db, req.params.id);
 
     res.json({ user: sanitizeUser(getUserById(db, req.params.id)) });
   });
@@ -357,6 +400,7 @@ export function adminUsersRouter(db: Database.Database) {
     const deletedUser = sanitizeUser(existing);
     const deleteAccount = db.transaction(() => {
       db.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(new Date().toISOString(), existing.id);
+      revokeUserApiKeys(db, existing.id, 'DELETED');
       db.prepare('DELETE FROM verification_documents WHERE user_id = ?').run(existing.id);
       db.prepare('DELETE FROM user_profiles WHERE user_id = ?').run(existing.id);
       db.prepare('DELETE FROM sessions WHERE user_id = ?').run(existing.id);
