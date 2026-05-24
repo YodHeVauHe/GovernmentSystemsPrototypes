@@ -100,7 +100,7 @@ function consumeLoginAttempt(key: string, now = Date.now()) {
 }
 
 function markVerificationChanged(db: Database.Database, userId: string, currentStatus?: string | null) {
-  if (!['submitted_for_review', 'verified'].includes(currentStatus || '')) return;
+  if (!['submitted_for_review', 'verified'].includes(currentStatus || '')) return false;
   db.prepare(`
     UPDATE user_profiles
     SET verification_status = 'needs_more_information',
@@ -113,6 +113,21 @@ function markVerificationChanged(db: Database.Database, userId: string, currentS
     SET status = 'PENDING_REVIEW', role = NULL, mda_id = NULL, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(userId);
+  return true;
+}
+
+function countApprovedAdmins(db: Database.Database) {
+  return (db.prepare("SELECT COUNT(*) as count FROM users WHERE status = 'APPROVED' AND role = 'admin'").get() as { count: number }).count;
+}
+
+function canMutateAdminAccount(db: Database.Database, actorId: string, target: any) {
+  if (target.id === actorId) {
+    return { allowed: false, code: 'CANNOT_CHANGE_SELF', message: 'Administrators cannot change their own account status.' };
+  }
+  if (target.status === 'APPROVED' && target.role === 'admin' && countApprovedAdmins(db) <= 1) {
+    return { allowed: false, code: 'LAST_ADMIN_FORBIDDEN', message: 'At least one approved administrator account must remain active.' };
+  }
+  return { allowed: true };
 }
 
 export function authRouter(db: Database.Database) {
@@ -253,7 +268,9 @@ export function authRouter(db: Database.Database) {
         next.supervisor_email,
         req.user!.id
       );
-      markVerificationChanged(db, req.user!.id, current.profile.verification_status);
+      if (markVerificationChanged(db, req.user!.id, current.profile.verification_status)) {
+        revokeUserApiKeys(db, req.user!.id);
+      }
     });
     transaction();
 
@@ -268,7 +285,9 @@ export function authRouter(db: Database.Database) {
     const current = getAccountSnapshot(db, req.user!.id);
     const transaction = db.transaction(() => {
       upsertVerificationDocument(db, req.user!.id, { type, label, file_name, mime_type, storage_ref });
-      markVerificationChanged(db, req.user!.id, current?.profile.verification_status);
+      if (markVerificationChanged(db, req.user!.id, current?.profile.verification_status)) {
+        revokeUserApiKeys(db, req.user!.id);
+      }
     });
     transaction();
     res.status(201).json({ account: getAccountSnapshot(db, req.user!.id) });
@@ -347,6 +366,10 @@ export function adminUsersRouter(db: Database.Database) {
     const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
     const existing = getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
+    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    if (!mutationDecision.allowed) {
+      return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
+    }
 
     db.prepare(`
       UPDATE user_profiles
@@ -361,6 +384,10 @@ export function adminUsersRouter(db: Database.Database) {
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
     const existing = getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
+    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    if (!mutationDecision.allowed) {
+      return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
+    }
 
     db.prepare(`
       UPDATE users
@@ -378,6 +405,10 @@ export function adminUsersRouter(db: Database.Database) {
   router.post('/:id/suspend', (req, res) => {
     const existing = getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
+    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    if (!mutationDecision.allowed) {
+      return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
+    }
 
     db.prepare(`
       UPDATE users
@@ -395,6 +426,10 @@ export function adminUsersRouter(db: Database.Database) {
     if (!existing) return res.status(404).json({ error: 'User not found.' });
     if (existing.id === req.user!.id) {
       return res.status(400).json({ error: 'Administrators cannot delete their own account.', code: 'CANNOT_DELETE_SELF' });
+    }
+    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    if (!mutationDecision.allowed) {
+      return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
     }
 
     const deletedUser = sanitizeUser(existing);

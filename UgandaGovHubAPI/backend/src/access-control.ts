@@ -17,7 +17,7 @@ export function resolveConsumerMdaForRequest(user: AccessUser, requestedMdaId?: 
     if (!requestedMdaId) {
       return { allowed: false, code: 'MDA_REQUIRED', message: 'consumer_mda_id is required.' };
     }
-    return { allowed: true, mdaId: requestedMdaId, consumerType: 'mda' };
+    return { allowed: true, mdaId: requestedMdaId, userId: user.id, consumerType: 'mda' };
   }
 
   if (!user.mda_id) {
@@ -37,7 +37,7 @@ export function resolveConsumerMdaForRequest(user: AccessUser, requestedMdaId?: 
       message: 'Access requests must use the approved MDA assigned to your account.',
     };
   }
-  return { allowed: true, mdaId: user.mda_id, consumerType: 'mda' };
+  return { allowed: true, mdaId: user.mda_id, userId: user.id, consumerType: 'mda' };
 }
 
 export function buildAccessRequestList(db: Database.Database, user: AccessUser) {
