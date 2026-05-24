@@ -11,6 +11,8 @@ graphify-out/
 .graphify/
 .agents/
 .codex/
+AGENTS.md
+.githooks/
 
 # Git worktrees
 .worktrees/
