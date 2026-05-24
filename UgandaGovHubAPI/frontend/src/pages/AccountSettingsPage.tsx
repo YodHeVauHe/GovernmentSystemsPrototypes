@@ -290,7 +290,7 @@ export function AccountSettingsPage() {
             <div className="lg:col-span-3 space-y-6">
               
               {/* Profile Card */}
-              <div className="bg-card border border-border rounded-xl p-5 text-center shadow-sm relative overflow-hidden">
+              <div className="bg-card border border-border rounded-xl p-4 text-center shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 right-0 h-16 w-16 bg-[#3ecf8e]/5 rounded-bl-full pointer-events-none" />
                 <div className="flex justify-center mb-3">
                   <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-[#3ecf8e]/80 to-emerald-400 flex items-center justify-center text-xl font-bold text-black shadow-sm">
@@ -343,7 +343,7 @@ export function AccountSettingsPage() {
 
             {/* Right Column: Settings Sections Content */}
             <div className="lg:col-span-9">
-              <div className="bg-card border border-border rounded-xl p-6 lg:p-8 shadow-sm min-h-[500px]">
+              <div className="bg-card border border-border rounded-xl p-4 shadow-sm min-h-[500px]">
                 
                 {/* Profile Tab */}
                 {activeTab === 'profile' && (
