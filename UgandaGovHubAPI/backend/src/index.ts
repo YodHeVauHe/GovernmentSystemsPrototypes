@@ -15,7 +15,7 @@ import { businessRouter } from './routes/business';
 import { accessRouter } from './routes/access';
 import { drivingPermitRouter } from './routes/driving-permit';
 import { compositeRouter } from './routes/composite';
-import { ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
+import { ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion, validateOpenApiSpec } from './versioning';
 import { deleteSpecFiles, ensureAdminSchema, removeExistingSpecFiles, resolveOpenApiFilePath } from './admin';
 import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers, optionalAuth, requireAuth } from './auth';
 import { adminUsersRouter, authRouter } from './routes/auth';
@@ -100,6 +100,10 @@ async function assertSafeSpecUrl(specUrl: string) {
     .split(',')
     .map(hostname => hostname.trim().toLowerCase())
     .filter(Boolean);
+  const allowUnlistedHosts = process.env.GOVHUB_ALLOW_UNLISTED_SPEC_URLS === 'true';
+  if (!allowedHosts.length && !allowUnlistedHosts) {
+    throw new Error('Spec URL imports require GOVHUB_SPEC_URL_HOSTS or GOVHUB_ALLOW_UNLISTED_SPEC_URLS=true.');
+  }
   if (allowedHosts.length && !allowedHosts.includes(parsed.hostname.toLowerCase())) {
     throw new Error('Spec URL host is not allowed.');
   }
@@ -135,6 +139,27 @@ async function fetchSpecFromUrl(specUrl: string) {
 
 function mdaExists(mdaId: string) {
   return Boolean(db.prepare('SELECT id FROM mdas WHERE id = ?').get(mdaId));
+}
+
+function writeOpenApiSpecFile(filename: string, content: string) {
+  const finalPath = path.join(openapiRoot, path.basename(filename));
+  const tempPath = `${finalPath}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(tempPath, content, 'utf8');
+  return {
+    finalPath,
+    tempPath,
+    commit() {
+      fs.renameSync(tempPath, finalPath);
+    },
+    cleanup() {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    },
+  };
+}
+
+function isOpenApiValidationError(err: any) {
+  const message = String(err?.message || '');
+  return message.startsWith('Invalid specification:') || message === 'Specification parsed to an invalid object.';
 }
 
 // Serve static OpenAPI files through the same visibility policy used by /api/docs.
@@ -234,8 +259,7 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
     const versionId = `${req.params.id}-${slugifyVersion(version)}`;
     const specFilename = `${versionId}.yaml`;
     const relativeSpecPath = `/openapi/${specFilename}`;
-    const absoluteSpecPath = path.join(__dirname, '../openapi', specFilename);
-    fs.writeFileSync(absoluteSpecPath, openapi_spec, 'utf8');
+    const specFile = writeOpenApiSpecFile(specFilename, openapi_spec);
 
     const insertVersion = db.prepare(`
       INSERT INTO api_versions (
@@ -245,40 +269,49 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
     `);
 
     const shouldMakeCurrent = Boolean(make_current);
-    const transaction = db.transaction(() => {
-      if (shouldMakeCurrent) {
-        db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
-        db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(relativeSpecPath, req.params.id);
-      }
+    try {
+      const transaction = db.transaction(() => {
+        if (shouldMakeCurrent) {
+          db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
+          db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(relativeSpecPath, req.params.id);
+        }
 
-      insertVersion.run(
-        versionId,
-        req.params.id,
-        version,
-        relativeSpecPath,
-        getSpecSha(openapi_spec),
-        metadata.endpointsCount,
-        metadata.openapiVersion,
-        status || 'Published',
-        shouldMakeCurrent ? 1 : 0,
-        notes || null
-      );
+        insertVersion.run(
+          versionId,
+          req.params.id,
+          version,
+          relativeSpecPath,
+          getSpecSha(openapi_spec),
+          metadata.endpointsCount,
+          metadata.openapiVersion,
+          status || 'Published',
+          shouldMakeCurrent ? 1 : 0,
+          notes || null
+        );
 
-      db.prepare(`
-        INSERT INTO audit_logs (id, event_type, api_id, details)
-        VALUES (?, ?, ?, ?)
-      `).run(
-        generatePublicId('audit'),
-        'API_VERSION_PUBLISHED',
-        req.params.id,
-        JSON.stringify({ version, make_current: shouldMakeCurrent, endpoints_count: metadata.endpointsCount })
-      );
-    });
+        db.prepare(`
+          INSERT INTO audit_logs (id, event_type, api_id, details)
+          VALUES (?, ?, ?, ?)
+        `).run(
+          generatePublicId('audit'),
+          'API_VERSION_PUBLISHED',
+          req.params.id,
+          JSON.stringify({ version, make_current: shouldMakeCurrent, endpoints_count: metadata.endpointsCount })
+        );
+      });
 
-    transaction();
+      transaction();
+      specFile.commit();
+    } catch (err) {
+      specFile.cleanup();
+      throw err;
+    }
     res.status(201).json({ success: true, versionId, version, is_current: shouldMakeCurrent });
   } catch (err: any) {
     console.error(err);
+    if (isOpenApiValidationError(err)) {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: `Failed to publish version: ${err.message}` });
   }
 });
@@ -409,15 +442,15 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
 
     let specPath = existing.openapi_spec_path;
     let versionPatch: any = null;
+    let pendingSpecFile: ReturnType<typeof writeOpenApiSpecFile> | null = null;
     if (typeof openapi_spec === 'string' && openapi_spec.trim()) {
       const metadata = parseSpecMetadata(openapi_spec);
       const currentVersion = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND is_current = 1').get(req.params.id) as any;
       const specFilename = currentVersion?.openapi_spec_path
         ? path.basename(currentVersion.openapi_spec_path)
         : `${req.params.id}-${slugifyVersion(metadata.version)}.yaml`;
-      const absoluteSpecPath = path.join(__dirname, '../openapi', specFilename);
       specPath = `/openapi/${specFilename}`;
-      fs.writeFileSync(absoluteSpecPath, openapi_spec, 'utf8');
+      pendingSpecFile = writeOpenApiSpecFile(specFilename, openapi_spec);
       versionPatch = {
         versionId: currentVersion?.id || `${req.params.id}-${slugifyVersion(metadata.version)}`,
         version: metadata.version,
@@ -510,10 +543,19 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
       );
     });
 
-    transaction();
+    try {
+      transaction();
+      if (pendingSpecFile) pendingSpecFile.commit();
+    } catch (err) {
+      if (pendingSpecFile) pendingSpecFile.cleanup();
+      throw err;
+    }
     res.json({ success: true, apiId: req.params.id });
   } catch (err: any) {
     console.error(err);
+    if (isOpenApiValidationError(err)) {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: `Failed to update API: ${err.message}` });
   }
 });
@@ -572,47 +614,20 @@ app.post('/api/catalog/validate-spec', requireAuth(db, ['admin', 'api_owner']), 
       return res.status(400).json({ valid: false, error: 'Empty specification content.' });
     }
 
-    let parsed: any;
+    let validation;
     try {
-      // Try JSON first, fallback to YAML
-      parsed = JSON.parse(content);
-    } catch {
-      try {
-        parsed = yaml.load(content);
-      } catch (yamlErr: any) {
-        return res.status(400).json({ valid: false, error: `Failed to parse YAML/JSON: ${yamlErr.message}` });
-      }
+      validation = validateOpenApiSpec(content);
+    } catch (validationErr: any) {
+      return res.status(400).json({ valid: false, error: validationErr.message });
     }
-
-    if (!parsed || typeof parsed !== 'object') {
-      return res.status(400).json({ valid: false, error: 'Specification parsed to an invalid object.' });
-    }
-
-    const openapiVersion = parsed.openapi || parsed.swagger;
-    if (!openapiVersion) {
-      return res.status(400).json({ valid: false, error: 'Invalid specification: missing "openapi" or "swagger" version declaration.' });
-    }
-
-    const info = parsed.info;
-    if (!info || !info.title) {
-      return res.status(400).json({ valid: false, error: 'Invalid specification: missing "info.title" metadata.' });
-    }
-
-    const paths = parsed.paths || {};
-    const endpointsCount = Object.keys(paths).reduce((count, path) => {
-      const methods = Object.keys(paths[path]).filter(method => 
-        ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'].includes(method.toLowerCase())
-      );
-      return count + methods.length;
-    }, 0);
 
     res.json({
       valid: true,
       metadata: {
-        title: info.title,
-        version: info.version || '1.0.0',
-        description: info.description || '',
-        endpointsCount
+        title: validation.metadata.title,
+        version: validation.metadata.version,
+        description: validation.metadata.description,
+        endpointsCount: validation.metadata.endpointsCount
       },
       rawSpec: content
     });
@@ -658,12 +673,10 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
   const id = `api-reg-${crypto.randomUUID()}`;
   const specFilename = `${id}.yaml`;
   const relativeSpecPath = `/openapi/${specFilename}`;
-  const absoluteSpecPath = path.join(__dirname, '../openapi', specFilename);
 
   try {
     const metadata = parseSpecMetadata(openapi_spec);
-    // Write OpenAPI file to disk
-    fs.writeFileSync(absoluteSpecPath, openapi_spec, 'utf8');
+    const specFile = writeOpenApiSpecFile(specFilename, openapi_spec);
 
     // Insert into SQLite database
     const stmt = db.prepare(`
@@ -675,71 +688,82 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(
-      id,
-      name,
-      owning_mda_id,
-      sector || 'General',
-      description || '',
-      lifecycle_status || 'Draft',
-      sensitivity_level || 'Medium',
-      sandbox_available ? 1 : 0,
-      relativeSpecPath,
-      required_approval_level || 'General Public',
-      contact_office || 'info@govhub.go.ug',
-      technical_owner || 'GovHub Systems',
-      personal_data_categories || '',
-      purpose_limitation || '',
-      data_minimization_note || '',
-      retention_class || 'Default',
-      statutory_basis || 'None',
-      security_classification || 'Official',
-      sla_target || '99.5%',
-      compliance_status || 'Draft'
-    );
+    try {
+      const transaction = db.transaction(() => {
+        stmt.run(
+          id,
+          name,
+          owning_mda_id,
+          sector || 'General',
+          description || '',
+          lifecycle_status || 'Draft',
+          sensitivity_level || 'Medium',
+          sandbox_available ? 1 : 0,
+          relativeSpecPath,
+          required_approval_level || 'General Public',
+          contact_office || 'info@govhub.go.ug',
+          technical_owner || 'GovHub Systems',
+          personal_data_categories || '',
+          purpose_limitation || '',
+          data_minimization_note || '',
+          retention_class || 'Default',
+          statutory_basis || 'None',
+          security_classification || 'Official',
+          sla_target || '99.5%',
+          compliance_status || 'Draft'
+        );
 
-    const versionId = `${id}-${slugifyVersion(metadata.version)}`;
-    db.prepare(`
-      INSERT INTO api_versions (
-        id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
-        openapi_version, status, is_current, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      versionId,
-      id,
-      metadata.version,
-      relativeSpecPath,
-      getSpecSha(openapi_spec),
-      metadata.endpointsCount,
-      metadata.openapiVersion,
-      'Published',
-      1,
-      'Initial registry version'
-    );
+        const versionId = `${id}-${slugifyVersion(metadata.version)}`;
+        db.prepare(`
+          INSERT INTO api_versions (
+            id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
+            openapi_version, status, is_current, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          versionId,
+          id,
+          metadata.version,
+          relativeSpecPath,
+          getSpecSha(openapi_spec),
+          metadata.endpointsCount,
+          metadata.openapiVersion,
+          'Published',
+          1,
+          'Initial registry version'
+        );
 
-    // Log the API registration event in audit log
-    const auditStmt = db.prepare(`
-      INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    const auditId = generatePublicId('audit');
-    auditStmt.run(
-      auditId,
-      'API_REGISTERED',
-      owning_mda_id,
-      id,
-      JSON.stringify({
-        api_name: name,
-        registered_by_role: req.user?.role || 'unknown',
-        registered_by_user_id: req.user?.id || null,
-        sector,
-        sensitivity_level
-      })
-    );
+        const auditStmt = db.prepare(`
+          INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        const auditId = generatePublicId('audit');
+        auditStmt.run(
+          auditId,
+          'API_REGISTERED',
+          owning_mda_id,
+          id,
+          JSON.stringify({
+            api_name: name,
+            registered_by_role: req.user?.role || 'unknown',
+            registered_by_user_id: req.user?.id || null,
+            sector,
+            sensitivity_level
+          })
+        );
+      });
+      transaction();
+      specFile.commit();
+    } catch (err) {
+      specFile.cleanup();
+      throw err;
+    }
 
     res.status(201).json({ success: true, apiId: id });
   } catch (err: any) {
     console.error(err);
+    if (isOpenApiValidationError(err)) {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: `Failed to register API: ${err.message}` });
   }
 });

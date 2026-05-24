@@ -1,7 +1,7 @@
 import assert from 'assert/strict';
 import Database from 'better-sqlite3';
 import { createHash } from 'crypto';
-import { computeVersionStatus, ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
+import { computeVersionStatus, ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion, validateOpenApiSpec } from './versioning';
 
 const spec = `
 openapi: 3.0.3
@@ -25,6 +25,15 @@ assert.deepEqual(metadata, {
   openapiVersion: '3.0.3',
   endpointsCount: 1,
 });
+assert.equal(validateOpenApiSpec(spec).metadata.version, '2.1.0');
+assert.throws(
+  () => validateOpenApiSpec('info:\n  version: 1.0.0\npaths: {}'),
+  /missing "openapi" or "swagger"/
+);
+assert.throws(
+  () => validateOpenApiSpec('openapi: 3.0.3\ninfo:\n  version: 1.0.0\npaths: {}'),
+  /missing "info.title"/
+);
 
 assert.equal(computeVersionStatus({ currentSha: 'abc', versionSha: 'abc' }), 'current');
 assert.equal(computeVersionStatus({ currentSha: 'abc', versionSha: 'def' }), 'available');

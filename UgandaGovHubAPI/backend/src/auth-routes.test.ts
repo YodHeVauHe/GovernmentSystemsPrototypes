@@ -275,6 +275,20 @@ async function run() {
     assert.equal(selfDelete.response.status, 400);
     assert.equal(selfDelete.body.code, 'CANNOT_DELETE_SELF');
 
+    const selfSuspend = await request(baseUrl, `/api/admin/users/${adminLogin.body.user.id}/suspend`, {
+      method: 'POST',
+      headers: { cookie: adminCookie },
+    });
+    assert.equal(selfSuspend.response.status, 400);
+    assert.equal(selfSuspend.body.code, 'CANNOT_CHANGE_SELF');
+
+    const selfReject = await request(baseUrl, `/api/admin/users/${adminLogin.body.user.id}/reject`, {
+      method: 'POST',
+      headers: { cookie: adminCookie },
+    });
+    assert.equal(selfReject.response.status, 400);
+    assert.equal(selfReject.body.code, 'CANNOT_CHANGE_SELF');
+
     const deletePublicDeveloper = await request(baseUrl, `/api/admin/users/${publicDeveloperSignup.body.user.id}`, {
       method: 'DELETE',
       headers: { cookie: adminCookie },
