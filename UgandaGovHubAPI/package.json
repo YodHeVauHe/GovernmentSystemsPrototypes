@@ -11,9 +11,16 @@
     "test": "cd backend && npm test",
     "build": "cd frontend && npm run build",
     "seed": "cd backend && npm run seed",
-    "demo": "npm run seed && npm run dev"
+    "demo": "npm run seed && npm run dev",
+    "dev:e2e": "concurrently -k \"cd backend && PORT=4000 HOST=127.0.0.1 npm run dev\" \"cd frontend && VITE_API_BASE_URL=http://127.0.0.1:4000 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort\"",
+    "test:e2e": "playwright test tests/e2e/ministry-demo.spec.ts",
+    "test:a11y": "playwright test tests/e2e/accessibility.spec.ts"
   },
   "dependencies": {
     "concurrently": "^8.2.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "axe-core": "^4.11.4"
   }
 }

@@ -38,6 +38,7 @@ import {
 } from '@tabler/icons-react';
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
+import { CodeSamples } from '@/components/CodeSamples';
 import { generatePublicId } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -229,8 +230,10 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
             )}
             
             <div>
-              <label className="block text-[12px] font-medium text-[#ededed] mb-1.5 font-mono uppercase tracking-wider text-[#8b8b8b]">Statutory or Lawful Basis</label>
+              <label htmlFor="access-legal-basis" className="block text-[12px] font-medium text-[#ededed] mb-1.5 font-mono uppercase tracking-wider text-[#8b8b8b]">Statutory or Lawful Basis</label>
               <input
+                id="access-legal-basis"
+                aria-label="Statutory or Lawful Basis"
                 required
                 type="text"
                 value={legalBasis}
@@ -241,8 +244,10 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
             </div>
 
             <div>
-              <label className="block text-[12px] font-medium text-[#ededed] mb-1.5 font-mono uppercase tracking-wider text-[#8b8b8b]">Purpose & Access Statement</label>
+              <label htmlFor="access-purpose" className="block text-[12px] font-medium text-[#ededed] mb-1.5 font-mono uppercase tracking-wider text-[#8b8b8b]">Purpose & Access Statement</label>
               <textarea 
+                id="access-purpose"
+                aria-label="Purpose & Access Statement"
                 required
                 value={purpose}
                 onChange={e => setPurpose(e.target.value)}
@@ -829,7 +834,8 @@ export function Catalog() {
             />
           </div>
           
-            <select 
+            <select
+            aria-label="Lifecycle filter"
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
             className="h-[36px] px-3 border border-[#2e2e2e] bg-[#1c1c1c] hover:bg-[#2e2e2e] rounded-[6px] text-[13px] text-[#ededed] focus:outline-none cursor-pointer"
@@ -839,7 +845,8 @@ export function Catalog() {
             <option value="BETA">Beta</option>
             <option value="DRAFT">Draft</option>
           </select>
-          <select 
+          <select
+            aria-label="Compliance filter"
             value={complianceFilter}
             onChange={e => setComplianceFilter(e.target.value)}
             className="h-[36px] px-3 border border-[#2e2e2e] bg-[#1c1c1c] hover:bg-[#2e2e2e] rounded-[6px] text-[13px] text-[#ededed] focus:outline-none cursor-pointer"
@@ -863,12 +870,14 @@ export function Catalog() {
           )}
           <div className="flex items-center gap-1 bg-[#141414] border border-[#2e2e2e] p-1 rounded-lg">
             <button 
+              aria-label="Show grid view"
               onClick={() => setViewMode('grid')}
               className={`p-1.5 rounded-[6px] transition-all ${viewMode === 'grid' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'}`}
             >
               <IconGridDots className="w-4 h-4" />
             </button>
             <button 
+              aria-label="Show list view"
               onClick={() => setViewMode('list')}
               className={`p-1.5 rounded-[6px] transition-all ${viewMode === 'list' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'}`}
             >
@@ -1125,6 +1134,11 @@ function getServerBasePath(spec: any, apiId: string) {
     }
   }
   return apiBasePathById[apiId] || '/api/v1';
+}
+
+function buildSampleUrl(spec: any, apiId: string, endpointPath: string) {
+  const basePath = getServerBasePath(spec, apiId);
+  return new URL(`${basePath}${endpointPath}`, API_BASE).toString();
 }
 
 function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: any[], spec: any }) {
@@ -1792,7 +1806,7 @@ function SandboxClientModal({
   );
 }
 
-function EndpointBlock({ ep, spec }: { ep: any, spec: any }) {
+function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: string }) {
   const responseCodes = Object.keys(ep.data.responses || {});
   const [activeTab, setActiveTab] = useState<string>(responseCodes[0] || '');
 
@@ -1804,6 +1818,8 @@ function EndpointBlock({ ep, spec }: { ep: any, spec: any }) {
     || activeResponse?.content?.['application/json']?.examples?.['Compliant']?.value
     || activeResponse?.content?.['application/json']?.examples?.['Active Company']?.value
     || {};
+  const requestBodyExample = buildBodyExample(ep.data.requestBody).value;
+  const sampleUrl = buildSampleUrl(spec, apiId, ep.path);
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 items-start">
@@ -1863,26 +1879,13 @@ function EndpointBlock({ ep, spec }: { ep: any, spec: any }) {
 
       {/* Right Column: Code & Responses */}
       <div className="w-full lg:w-[480px] xl:w-[540px] flex flex-col gap-4 flex-shrink-0 sticky top-6">
-        {/* Request Box */}
-        <div className="rounded-[8px] border border-[#2e2e2e] bg-[#141414] overflow-hidden shadow-lg">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2e2e2e] bg-[#1c1c1c]">
-            <span className="text-[12px] font-medium text-[#ededed]">Request Contract Example</span>
-            <span className="text-[11px] font-mono text-[#8b8b8b]">cURL</span>
-          </div>
-          <div className="p-4 bg-[#0a0a0a]">
-            <pre className="font-mono text-[12.5px] leading-relaxed text-[#e0e0e0] overflow-x-auto whitespace-pre-wrap break-all text-left">
-              <span className="text-[#8b8b8b]">curl -X</span> {ep.method} \<br/>
-              <span className="text-[#8b8b8b]">  {spec.servers?.[0]?.url || 'https://api.govhub.go.ug'}{ep.path}</span> \<br/>
-              <span className="text-[#8b8b8b]">  -H</span> "X-GovHub-API-Key: your_api_key" \
-              {ep.data.requestBody && (
-                <>
-                  <br/><span className="text-[#8b8b8b]">  -H</span> "Content-Type: application/json" \<br/>
-                  <span className="text-[#8b8b8b]">  -d</span> '{JSON.stringify(ep.data.requestBody.content?.['application/json']?.example || {}, null, 2)}'
-                </>
-              )}
-            </pre>
-          </div>
-        </div>
+        <CodeSamples
+          input={{
+            method: ep.method,
+            url: sampleUrl,
+            body: ep.data.requestBody ? requestBodyExample : undefined,
+          }}
+        />
 
         {/* Responses Box */}
         {ep.data.responses && responseCodes.length > 0 && (
@@ -2265,6 +2268,7 @@ export function ApiDetail() {
             <label className="inline-flex h-[28px] items-center gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] pl-2 pr-1 text-[12px] text-[#8b8b8b]">
               <IconGitBranch className="h-3.5 w-3.5 text-[#3ecf8e]" />
               <select
+                aria-label="API version"
                 value={selectedVersion}
                 onChange={event => setSelectedVersion(event.target.value)}
                 className="h-[24px] min-w-[92px] bg-transparent text-[12px] font-medium text-[#ededed] focus:outline-none"
@@ -2347,7 +2351,7 @@ export function ApiDetail() {
             <div className="min-h-0 flex-1 overflow-y-auto px-4 lg:px-8 pb-5 pt-10">
               <div className="flex flex-col gap-12">
                 {endpoints.map((ep, idx) => (
-                  <EndpointBlock key={idx} ep={ep} spec={spec} />
+                  <EndpointBlock key={idx} ep={ep} spec={spec} apiId={api.id} />
                 ))}
               </div>
             </div>

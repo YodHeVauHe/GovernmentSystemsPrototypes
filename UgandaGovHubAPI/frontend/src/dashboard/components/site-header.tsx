@@ -94,7 +94,7 @@ export function SiteHeader() {
         <span className="text-white font-medium">{title}</span>
       </div>
       
-      {/* Persona Switcher & Toolbars */}
+      {/* Persona Indicator & Toolbars */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 bg-[#1c1c1c] border border-[#2e2e2e] px-2.5 py-1 rounded-lg">
           <IconUserCircle className="w-4 h-4 text-[#3ecf8e]" />
@@ -123,7 +123,7 @@ export function SiteHeader() {
             if (open && unreadCount > 0) markAllRead()
           }}>
             <PopoverTrigger asChild>
-              <button className="relative w-7 h-7 rounded-full border border-[#2e2e2e] flex items-center justify-center hover:text-white hover:border-[#444] transition-colors">
+              <button aria-label="Open notifications" className="relative w-7 h-7 rounded-full border border-[#2e2e2e] flex items-center justify-center hover:text-white hover:border-[#444] transition-colors">
                 <IconBell className="w-4 h-4" />
                 {unreadCount > 0 && (
                   <span className="absolute -right-1 -top-1 min-w-4 h-4 rounded-full bg-[#3ecf8e] px-1 text-[10px] leading-4 text-black font-semibold">

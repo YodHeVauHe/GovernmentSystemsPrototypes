@@ -76,6 +76,41 @@ export function resolveSandboxApiId(url: string, mappings: SandboxApiMapping[] =
 }
 
 export function ensureAdminSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS access_requests (
+      id TEXT PRIMARY KEY,
+      consumer_mda_id TEXT,
+      consumer_user_id TEXT,
+      consumer_type TEXT DEFAULT 'mda',
+      api_id TEXT NOT NULL,
+      purpose TEXT,
+      status TEXT,
+      api_key TEXT,
+      api_key_status TEXT DEFAULT 'ACTIVE',
+      api_key_expires_at TEXT,
+      api_key_revoked_at TEXT,
+      requested_fields TEXT,
+      volume_tier TEXT,
+      legal_basis TEXT,
+      environment TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (consumer_mda_id) REFERENCES mdas (id),
+      FOREIGN KEY (consumer_user_id) REFERENCES users (id),
+      FOREIGN KEY (api_id) REFERENCES apis (id)
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      mda_id TEXT,
+      consumer_user_id TEXT,
+      api_id TEXT,
+      request_id TEXT,
+      details TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   const accessColumns = db.prepare('PRAGMA table_info(access_requests)').all() as Array<{ name: string }>;
   const consumerMdaColumn = accessColumns.find(column => column.name === 'consumer_mda_id') as ({ name: string; notnull?: number } | undefined);
   if (consumerMdaColumn?.notnull) {

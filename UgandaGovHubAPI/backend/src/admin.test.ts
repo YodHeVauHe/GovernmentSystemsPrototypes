@@ -1,6 +1,8 @@
 import assert from 'assert/strict';
+import Database from 'better-sqlite3';
 import {
   computeApiKeyAccess,
+  ensureAdminSchema,
   resolveSandboxApiId,
   getDefaultApiKeyExpiry,
   normalizeExpiryInput,
@@ -74,5 +76,17 @@ assert.equal(resolveSandboxApiId('/api/v1/registry/status', [
 assert.equal(resolveSandboxApiId('/api/v1/unknown', [
   { id: 'api-custom-01', sandbox_base_path: '/api/v1/registry' },
 ]), null);
+
+const partialDb = new Database(':memory:');
+partialDb.exec(`
+  CREATE TABLE mdas (id TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT NOT NULL);
+  CREATE TABLE apis (id TEXT PRIMARY KEY, name TEXT NOT NULL, owning_mda_id TEXT NOT NULL);
+`);
+assert.doesNotThrow(() => ensureAdminSchema(partialDb));
+assert.deepEqual(
+  partialDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('access_requests', 'audit_logs') ORDER BY name").all(),
+  [{ name: 'access_requests' }, { name: 'audit_logs' }]
+);
+partialDb.close();
 
 console.log('admin tests passed');

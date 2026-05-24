@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers } from './auth';
 import { ensureAccountVerificationSchema } from './account-verification';
+import { ensureApiVersionSchema } from './versioning';
 
 const dataDir = path.join(__dirname, '../data');
 if (!fs.existsSync(dataDir)) {
@@ -18,11 +19,11 @@ db.exec(`
   DROP TABLE IF EXISTS verification_documents;
   DROP TABLE IF EXISTS user_profiles;
   DROP TABLE IF EXISTS sessions;
-  DROP TABLE IF EXISTS users;
-  DROP TABLE IF EXISTS audit_logs;
   DROP TABLE IF EXISTS access_requests;
+  DROP TABLE IF EXISTS audit_logs;
   DROP TABLE IF EXISTS api_versions;
   DROP TABLE IF EXISTS apis;
+  DROP TABLE IF EXISTS users;
   DROP TABLE IF EXISTS mdas;
 
   CREATE TABLE mdas (
@@ -173,6 +174,7 @@ const apis = [
   ]
 ];
 apis.forEach(a => insertApi.run(a));
+ensureApiVersionSchema(db);
 
 console.log('Seed data inserted successfully.');
 db.close();

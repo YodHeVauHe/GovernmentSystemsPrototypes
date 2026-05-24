@@ -109,7 +109,7 @@ Expected output:
   - MDA API Owner
   - Platform Administrator
   - Compliance Reviewer
-- [ ] Implement demo login or role switcher.
+- [ ] Implement seeded demo account login.
 - [ ] Add API access request form:
   - Consumer MDA
   - Requested API

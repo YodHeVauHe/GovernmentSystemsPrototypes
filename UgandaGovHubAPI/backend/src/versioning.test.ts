@@ -1,6 +1,7 @@
 import assert from 'assert/strict';
+import Database from 'better-sqlite3';
 import { createHash } from 'crypto';
-import { computeVersionStatus, getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
+import { computeVersionStatus, ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
 
 const spec = `
 openapi: 3.0.3
@@ -28,5 +29,21 @@ assert.deepEqual(metadata, {
 assert.equal(computeVersionStatus({ currentSha: 'abc', versionSha: 'abc' }), 'current');
 assert.equal(computeVersionStatus({ currentSha: 'abc', versionSha: 'def' }), 'available');
 assert.equal(computeVersionStatus({ currentSha: '', versionSha: 'def' }), 'available');
+
+const db = new Database(':memory:');
+db.exec(`
+  CREATE TABLE apis (
+    id TEXT PRIMARY KEY,
+    openapi_spec_path TEXT
+  );
+  INSERT INTO apis (id, openapi_spec_path) VALUES ('api-nira-01', '/openapi/nira-identity.yaml');
+`);
+ensureApiVersionSchema(db);
+const backfilledVersions = db.prepare('SELECT COUNT(*) as count FROM api_versions WHERE api_id = ?').get('api-nira-01') as { count: number };
+assert.equal(
+  backfilledVersions.count,
+  1
+);
+db.close();
 
 console.log('versioning tests passed');
