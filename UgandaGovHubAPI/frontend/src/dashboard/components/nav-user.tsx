@@ -89,7 +89,7 @@ export function NavUser({
               </Avatar>
               <IconUserCircle
                 data-testid="collapsed-account-icon"
-                className="hidden size-5 text-[#3ecf8e] group-data-[collapsible=icon]:block"
+                className="hidden size-5! text-[#3ecf8e] group-data-[collapsible=icon]:block"
               />
               <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                 <span className="truncate font-medium">{user.name}</span>
