@@ -76,7 +76,14 @@ export function canSubmitAccessRequest(db: Database.Database, apiId: string): Gu
   return { allowed: true };
 }
 
-export function listAuditLogs(db: Database.Database, user?: AccessUser) {
+export interface AuditLogPage {
+  data: any[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function listAuditLogs(db: Database.Database, user?: AccessUser, limit = 100, offset = 0): AuditLogPage {
   const baseSelect = `
     SELECT
       l.*,
@@ -88,14 +95,23 @@ export function listAuditLogs(db: Database.Database, user?: AccessUser) {
     LEFT JOIN users consumer ON l.consumer_user_id = consumer.id
   `;
 
+  const safeLimit = Math.min(Math.max(1, limit), 500);
+  const safeOffset = Math.max(0, offset);
+
   if (user?.role === 'developer') {
-    if (user.mda_id) {
-      return db.prepare(`${baseSelect} WHERE l.mda_id = ? ORDER BY l.created_at DESC`).all(user.mda_id) as any[];
-    }
-    return db.prepare(`${baseSelect} WHERE l.consumer_user_id = ? ORDER BY l.created_at DESC`).all(user.id) as any[];
+    const whereClause = user.mda_id
+      ? 'WHERE l.mda_id = ?'
+      : 'WHERE l.consumer_user_id = ?';
+    const param = user.mda_id || user.id;
+
+    const total = (db.prepare(`SELECT COUNT(*) as count FROM audit_logs l ${whereClause}`).get(param) as any).count;
+    const data = db.prepare(`${baseSelect} ${whereClause} ORDER BY l.created_at DESC LIMIT ? OFFSET ?`).all(param, safeLimit, safeOffset) as any[];
+    return { data, total, limit: safeLimit, offset: safeOffset };
   }
 
-  return db.prepare(`${baseSelect} ORDER BY l.created_at DESC`).all() as any[];
+  const total = (db.prepare('SELECT COUNT(*) as count FROM audit_logs').get() as any).count;
+  const data = db.prepare(`${baseSelect} ORDER BY l.created_at DESC LIMIT ? OFFSET ?`).all(safeLimit, safeOffset) as any[];
+  return { data, total, limit: safeLimit, offset: safeOffset };
 }
 
 export function canReviewAccessRequest(db: Database.Database, user: AccessUser, requestId: string): GuardDecision {
@@ -109,7 +125,7 @@ export function canReviewAccessRequest(db: Database.Database, user: AccessUser, 
   `).get(requestId) as any;
 
   if (!record) {
-    return { allowed: false, code: 'FORBIDDEN', message: 'Access request not found.' };
+    return { allowed: false, code: 'NOT_FOUND', message: 'Access request not found.' };
   }
 
   if (
@@ -126,6 +142,7 @@ export function canReviewAccessRequest(db: Database.Database, user: AccessUser, 
   }
 
   if (user.role === 'admin') return { allowed: true };
+
   if (user.role !== 'api_owner' || !user.mda_id) {
     return { allowed: false, code: 'FORBIDDEN', message: 'Only admins and owning MDA API owners can approve this request.' };
   }
@@ -161,7 +178,10 @@ export function canTransferApiOwnership(user: AccessUser): GuardDecision {
 
 export function requireApiManager(db: Database.Database, getApiId: (req: Request) => string) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const decision = canManageApi(db, req.user!, getApiId(req));
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication is required.', code: 'UNAUTHENTICATED' });
+    }
+    const decision = canManageApi(db, req.user, getApiId(req));
     if (!decision.allowed) {
       return res.status(403).json({ error: decision.message, code: decision.code });
     }

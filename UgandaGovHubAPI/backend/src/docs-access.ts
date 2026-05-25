@@ -135,17 +135,46 @@ export function canDownloadOpenApiAsset(db: Database.Database, user: DocsAccessU
 export type DocsApiListItem = ApiVisibilityRow & Record<string, unknown> & { docs_visibility: DocsVisibility };
 
 export function listVisibleDocsApis(db: Database.Database, user: DocsAccessUser | null | undefined): DocsApiListItem[] {
-  const apis = db.prepare(`
+  // Resolve effective visibility in SQL to avoid N+1 queries.
+  // The rule mirrors resolveDocsVisibility():
+  //   explicit docs_visibility wins; else derive from security_classification.
+  const allApis = db.prepare(`
     SELECT
       id, name, owning_mda_id, sector, description, lifecycle_status,
       sensitivity_level, sandbox_available, openapi_spec_path, required_approval_level,
-      contact_office, security_classification, docs_visibility
+      contact_office, security_classification, docs_visibility,
+      CASE
+        WHEN LOWER(COALESCE(docs_visibility,'')) IN ('public','authenticated','restricted')
+          THEN LOWER(docs_visibility)
+        WHEN LOWER(COALESCE(security_classification,'')) = 'public'        THEN 'public'
+        WHEN LOWER(COALESCE(security_classification,'')) IN ('restricted','private','secret') THEN 'restricted'
+        ELSE 'authenticated'
+      END AS effective_visibility
     FROM apis
     ORDER BY name ASC
-  `).all() as Array<ApiVisibilityRow & Record<string, unknown>>;
+  `).all() as Array<ApiVisibilityRow & Record<string, unknown> & { effective_visibility: DocsVisibility }>;
 
-  return apis
-    .filter(api => canViewApiDocs(db, user, String(api.id)).allowed)
+  return allApis
+    .filter(api => {
+      const vis = api.effective_visibility;
+
+      // Public: always visible
+      if (vis === 'public') return true;
+
+      // Non-public requires authentication
+      if (!user) return false;
+      if (user.status !== 'APPROVED') return false;
+
+      // Authenticated: any approved user
+      if (vis === 'authenticated') return true;
+
+      // Restricted: admin, reviewer, owning api_owner, or developer with approved access
+      if (user.role === 'admin' || user.role === 'reviewer') return true;
+      if (user.role === 'api_owner' && user.mda_id && user.mda_id === api.owning_mda_id) return true;
+      if (user.role === 'developer') return hasApprovedConsumerAccess(db, user, String(api.id));
+
+      return false;
+    })
     .map(api => ({
       ...api,
       docs_visibility: resolveDocsVisibility(api),

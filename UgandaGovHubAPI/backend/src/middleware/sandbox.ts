@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { buildRegisteredSandboxMappings, computeApiKeyAccess, computeApiKeyHash, getApiKeyPreview, resolveSandboxApiId, type SandboxApiMapping } from '../admin';
 import { logAuditEvent } from '../audit';
+import { consumeRateLimit } from '../rate-limit';
 
 function getDynamicSandboxMappings(db: Database.Database): SandboxApiMapping[] {
   const rows = db.prepare('SELECT id, sandbox_available FROM apis WHERE sandbox_available = 1').all() as any[];
@@ -13,40 +14,9 @@ function getApiIdFromPath(db: Database.Database, url: string): string | null {
   return resolveSandboxApiId(url) || resolveSandboxApiId(url, getDynamicSandboxMappings(db));
 }
 
-const sandboxRateLimits = new Map<string, { count: number; resetAt: number }>();
-const invalidSandboxRateLimits = new Map<string, { count: number; resetAt: number }>();
 const SANDBOX_RATE_LIMIT = Number(process.env.GOVHUB_SANDBOX_RATE_LIMIT || 100);
 const INVALID_SANDBOX_RATE_LIMIT = Number(process.env.GOVHUB_INVALID_SANDBOX_RATE_LIMIT || 30);
 const SANDBOX_RATE_WINDOW_MS = 60 * 1000;
-
-function consumeSandboxQuota(apiKeyHash: string, now = Date.now()) {
-  const current = sandboxRateLimits.get(apiKeyHash);
-  if (!current || current.resetAt <= now) {
-    const resetAt = now + SANDBOX_RATE_WINDOW_MS;
-    sandboxRateLimits.set(apiKeyHash, { count: 1, resetAt });
-    return { allowed: true, remaining: SANDBOX_RATE_LIMIT - 1, resetAt };
-  }
-  if (current.count >= SANDBOX_RATE_LIMIT) {
-    return { allowed: false, remaining: 0, resetAt: current.resetAt };
-  }
-  current.count += 1;
-  return { allowed: true, remaining: SANDBOX_RATE_LIMIT - current.count, resetAt: current.resetAt };
-}
-
-function consumeInvalidSandboxQuota(ipAddress: string, now = Date.now()) {
-  const key = ipAddress || 'unknown';
-  const current = invalidSandboxRateLimits.get(key);
-  if (!current || current.resetAt <= now) {
-    const resetAt = now + SANDBOX_RATE_WINDOW_MS;
-    invalidSandboxRateLimits.set(key, { count: 1, resetAt });
-    return { allowed: true, remaining: INVALID_SANDBOX_RATE_LIMIT - 1, resetAt };
-  }
-  if (current.count >= INVALID_SANDBOX_RATE_LIMIT) {
-    return { allowed: false, remaining: 0, resetAt: current.resetAt };
-  }
-  current.count += 1;
-  return { allowed: true, remaining: INVALID_SANDBOX_RATE_LIMIT - current.count, resetAt: current.resetAt };
-}
 
 const sensitiveLogKeys = new Set(['nin', 'tin', 'password', 'token', 'api_key', 'x-govhub-api-key', 'authorization', 'cookie']);
 
@@ -81,17 +51,19 @@ export function normalizeSandboxLogPath(pathWithQuery: string) {
   return nextQuery ? `${pathname}?${nextQuery}` : pathname;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function sandboxMiddleware(db: Database.Database) {
   return (req: Request, res: Response, next: NextFunction) => {
-  // Generate or forward Correlation ID.
-  // Only accept client-supplied IDs matching a safe alphanumeric pattern to
-  // prevent header injection and audit-log poisoning.
-  const rawCorrelationId = req.headers['x-correlation-id'];
-  const correlationId =
-    typeof rawCorrelationId === 'string' && /^[\w\-]{1,64}$/.test(rawCorrelationId)
-      ? rawCorrelationId
-      : crypto.randomUUID();
+  // Always generate a server-side Correlation ID — never trust client input for audit logs
+  const correlationId = crypto.randomUUID();
   res.setHeader('X-Correlation-ID', correlationId);
+
+  // Echo the client's ID as X-Request-ID only if it is a valid UUID (no injection risk)
+  const clientRequestId = req.headers['x-correlation-id'];
+  if (typeof clientRequestId === 'string' && UUID_RE.test(clientRequestId)) {
+    res.setHeader('X-Request-ID', clientRequestId);
+  }
 
   // Mask sensitive values in logs (simple mock logger)
   const maskedBody = redactSandboxLogValue(req.body || {});
@@ -128,14 +100,16 @@ export function sandboxMiddleware(db: Database.Database) {
   `).get(apiKeyHash) as any;
   const accessDecision = computeApiKeyAccess(requestRecord, apiId);
   if (!requestRecord) {
-    const invalidQuota = consumeInvalidSandboxQuota(req.ip || req.socket.remoteAddress || 'unknown');
+    const invalidQuota = consumeRateLimit(db, 'sandbox_invalid', req.ip || req.socket.remoteAddress || 'unknown', INVALID_SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
+    res.setHeader('X-RateLimit-Limit', String(INVALID_SANDBOX_RATE_LIMIT));
     res.setHeader('X-RateLimit-Remaining', String(Math.max(0, invalidQuota.remaining)));
     res.setHeader('X-RateLimit-Reset', Math.floor(invalidQuota.resetAt / 1000));
     if (!invalidQuota.allowed) {
       return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'Too many invalid sandbox API key attempts.', 429);
     }
   } else {
-    const quota = consumeSandboxQuota(apiKeyHash);
+    const quota = consumeRateLimit(db, 'sandbox', apiKeyHash, SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
+    res.setHeader('X-RateLimit-Limit', String(SANDBOX_RATE_LIMIT));
     res.setHeader('X-RateLimit-Remaining', String(Math.max(0, quota.remaining)));
     res.setHeader('X-RateLimit-Reset', Math.floor(quota.resetAt / 1000));
     if (!quota.allowed) {

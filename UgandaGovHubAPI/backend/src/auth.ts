@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import type { NextFunction, Request, Response } from 'express';
+import { ensureRateLimitSchema } from './rate-limit';
 
 export const USER_ROLES = ['developer', 'api_owner', 'admin', 'reviewer'] as const;
 export type UserRole = typeof USER_ROLES[number];
@@ -73,6 +74,7 @@ export function verifyPassword(password: string, storedHash: string) {
 }
 
 export function ensureAuthSchema(db: Database.Database) {
+  ensureRateLimitSchema(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -108,17 +110,18 @@ export function ensureAuthSchema(db: Database.Database) {
 
 export function ensureDefaultAdmin(db: Database.Database) {
   const email = normalizeEmail(process.env.GOVHUB_ADMIN_EMAIL || 'admin@ict.go.ug');
-  const password = process.env.GOVHUB_ADMIN_PASSWORD;
-  if (!password && process.env.GOVHUB_DEMO_MODE !== 'true') {
-    throw new Error('GOVHUB_ADMIN_PASSWORD is required unless GOVHUB_DEMO_MODE=true.');
+  let password = process.env.GOVHUB_ADMIN_PASSWORD;
+
+  if (!password) {
+    if (process.env.GOVHUB_DEMO_MODE !== 'true') {
+      throw new Error('GOVHUB_ADMIN_PASSWORD is required unless GOVHUB_DEMO_MODE=true.');
+    }
+    // Demo mode: generate a random password instead of using a hardcoded fallback
+    password = crypto.randomBytes(20).toString('base64url');
+    console.warn(`[GOVHUB DEMO] Generated admin password for ${email}: ${password}`);
+    console.warn('[GOVHUB DEMO] Set GOVHUB_ADMIN_PASSWORD to persist this across restarts.');
   }
-  if (!password && process.env.GOVHUB_DEMO_MODE === 'true') {
-    console.warn(
-      '[SECURITY WARNING] GOVHUB_DEMO_MODE is enabled and GOVHUB_ADMIN_PASSWORD is not set. ' +
-      'The admin account will use the publicly known fallback password "AdminPass123!". ' +
-      'Do NOT expose this deployment over a public network.'
-    );
-  }
+
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) return;
 
@@ -132,7 +135,7 @@ export function ensureDefaultAdmin(db: Database.Database) {
     `user-${crypto.randomUUID()}`,
     'Platform Admin',
     email,
-    hashPassword(password || 'AdminPass123!'),
+    hashPassword(password),
     'government',
     'admin',
     'mda-05',
@@ -344,7 +347,7 @@ export function setSessionCookie(res: Response, token: string) {
   res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'strict',
     maxAge: SESSION_TTL_MS,
     path: '/',
   });
@@ -354,7 +357,7 @@ export function clearSessionCookie(res: Response) {
   res.clearCookie(SESSION_COOKIE_NAME, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'strict',
     path: '/',
   });
 }
@@ -380,7 +383,7 @@ export function requireAuth(db: Database.Database, roles?: UserRole[]) {
       if (!user) {
         return res.status(401).json({ error: 'Authentication is required.', code: 'UNAUTHENTICATED' });
       }
-      // Even without a role restriction, suspended accounts are fully blocked.
+      // Suspended accounts must not access any authenticated route
       if (user.status === 'SUSPENDED') {
         return res.status(403).json({ error: 'This account has been suspended.', code: 'ACCOUNT_SUSPENDED' });
       }

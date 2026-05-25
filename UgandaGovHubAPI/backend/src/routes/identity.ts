@@ -40,9 +40,15 @@ identityRouter.post('/verify-nin', (req, res) => {
   });
 });
 
-// GET /api/v1/identity/status/:nin
-identityRouter.get('/status/:nin', (req, res) => {
-  const { nin } = req.params;
+// POST /api/v1/identity/status
+// Accepts { nin } in the request body to avoid NIN appearing in server access logs and browser history.
+// The former GET /api/v1/identity/status/:nin is retained as a deprecated redirect for compatibility.
+identityRouter.post('/status', (req, res) => {
+  const { nin } = req.body || {};
+
+  if (!nin) {
+    return sendSandboxError(res, 'MISSING_NIN', 'The "nin" field is required.');
+  }
 
   if (nin.endsWith('E')) {
     return res.json({
@@ -62,4 +68,20 @@ identityRouter.get('/status/:nin', (req, res) => {
     status: 'ACTIVE',
     card_valid_until: '2034-01-01'
   });
+});
+
+// Deprecated: GET /api/v1/identity/status/:nin
+// NIN in URL paths leaks to access logs and browser history. Use POST /status instead.
+identityRouter.get('/status/:nin', (req, res) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Link', '</api/v1/identity/status>; rel="successor-version"');
+  const { nin } = req.params;
+
+  if (nin.endsWith('E')) {
+    return res.json({ status: 'EXPIRED', card_valid_until: '2023-12-31' });
+  }
+  if (nin.endsWith('R')) {
+    return res.json({ status: 'REVOKED', card_valid_until: '2030-12-31' });
+  }
+  return res.json({ status: 'ACTIVE', card_valid_until: '2034-01-01' });
 });
