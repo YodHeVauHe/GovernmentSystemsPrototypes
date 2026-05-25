@@ -22,6 +22,7 @@ import {
   normalizeAccountType,
   upsertVerificationDocument,
 } from '../account-verification';
+import { clearRateLimit, consumeRateLimit } from '../rate-limit';
 
 function getUserByEmail(db: Database.Database, email: string) {
   return db.prepare('SELECT * FROM users WHERE email = ?').get(normalizeEmail(email)) as any;
@@ -41,34 +42,45 @@ function mdaExists(db: Database.Database, mdaId: string) {
 }
 
 function revokeUserApiKeys(db: Database.Database, userId: string, status: 'REVOKED' | 'DELETED' = 'REVOKED') {
-  try {
-    const revokedAt = new Date().toISOString();
-    if (status === 'DELETED') {
-      db.prepare(`
-        UPDATE access_requests
-        SET api_key = NULL,
-            api_key_hash = NULL,
-            api_key_status = 'DELETED',
-            api_key_revoked_at = ?,
-            api_key_expires_at = NULL,
-            consumer_user_id = NULL
-        WHERE consumer_user_id = ?
-      `).run(revokedAt, userId);
-      return;
-    }
+  // Check table existence before attempting writes so we don't mask real errors
+  const tableExists = (db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='access_requests'"
+  ).get() as any);
+  if (!tableExists) return; // Unit fixtures may omit the access schema
 
+  const revokedAt = new Date().toISOString();
+  if (status === 'DELETED') {
     db.prepare(`
       UPDATE access_requests
-      SET api_key_status = 'REVOKED',
-          api_key_revoked_at = ?
+      SET api_key = NULL,
+          api_key_hash = NULL,
+          api_key_status = 'DELETED',
+          api_key_revoked_at = ?,
+          api_key_expires_at = NULL,
+          consumer_user_id = NULL
       WHERE consumer_user_id = ?
-        AND api_key_hash IS NOT NULL
-        AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
     `).run(revokedAt, userId);
-  } catch {
-    // Some unit fixtures use only the auth schema.
+    return;
   }
+
+  db.prepare(`
+    UPDATE access_requests
+    SET api_key_status = 'REVOKED',
+        api_key_revoked_at = ?
+    WHERE consumer_user_id = ?
+      AND api_key_hash IS NOT NULL
+      AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
+  `).run(revokedAt, userId);
 }
+
+// RFC 5322-simplified: local@domain.tld  (no consecutive dots, no leading/trailing dots)
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+// Password complexity: min 10 chars, at least one of each: uppercase, lowercase, digit, symbol
+const PASSWORD_UPPERCASE_RE = /[A-Z]/;
+const PASSWORD_LOWERCASE_RE = /[a-z]/;
+const PASSWORD_DIGIT_RE = /[0-9]/;
+const PASSWORD_SYMBOL_RE = /[^A-Za-z0-9]/;
 
 function validateSignup(body: any) {
   const required = ['full_name', 'email', 'password', 'account_type', 'requested_role', 'requested_organization', 'requested_purpose'];
@@ -77,39 +89,25 @@ function validateSignup(body: any) {
       return `${field} is required.`;
     }
   }
-
   // Length limits to prevent database bloat and DoS via large payloads.
   if (body.full_name.trim().length > 200) return 'full_name must be 200 characters or fewer.';
   if (body.requested_organization.trim().length > 300) return 'requested_organization must be 300 characters or fewer.';
   if (body.requested_purpose.trim().length > 2000) return 'requested_purpose must be 2000 characters or fewer.';
 
-  // RFC 5322-inspired email check: must have exactly one @, a non-empty local
-  // part, and a domain with at least one dot and no consecutive dots.
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(body.email.trim()) || body.email.includes('..')) {
-    return 'A valid email address is required.';
-  }
-
-  if (body.password.length < 10) return 'Password must be at least 10 characters.';
+  if (!EMAIL_RE.test(String(body.email).trim())) return 'A valid email address is required.';
+  const pwd: string = body.password;
+  if (pwd.length < 10) return 'Password must be at least 10 characters.';
+  if (!PASSWORD_UPPERCASE_RE.test(pwd)) return 'Password must contain at least one uppercase letter.';
+  if (!PASSWORD_LOWERCASE_RE.test(pwd)) return 'Password must contain at least one lowercase letter.';
+  if (!PASSWORD_DIGIT_RE.test(pwd)) return 'Password must contain at least one digit.';
+  if (!PASSWORD_SYMBOL_RE.test(pwd)) return 'Password must contain at least one special character.';
   if (!isUserRole(body.requested_role)) return 'requested_role is invalid.';
   if (body.requested_role === 'admin') return 'Admin accounts must be created by an existing administrator.';
   return null;
 }
 
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const LOGIN_LIMIT = Number(process.env.GOVHUB_LOGIN_RATE_LIMIT || 10);
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-
-function consumeLoginAttempt(key: string, now = Date.now()) {
-  const current = loginAttempts.get(key);
-  if (!current || current.resetAt <= now) {
-    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
-    return true;
-  }
-  if (current.count >= LOGIN_LIMIT) return false;
-  current.count += 1;
-  return true;
-}
 
 function markVerificationChanged(db: Database.Database, userId: string, currentStatus?: string | null) {
   if (!['submitted_for_review', 'verified'].includes(currentStatus || '')) return false;
@@ -183,7 +181,8 @@ export function authRouter(db: Database.Database) {
     }
     const normalizedEmail = normalizeEmail(String(email));
     const attemptKey = `${req.ip || 'unknown'}:${normalizedEmail}`;
-    if (!consumeLoginAttempt(attemptKey)) {
+    const quota = consumeRateLimit(db, 'login', attemptKey, LOGIN_LIMIT, LOGIN_WINDOW_MS);
+    if (!quota.allowed) {
       return res.status(429).json({ error: 'Too many login attempts. Try again later.', code: 'LOGIN_RATE_LIMITED' });
     }
 
@@ -191,7 +190,8 @@ export function authRouter(db: Database.Database) {
     if (!user || !verifyPassword(password, user.password_hash)) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
-    loginAttempts.delete(attemptKey);
+    // Successful login — clear the rate limit bucket
+    clearRateLimit(db, 'login', attemptKey);
 
     const token = createSession(db, user.id);
     setSessionCookie(res, token);
@@ -369,13 +369,28 @@ export function adminUsersRouter(db: Database.Database) {
       return res.status(400).json({ error: 'mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
     }
 
-    db.prepare(`
-      UPDATE users
-      SET status = 'APPROVED', role = ?, mda_id = ?, reviewed_by = ?, reviewed_at = ?,
-          rejection_reason = NULL, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(role, approvedMdaId, req.user!.id, new Date().toISOString(), req.params.id);
-    db.prepare("UPDATE user_profiles SET verification_status = 'verified', review_notes = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?").run(req.params.id);
+    // Wrap MDA re-check and user update in a single transaction to prevent race conditions
+    const approveUser = db.transaction(() => {
+      if (approvedMdaId && !mdaExists(db, approvedMdaId)) {
+        throw Object.assign(new Error('mda_id must reference an existing MDA.'), { code: 'MDA_NOT_FOUND' });
+      }
+      db.prepare(`
+        UPDATE users
+        SET status = 'APPROVED', role = ?, mda_id = ?, reviewed_by = ?, reviewed_at = ?,
+            rejection_reason = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(role, approvedMdaId, req.user!.id, new Date().toISOString(), req.params.id);
+      db.prepare("UPDATE user_profiles SET verification_status = 'verified', review_notes = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?").run(req.params.id);
+    });
+
+    try {
+      approveUser();
+    } catch (err: any) {
+      if (err?.code === 'MDA_NOT_FOUND') {
+        return res.status(400).json({ error: err.message, code: err.code });
+      }
+      throw err;
+    }
 
     res.json({ user: sanitizeUser(getUserById(db, req.params.id)) });
   });

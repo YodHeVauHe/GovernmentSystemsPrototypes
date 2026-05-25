@@ -117,7 +117,7 @@ const publicRequests = buildAccessRequestList(db, publicDeveloper) as any[];
 assert.equal(publicRequests[0].api_key, undefined);
 assert.equal(publicRequests[0].api_key_hash, undefined);
 assert.equal(publicRequests[0].api_key_preview, 'ghk_1234...');
-assert.equal(listAuditLogs(db)[0].mda_name, 'MoH');
-assert.equal(listAuditLogs(db)[0].api_name, 'NIRA Identity');
+assert.equal(listAuditLogs(db).data[0].mda_name, 'MoH');
+assert.equal(listAuditLogs(db).data[0].api_name, 'NIRA Identity');
 
 console.log('access-control tests passed');

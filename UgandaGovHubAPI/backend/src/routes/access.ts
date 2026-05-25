@@ -192,7 +192,9 @@ router.post('/audit-logs', requireAuth(db, ['admin']), (req, res) => {
 // Get Audit Logs
 router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), (req, res) => {
   try {
-    res.json(listAuditLogs(db, req.user!));
+    const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 100;
+    const offset = typeof req.query.offset === 'string' ? parseInt(req.query.offset, 10) : 0;
+    res.json(listAuditLogs(db, req.user!, limit, offset));
   } catch (err: any) {
     console.error('[audit-logs fetch]', err);
     res.status(500).json({ error: 'Failed to fetch audit logs. Please try again.' });
@@ -202,9 +204,16 @@ router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), (
 // Get Access Matrix
 router.get('/matrix', requireAuth(db, ['admin', 'reviewer']), (req, res) => {
   try {
+    // Include both MDA-type and user-type consumers so the full access picture is visible
     const permissions = db.prepare(`
-      SELECT consumer_mda_id, api_id, status 
-      FROM access_requests 
+      SELECT
+        consumer_mda_id,
+        consumer_user_id,
+        consumer_type,
+        api_id,
+        status,
+        api_key_expires_at
+      FROM access_requests
       WHERE status = 'APPROVED'
         AND api_key_hash IS NOT NULL
         AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'

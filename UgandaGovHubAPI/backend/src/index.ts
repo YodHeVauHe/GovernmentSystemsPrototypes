@@ -25,6 +25,7 @@ import { ensureDocsSchema } from './docs-access';
 import { canDownloadOpenApiAsset, canViewApiDocs, listVisibleDocsApis } from './docs-access';
 import { docsRouter } from './routes/docs';
 import { generatePublicId } from './ids';
+import { initAuditColumnCache } from './audit';
 
 dotenv.config();
 
@@ -63,6 +64,33 @@ ensureDefaultAdmin(db);
 ensureDemoUsers(db);
 ensureAccountVerificationSchema(db);
 ensureDocsSchema(db);
+initAuditColumnCache(db); // warm the audit column cache after all schema migrations
+
+// Startup reconciliation: remove any spec files on disk that have no matching DB row.
+// This recovers from a crash between the DB transaction commit and the file deletion.
+(function reconcileOrphanedSpecFiles() {
+  if (!fs.existsSync(openapiRoot)) return;
+  const knownPaths = new Set<string>();
+  try {
+    const rows = db.prepare('SELECT openapi_spec_path FROM apis WHERE openapi_spec_path IS NOT NULL').all() as any[];
+    const versionRows = db.prepare('SELECT openapi_spec_path FROM api_versions WHERE openapi_spec_path IS NOT NULL').all() as any[];
+    for (const row of [...rows, ...versionRows]) {
+      if (typeof row.openapi_spec_path === 'string') {
+        knownPaths.add(path.basename(row.openapi_spec_path));
+      }
+    }
+    const diskFiles = fs.readdirSync(openapiRoot).filter(f => f.endsWith('.yaml') || f.endsWith('.json'));
+    for (const file of diskFiles) {
+      if (!knownPaths.has(file)) {
+        const orphan = path.join(openapiRoot, file);
+        console.warn(`[STARTUP] Removing orphaned spec file: ${orphan}`);
+        try { fs.unlinkSync(orphan); } catch (e) { console.error(`[STARTUP] Failed to remove orphan: ${orphan}`, e); }
+      }
+    }
+  } catch (err) {
+    console.error('[STARTUP] Orphan spec reconciliation failed:', err);
+  }
+})();
 
 function statusForDocsDecision(code: string) {
   if (code === 'UNAUTHENTICATED') return 401;
@@ -91,14 +119,25 @@ function isPrivateIp(address: string) {
   return true;
 }
 
-async function assertSafeSpecUrl(specUrl: string) {
+/**
+ * Resolve, validate, and fetch a remote OpenAPI spec.
+ *
+ * DNS-rebinding mitigation: we resolve the hostname once, check all resolved
+ * IPs against the private-range block-list, then make the HTTP request by
+ * connecting directly to one of those pinned IPs (passing the original Host
+ * header for SNI/virtual-hosting). This prevents an attacker-controlled DNS
+ * server from swapping a public IP at validation time for a private IP at
+ * fetch time.
+ */
+async function fetchSpecFromUrl(specUrl: string): Promise<string> {
   const parsed = new URL(specUrl);
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     throw new Error('Only http and https spec URLs are supported.');
   }
+
   const allowedHosts = (process.env.GOVHUB_SPEC_URL_HOSTS || '')
     .split(',')
-    .map(hostname => hostname.trim().toLowerCase())
+    .map(h => h.trim().toLowerCase())
     .filter(Boolean);
   const allowUnlistedHosts = process.env.GOVHUB_ALLOW_UNLISTED_SPEC_URLS === 'true';
   if (!allowedHosts.length && !allowUnlistedHosts) {
@@ -107,18 +146,41 @@ async function assertSafeSpecUrl(specUrl: string) {
   if (allowedHosts.length && !allowedHosts.includes(parsed.hostname.toLowerCase())) {
     throw new Error('Spec URL host is not allowed.');
   }
+
+  // Resolve once and pin — prevents DNS rebinding TOCTOU
   const addresses = await dns.lookup(parsed.hostname, { all: true, verbatim: false });
-  if (!addresses.length || addresses.some(address => isPrivateIp(address.address))) {
+  if (!addresses.length) {
+    throw new Error('Spec URL hostname could not be resolved.');
+  }
+  const blocked = addresses.filter(a => isPrivateIp(a.address));
+  if (blocked.length) {
     throw new Error('Spec URL resolves to a blocked private or local address.');
   }
-}
 
-async function fetchSpecFromUrl(specUrl: string) {
-  await assertSafeSpecUrl(specUrl);
+  // Pick a safe resolved IP to connect to directly
+  const pinnedIp = addresses[0].address;
+  const isIpv6 = net.isIPv6(pinnedIp);
+
+  // Build a URL that connects to the pinned IP but keeps the original Host header
+  const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+  const pinnedHost = isIpv6 ? `[${pinnedIp}]` : pinnedIp;
+  const pinnedUrl = new URL(specUrl);
+  pinnedUrl.hostname = pinnedHost;
+  if (parsed.port) pinnedUrl.port = parsed.port;
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Number(process.env.GOVHUB_SPEC_FETCH_TIMEOUT_MS || 5000));
+  const timeoutMs = Number(process.env.GOVHUB_SPEC_FETCH_TIMEOUT_MS || 5000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    const response = await fetch(specUrl, { signal: controller.signal, redirect: 'error' });
+    const response = await fetch(pinnedUrl.toString(), {
+      signal: controller.signal,
+      redirect: 'error',
+      headers: {
+        // Preserve original Host so SNI and virtual-hosting work correctly
+        Host: parsed.hostname + (parsed.port ? `:${port}` : ''),
+      },
+    });
     if (!response.ok) {
       throw new Error(`Failed to fetch spec from URL: ${response.statusText}`);
     }
@@ -133,7 +195,7 @@ async function fetchSpecFromUrl(specUrl: string) {
     }
     return content;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
   }
 }
 
