@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import type { NextFunction, Request, Response } from 'express';
 import { ensureRateLimitSchema } from './rate-limit';
+import { decryptAtRest, encryptAtRest } from './crypto-at-rest';
 
 export const USER_ROLES = ['developer', 'api_owner', 'admin', 'reviewer'] as const;
 export type UserRole = typeof USER_ROLES[number];
@@ -25,11 +26,13 @@ export type AuthUser = {
   reviewed_by: string | null;
   reviewed_at: string | null;
   rejection_reason: string | null;
+  mfa_secret_encrypted: string | null;
+  mfa_enabled_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type PublicUser = Omit<AuthUser, 'password_hash'>;
+export type PublicUser = Omit<AuthUser, 'password_hash' | 'mfa_secret_encrypted'> & { mfa_enabled: boolean };
 
 export type AccessDecision =
   | { allowed: true }
@@ -48,6 +51,78 @@ export const SESSION_COOKIE_NAME = 'govhub_session';
 
 function hashToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function base32Encode(buffer: Buffer) {
+  let bits = '';
+  for (const byte of buffer) bits += byte.toString(2).padStart(8, '0');
+  let output = '';
+  for (let i = 0; i < bits.length; i += 5) {
+    const chunk = bits.slice(i, i + 5).padEnd(5, '0');
+    output += BASE32_ALPHABET[parseInt(chunk, 2)];
+  }
+  return output;
+}
+
+function base32Decode(secret: string) {
+  const normalized = secret.toUpperCase().replace(/[^A-Z2-7]/g, '');
+  let bits = '';
+  for (const char of normalized) {
+    const index = BASE32_ALPHABET.indexOf(char);
+    if (index === -1) throw new Error('Invalid MFA secret.');
+    bits += index.toString(2).padStart(5, '0');
+  }
+  const bytes: number[] = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+
+export function generateTotpSecret() {
+  return base32Encode(crypto.randomBytes(20));
+}
+
+export function getTotpCode(secret: string, now = new Date(), stepSeconds = 30) {
+  const counter = Math.floor(now.getTime() / 1000 / stepSeconds);
+  const counterBuffer = Buffer.alloc(8);
+  counterBuffer.writeBigUInt64BE(BigInt(counter));
+  const hmac = crypto.createHmac('sha1', base32Decode(secret)).update(counterBuffer).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const binary = ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, '0');
+}
+
+export function verifyTotpCode(secret: string, code: string, now = new Date()) {
+  const normalizedCode = String(code || '').replace(/\s/g, '');
+  if (!/^\d{6}$/.test(normalizedCode)) return false;
+  for (const offset of [-1, 0, 1]) {
+    const comparisonDate = new Date(now.getTime() + offset * 30_000);
+    const expected = getTotpCode(secret, comparisonDate);
+    if (crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(normalizedCode))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function getMfaSecret(user: Pick<AuthUser, 'mfa_secret_encrypted'>) {
+  return decryptAtRest(user.mfa_secret_encrypted);
+}
+
+export function setUserMfaSecret(db: Database.Database, userId: string, secret: string) {
+  db.prepare('UPDATE users SET mfa_secret_encrypted = ?, mfa_enabled_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(encryptAtRest(secret), userId);
+}
+
+export function enableUserMfa(db: Database.Database, userId: string, now = new Date()) {
+  db.prepare('UPDATE users SET mfa_enabled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(now.toISOString(), userId);
 }
 
 export function isUserRole(value: unknown): value is UserRole {
@@ -92,6 +167,8 @@ export function ensureAuthSchema(db: Database.Database) {
       reviewed_by TEXT,
       reviewed_at TEXT,
       rejection_reason TEXT,
+      mfa_secret_encrypted TEXT,
+      mfa_enabled_at TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -106,6 +183,10 @@ export function ensureAuthSchema(db: Database.Database) {
       FOREIGN KEY (user_id) REFERENCES users (id)
     );
   `);
+  const columns = db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+  const names = new Set(columns.map(column => column.name));
+  if (!names.has('mfa_secret_encrypted')) db.exec('ALTER TABLE users ADD COLUMN mfa_secret_encrypted TEXT');
+  if (!names.has('mfa_enabled_at')) db.exec('ALTER TABLE users ADD COLUMN mfa_enabled_at TEXT');
 }
 
 export function ensureDefaultAdmin(db: Database.Database) {
@@ -297,8 +378,11 @@ export function ensureDemoUsers(db: Database.Database) {
 }
 
 export function sanitizeUser(user: AuthUser): PublicUser {
-  const { password_hash, ...publicUser } = user;
-  return publicUser;
+  const { password_hash, mfa_secret_encrypted, ...publicUser } = user;
+  return {
+    ...publicUser,
+    mfa_enabled: Boolean(user.mfa_enabled_at),
+  };
 }
 
 export function createSession(db: Database.Database, userId: string, now = new Date()) {

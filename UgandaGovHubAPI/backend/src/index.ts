@@ -26,6 +26,7 @@ import { canDownloadOpenApiAsset, canViewApiDocs, listVisibleDocsApis } from './
 import { docsRouter } from './routes/docs';
 import { generatePublicId } from './ids';
 import { initAuditColumnCache } from './audit';
+import { createTransportServer, getTlsConfig } from './tls';
 
 dotenv.config();
 
@@ -52,6 +53,13 @@ app.use(cors({
     'X-RateLimit-Reset',
   ],
 }));
+app.use((req, res, next) => {
+  const tlsEnabled = getTlsConfig().enabled || process.env.GOVHUB_TRUST_TLS_TERMINATION === 'true';
+  if (tlsEnabled) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
 app.use(express.json({ limit: process.env.GOVHUB_JSON_LIMIT || '1mb' }));
 
 // Initialize SQLite Database
@@ -868,6 +876,7 @@ app.use('/api/v1', (req, res) => {
   });
 });
 
-export const server = app.listen(port, host, () => {
-  console.log(`Backend running at http://${host}:${port}`);
+export const server = createTransportServer(app).listen(port, host, () => {
+  const protocol = getTlsConfig().enabled ? 'https' : 'http';
+  console.log(`Backend running at ${protocol}://${host}:${port}`);
 });

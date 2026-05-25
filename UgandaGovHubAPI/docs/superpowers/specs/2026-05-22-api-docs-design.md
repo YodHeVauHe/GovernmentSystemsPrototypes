@@ -1,20 +1,20 @@
-# Scalar API Docs Design
+# API Docs Design
 
 ## Goal
 
-Add a shareable API documentation area for all registered MDA APIs using Scalar-style OpenAPI rendering. Users must be able to open `/docs`, choose an API, and link directly to an API's documentation at `/docs/:apiId`. Documentation visibility must be configurable so each API can be public, authenticated, or restricted.
+Add a shareable API documentation area for all registered MDA APIs using GovHub's custom OpenAPI documentation experience. Users must be able to open `/docs`, choose an API, and link directly to an API's documentation at `/docs/:apiId`. Documentation visibility must be configurable so each API can be public, authenticated, or restricted.
 
 ## Recommended Approach
 
-Use a lightweight docs index at `/docs` and a per-API Scalar reference page at `/docs/:apiId`.
+Use a lightweight docs index at `/docs` and a per-API OpenAPI documentation page at `/docs/:apiId`.
 
-This is more efficient and secure than one combined multi-API reference because the index loads only catalog metadata, each Scalar page loads one OpenAPI document on demand, and access decisions can be enforced per API. It also gives every MDA API a stable URL for sharing and audit logging.
+This is more efficient and secure than one combined multi-API reference because the index loads only catalog metadata, each API page loads one OpenAPI document on demand, and access decisions can be enforced per API. It also gives every MDA API a stable URL for sharing and audit logging.
 
 ## Routes
 
 - `/docs`: documentation index listing APIs the current visitor may view.
-- `/docs/:apiId`: Scalar-rendered OpenAPI documentation for one API.
-- Existing `/api/:id` API detail page can keep its governance and sandbox workflow, but its technical documentation tab should use or link to the same Scalar docs experience for consistency.
+- `/docs/:apiId`: OpenAPI documentation for one API.
+- Existing `/api/:id` API detail pages keep governance and sandbox workflow, while linking to the same docs route for technical reference.
 
 ## Visibility Model
 
@@ -46,15 +46,15 @@ Add a docs section:
 
 - Add `DocsPage` for `/docs`.
 - Add `ApiDocsPage` for `/docs/:apiId`.
-- Use `@scalar/api-reference-react` on the per-API page with a single `url` configuration pointing to the allowed OpenAPI URL.
-- Configure Scalar for the GovHub dark UI, single-document loading, downloads enabled where allowed, and the interactive test request button hidden or disabled unless the API is sandbox-enabled and the user is approved.
-- Add “API Docs” to the sidebar navigation.
+- Render the authorized OpenAPI document with GovHub components, endpoint groups, schemas, examples, downloads, and generated code samples.
+- Hide or disable interactive test actions unless the API is sandbox-enabled and the user is approved.
+- Add "API Docs" to the sidebar navigation.
 
 ## Access Groups
 
 Expose access groups for easy review:
 
-- Add a sidebar or settings entry for “Access Groups”.
+- Add a sidebar or settings entry for "Access Groups".
 - Show the current user's access group and permissions from the existing account privilege summary.
 - In docs pages, show who can view the current API documentation based on `docs_visibility`.
 - Admins and owning API owners should be able to edit docs visibility as part of API settings.
@@ -64,10 +64,10 @@ Expose access groups for easy review:
 - Anonymous users opening restricted docs see a sign-in prompt or 401 state.
 - Approved but unauthorized users see a clear 403 state explaining that the docs are restricted.
 - Missing APIs or missing OpenAPI files show a 404 state.
-- Invalid OpenAPI specs show a Scalar load failure plus a download link only if the user is authorized.
+- Invalid OpenAPI specs show a readable load failure plus a download link only if the user is authorized.
 
 ## Testing
 
 - Backend unit tests cover visibility decisions and docs endpoints.
-- Frontend build verifies routing and Scalar imports.
+- Frontend build verifies routing and documentation rendering.
 - Manual verification covers `/docs`, `/docs/:apiId`, sidebar navigation, and one restricted API scenario.

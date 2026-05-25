@@ -4,7 +4,10 @@ import type Database from 'better-sqlite3';
 import {
   createSession,
   clearSessionCookie,
+  enableUserMfa,
+  generateTotpSecret,
   getBearerToken,
+  getMfaSecret,
   getSessionUser,
   hashPassword,
   isUserRole,
@@ -12,12 +15,15 @@ import {
   requireAuth,
   revokeSession,
   sanitizeUser,
+  setUserMfaSecret,
   setSessionCookie,
+  verifyTotpCode,
   verifyPassword,
 } from '../auth';
 import {
   canSubmitVerification,
   ensureUserProfile,
+  encryptProfileForStorage,
   getAccountSnapshot,
   normalizeAccountType,
   upsertVerificationDocument,
@@ -175,7 +181,7 @@ export function authRouter(db: Database.Database) {
   });
 
   router.post('/login', (req, res) => {
-    const { email, password } = req.body || {};
+    const { email, password, mfa_code } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
@@ -189,6 +195,18 @@ export function authRouter(db: Database.Database) {
     const user = getUserByEmail(db, normalizedEmail);
     if (!user || !verifyPassword(password, user.password_hash)) {
       return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+    if (user.mfa_enabled_at) {
+      const secret = getMfaSecret(user);
+      if (!secret) {
+        return res.status(403).json({ error: 'MFA is enabled but not configured. Contact an administrator.', code: 'MFA_MISCONFIGURED' });
+      }
+      if (!mfa_code) {
+        return res.status(202).json({ mfa_required: true, email: normalizedEmail });
+      }
+      if (!verifyTotpCode(secret, String(mfa_code))) {
+        return res.status(401).json({ error: 'Invalid multi-factor authentication code.', code: 'INVALID_MFA_CODE' });
+      }
     }
     // Successful login — clear the rate limit bucket
     clearRateLimit(db, 'login', attemptKey);
@@ -213,6 +231,45 @@ export function authRouter(db: Database.Database) {
     if (token) revokeSession(db, token);
     clearSessionCookie(res);
     res.json({ success: true });
+  });
+
+  router.post('/mfa/setup', requireAuth(db), (req, res) => {
+    const secret = generateTotpSecret();
+    setUserMfaSecret(db, req.user!.id, secret);
+    const issuer = encodeURIComponent('Uganda GovHub API');
+    const label = encodeURIComponent(`${req.user!.email}`);
+    res.json({
+      secret,
+      otpauth_url: `otpauth://totp/${issuer}:${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`,
+    });
+  });
+
+  router.post('/mfa/enable', requireAuth(db), (req, res) => {
+    const user = getUserById(db, req.user!.id);
+    const secret = getMfaSecret(user);
+    if (!secret) {
+      return res.status(400).json({ error: 'Start MFA setup before enabling MFA.', code: 'MFA_SETUP_REQUIRED' });
+    }
+    if (!verifyTotpCode(secret, String(req.body?.code || ''))) {
+      return res.status(400).json({ error: 'Invalid multi-factor authentication code.', code: 'INVALID_MFA_CODE' });
+    }
+    enableUserMfa(db, req.user!.id);
+    res.json({ user: sanitizeUser(getUserById(db, req.user!.id)) });
+  });
+
+  router.post('/mfa/disable', requireAuth(db), (req, res) => {
+    const { password, code } = req.body || {};
+    const user = getUserById(db, req.user!.id);
+    const secret = getMfaSecret(user);
+    if (!password || !verifyPassword(password, user.password_hash)) {
+      return res.status(401).json({ error: 'Password confirmation failed.', code: 'INVALID_PASSWORD' });
+    }
+    if (user.mfa_enabled_at && (!secret || !verifyTotpCode(secret, String(code || '')))) {
+      return res.status(400).json({ error: 'Invalid multi-factor authentication code.', code: 'INVALID_MFA_CODE' });
+    }
+    db.prepare('UPDATE users SET mfa_enabled_at = NULL, mfa_secret_encrypted = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(req.user!.id);
+    res.json({ user: sanitizeUser(getUserById(db, req.user!.id)) });
   });
 
   router.get('/account', requireAuth(db), (req, res) => {
@@ -250,6 +307,7 @@ export function authRouter(db: Database.Database) {
       return res.status(400).json({ error: 'Admin account category cannot be self-assigned.', code: 'ADMIN_CATEGORY_FORBIDDEN' });
     }
 
+    const stored = encryptProfileForStorage(next);
     const transaction = db.transaction(() => {
       db.prepare(`
         UPDATE user_profiles SET
@@ -264,20 +322,20 @@ export function authRouter(db: Database.Database) {
         WHERE user_id = ?
       `).run(
         next.account_category,
-        next.nin,
-        next.national_id_number,
-        next.contact_phone,
-        next.address,
-        next.organization_name,
-        next.organization_type,
-        next.ursb_number,
-        next.brn,
-        next.tin,
-        next.staff_id,
-        next.department,
-        next.job_title,
-        next.supervisor_name,
-        next.supervisor_email,
+        stored.nin,
+        stored.national_id_number,
+        stored.contact_phone,
+        stored.address,
+        stored.organization_name,
+        stored.organization_type,
+        stored.ursb_number,
+        stored.brn,
+        stored.tin,
+        stored.staff_id,
+        stored.department,
+        stored.job_title,
+        stored.supervisor_name,
+        stored.supervisor_email,
         req.user!.id
       );
       if (markVerificationChanged(db, req.user!.id, current.profile.verification_status)) {

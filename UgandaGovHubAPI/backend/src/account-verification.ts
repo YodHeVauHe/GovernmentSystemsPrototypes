@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import type { AuthUser, UserRole } from './auth';
+import { decryptFields, encryptAtRest, encryptFields } from './crypto-at-rest';
 
 export type AccountType =
   | 'government_employee'
@@ -74,6 +75,41 @@ export type PrivilegeSummary = {
   permissions: string[];
   restrictions: string[];
 };
+
+const ENCRYPTED_PROFILE_FIELDS: Array<keyof AccountProfile> = [
+  'nin',
+  'national_id_number',
+  'contact_phone',
+  'address',
+  'organization_name',
+  'organization_type',
+  'ursb_number',
+  'brn',
+  'tin',
+  'staff_id',
+  'department',
+  'job_title',
+  'supervisor_name',
+  'supervisor_email',
+  'review_notes',
+];
+
+const ENCRYPTED_DOCUMENT_FIELDS: Array<keyof VerificationDocument> = [
+  'file_name',
+  'storage_ref',
+];
+
+export function encryptProfileForStorage(profile: Record<string, any>) {
+  return encryptFields(profile, ENCRYPTED_PROFILE_FIELDS as string[]);
+}
+
+function decryptProfileFromStorage(profile: AccountProfile): AccountProfile {
+  return decryptFields(profile, ENCRYPTED_PROFILE_FIELDS as string[]) as AccountProfile;
+}
+
+function decryptDocumentFromStorage(document: VerificationDocument): VerificationDocument {
+  return decryptFields(document, ENCRYPTED_DOCUMENT_FIELDS as string[]) as VerificationDocument;
+}
 
 export const ACCOUNT_TYPE_REQUIREMENTS: Record<AccountType, AccountRequirement> = {
   government_employee: {
@@ -240,19 +276,62 @@ export function ensureAccountVerificationSchema(db: Database.Database) {
     VALUES (?, ?, ?)
   `);
   for (const user of users) {
-    insertProfile.run(user.id, normalizeAccountType(user.account_type), user.requested_organization || null);
+    insertProfile.run(user.id, normalizeAccountType(user.account_type), encryptAtRest(user.requested_organization || null));
   }
+  encryptExistingAccountVerificationData(db);
 }
 
 export function ensureUserProfile(db: Database.Database, userId: string, accountType?: string, organizationName?: string) {
   db.prepare(`
     INSERT OR IGNORE INTO user_profiles (user_id, account_category, organization_name)
     VALUES (?, ?, ?)
-  `).run(userId, normalizeAccountType(accountType), organizationName || null);
+  `).run(userId, normalizeAccountType(accountType), encryptAtRest(organizationName || null));
+}
+
+function encryptExistingAccountVerificationData(db: Database.Database) {
+  const profileRows = db.prepare('SELECT * FROM user_profiles').all() as AccountProfile[];
+  const updateProfile = db.prepare(`
+    UPDATE user_profiles SET
+      nin = ?, national_id_number = ?, contact_phone = ?, address = ?,
+      organization_name = ?, organization_type = ?, ursb_number = ?, brn = ?, tin = ?,
+      staff_id = ?, department = ?, job_title = ?, supervisor_name = ?, supervisor_email = ?,
+      review_notes = ?
+    WHERE user_id = ?
+  `);
+  for (const profile of profileRows) {
+    const encrypted = encryptProfileForStorage(profile);
+    updateProfile.run(
+      encrypted.nin,
+      encrypted.national_id_number,
+      encrypted.contact_phone,
+      encrypted.address,
+      encrypted.organization_name,
+      encrypted.organization_type,
+      encrypted.ursb_number,
+      encrypted.brn,
+      encrypted.tin,
+      encrypted.staff_id,
+      encrypted.department,
+      encrypted.job_title,
+      encrypted.supervisor_name,
+      encrypted.supervisor_email,
+      encrypted.review_notes,
+      profile.user_id
+    );
+  }
+
+  const documentRows = db.prepare('SELECT * FROM verification_documents').all() as VerificationDocument[];
+  const updateDocument = db.prepare('UPDATE verification_documents SET file_name = ?, storage_ref = ? WHERE id = ?');
+  for (const document of documentRows) {
+    const encrypted = encryptFields(document, ENCRYPTED_DOCUMENT_FIELDS as string[]);
+    updateDocument.run(encrypted.file_name, encrypted.storage_ref, document.id);
+  }
 }
 
 export function upsertVerificationDocument(db: Database.Database, userId: string, input: Omit<Partial<VerificationDocument>, 'id' | 'user_id' | 'uploaded_at'> & { type: string; label: string; file_name: string; mime_type: string; storage_ref?: string }) {
   const id = `doc_${crypto.randomUUID()}`;
+  const encryptedFileName = encryptAtRest(input.file_name);
+  const encryptedStorageRef = encryptAtRest(input.storage_ref || `metadata://${userId}/${input.file_name}`);
   db.prepare(`
     INSERT INTO verification_documents (id, user_id, type, label, file_name, mime_type, storage_ref, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'submitted')
@@ -263,7 +342,7 @@ export function upsertVerificationDocument(db: Database.Database, userId: string
       storage_ref = excluded.storage_ref,
       status = 'submitted',
       uploaded_at = CURRENT_TIMESTAMP
-  `).run(id, userId, input.type, input.label, input.file_name, input.mime_type, input.storage_ref || `metadata://${userId}/${input.file_name}`);
+  `).run(id, userId, input.type, input.label, encryptedFileName, input.mime_type, encryptedStorageRef);
 }
 
 export function getPrivilegeSummary(user: Pick<AuthUser, 'status' | 'role'>): PrivilegeSummary {
@@ -308,8 +387,9 @@ export function getAccountSnapshot(db: Database.Database, userId: string): Accou
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as AuthUser | undefined;
   if (!user) return null;
   ensureUserProfile(db, user.id, user.account_type, user.requested_organization);
-  const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId) as AccountProfile;
-  const documents = db.prepare('SELECT * FROM verification_documents WHERE user_id = ? ORDER BY uploaded_at DESC').all(userId) as VerificationDocument[];
+  const profile = decryptProfileFromStorage(db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId) as AccountProfile);
+  const documents = (db.prepare('SELECT * FROM verification_documents WHERE user_id = ? ORDER BY uploaded_at DESC').all(userId) as VerificationDocument[])
+    .map(decryptDocumentFromStorage);
   const accountType = normalizeAccountType(profile.account_category || user.account_type);
   return {
     user,

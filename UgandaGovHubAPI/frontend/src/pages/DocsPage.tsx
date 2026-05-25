@@ -19,8 +19,7 @@ import {
 } from '@tabler/icons-react';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+import { API_BASE } from '@/lib/api-base';
 
 type DocsVisibility = 'public' | 'authenticated' | 'restricted';
 

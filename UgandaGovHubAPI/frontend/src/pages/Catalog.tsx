@@ -41,8 +41,7 @@ import { useNotifications } from '../context/NotificationContext';
 import { CodeSamples } from '@/components/CodeSamples';
 import { generatePublicId } from '@/lib/utils';
 import { toast } from 'sonner';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+import { API_BASE } from '@/lib/api-base';
 
 function SectorBadge({ sector }: { sector: string }) {
   const value = sector || 'MDA API';

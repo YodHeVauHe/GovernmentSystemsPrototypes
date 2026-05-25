@@ -7,7 +7,7 @@
 ---
 
 ## 1. Abstract / Summary
-This specification defines the implementation of a high-fidelity "Add API" workflow in the Uganda GovHub API catalog. It mirrors Scalar's smart import behavior: allowing platform administrators to specify an OpenAPI source (URL, file drop, or raw JSON/YAML text), validating it through backend parser services, extracting metadata, pre-populating fields, and capturing mandatory Ugandan MDA compliance/governance variables before committing to the registry database.
+This specification defines the implementation of a high-fidelity "Add API" workflow in the Uganda GovHub API catalog. It provides a smart OpenAPI import flow: allowing platform administrators to specify an OpenAPI source (URL, file drop, or raw JSON/YAML text), validating it through backend parser services, extracting metadata, pre-populating fields, and capturing mandatory Ugandan MDA compliance/governance variables before committing to the registry database.
 
 ---
 

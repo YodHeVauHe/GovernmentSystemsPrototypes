@@ -15,6 +15,7 @@ import {
   IconLoader,
   IconFileText,
   IconTrash,
+  IconLock,
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -23,8 +24,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useNotifications } from '@/context/NotificationContext';
 import { useUser } from '@/context/UserContext';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+import { API_BASE } from '@/lib/api-base';
 
 type AccountSnapshot = {
   user: any;
@@ -167,6 +167,10 @@ export function AccountSettingsPage() {
   const [account, setAccount] = useState<AccountSnapshot | null>(null);
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'profile');
   const [profileDraft, setProfileDraft] = useState<Record<string, any>>({});
+  const [mfaSetup, setMfaSetup] = useState<{ secret: string; otpauth_url: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaPassword, setMfaPassword] = useState('');
+  const [mfaBusy, setMfaBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadAccount = () => {
@@ -234,6 +238,51 @@ export function AccountSettingsPage() {
       .catch(error => toast.error('Submission failed', { description: error.message }));
   };
 
+  const startMfaSetup = () => {
+    setMfaBusy(true);
+    accountRequest('/api/auth/mfa/setup', { method: 'POST' })
+      .then(body => {
+        setMfaSetup(body);
+        setMfaCode('');
+      })
+      .catch(error => toast.error('MFA setup failed', { description: error.message }))
+      .finally(() => setMfaBusy(false));
+  };
+
+  const enableMfa = () => {
+    setMfaBusy(true);
+    accountRequest('/api/auth/mfa/enable', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: mfaCode }),
+    })
+      .then(() => {
+        toast.success('Multi-factor authentication enabled');
+        setMfaSetup(null);
+        setMfaCode('');
+        return refreshUser();
+      })
+      .catch(error => toast.error('MFA verification failed', { description: error.message }))
+      .finally(() => setMfaBusy(false));
+  };
+
+  const disableMfa = () => {
+    setMfaBusy(true);
+    accountRequest('/api/auth/mfa/disable', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: mfaPassword, code: mfaCode }),
+    })
+      .then(() => {
+        toast.success('Multi-factor authentication disabled');
+        setMfaPassword('');
+        setMfaCode('');
+        return refreshUser();
+      })
+      .catch(error => toast.error('Could not disable MFA', { description: error.message }))
+      .finally(() => setMfaBusy(false));
+  };
+
   const updateDraft = (key: string, value: string) => {
     setProfileDraft(current => ({ ...current, [key]: value }));
   };
@@ -242,6 +291,7 @@ export function AccountSettingsPage() {
     ['profile', IconId, 'Profile'],
     ['organization', IconBuildingBank, 'Organization'],
     ['documents', IconFileCertificate, 'Documents'],
+    ['security', IconLock, 'Security'],
     ['privileges', IconShieldCheck, 'Privileges'],
     ['notifications', IconBell, 'Notifications'],
     ['flow', IconClipboardCheck, 'Setup Flow'],
@@ -636,6 +686,93 @@ export function AccountSettingsPage() {
                         {account.profile.verification_status === 'submitted_for_review' ? 'Verification Pending Review' : 'Submit for Admin Review'}
                       </Button>
                     </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Security Tab */}
+                {activeTab === 'security' && (
+                  <div data-testid="account-settings-active-pane" className={activePaneClassName}>
+                    <div className="shrink-0 pb-6">
+                      <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                        <IconLock className="text-[#3ecf8e] size-5" />
+                        Account Security
+                      </h2>
+                      <p className="text-xs text-foreground-light mt-1">
+                        Manage sign-in controls for your GovHub account.
+                      </p>
+                    </div>
+
+                    <div data-testid="account-settings-pane-body" className={paneBodyClassName}>
+                      <div className="rounded-xl border border-border bg-background/40 p-5">
+                        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <h3 className="text-sm font-semibold text-foreground">Multi-factor authentication</h3>
+                            <p className="mt-1 max-w-xl text-xs leading-relaxed text-foreground-light">
+                              Require a six-digit authenticator code after password sign-in.
+                            </p>
+                            <div className="mt-3 inline-flex items-center rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold">
+                              {user?.mfa_enabled ? 'Enabled' : 'Not enabled'}
+                            </div>
+                          </div>
+
+                          {!user?.mfa_enabled && !mfaSetup && (
+                            <Button onClick={startMfaSetup} disabled={mfaBusy} className="bg-[#3ecf8e] text-black hover:bg-[#3ecf8e]/95">
+                              Start MFA Setup
+                            </Button>
+                          )}
+                        </div>
+
+                        {!user?.mfa_enabled && mfaSetup && (
+                          <div className="mt-5 space-y-4 border-t border-border pt-5">
+                            <div className="rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 p-4">
+                              <div className="text-xs font-semibold uppercase tracking-wider text-[#3ecf8e]">Authenticator secret</div>
+                              <div className="mt-2 break-all font-mono text-sm text-foreground">{mfaSetup.secret}</div>
+                              <div className="mt-2 break-all font-mono text-[11px] text-foreground-light">{mfaSetup.otpauth_url}</div>
+                            </div>
+                            <div className="max-w-xs space-y-2">
+                              <Label htmlFor="mfa_enable_code">Verification code</Label>
+                              <Input
+                                id="mfa_enable_code"
+                                inputMode="numeric"
+                                value={mfaCode}
+                                onChange={event => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                              />
+                            </div>
+                            <Button onClick={enableMfa} disabled={mfaBusy || mfaCode.length !== 6} className="bg-[#3ecf8e] text-black hover:bg-[#3ecf8e]/95">
+                              Enable MFA
+                            </Button>
+                          </div>
+                        )}
+
+                        {user?.mfa_enabled && (
+                          <div className="mt-5 grid gap-4 border-t border-border pt-5 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="mfa_disable_password">Password</Label>
+                              <Input
+                                id="mfa_disable_password"
+                                type="password"
+                                value={mfaPassword}
+                                onChange={event => setMfaPassword(event.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="mfa_disable_code">Authenticator code</Label>
+                              <Input
+                                id="mfa_disable_code"
+                                inputMode="numeric"
+                                value={mfaCode}
+                                onChange={event => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <Button variant="destructive" onClick={disableMfa} disabled={mfaBusy || !mfaPassword || mfaCode.length !== 6}>
+                                Disable MFA
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
