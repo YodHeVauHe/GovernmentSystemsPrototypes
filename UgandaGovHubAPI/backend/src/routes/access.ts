@@ -110,8 +110,8 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), (req, res) 
 
     res.json({ id, status: 'APPROVED', api_key: apiKey, api_key_status: 'ACTIVE', api_key_expires_at: expiresAt });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: `Failed to approve request: ${err.message}` });
+    console.error('[access approve]', err);
+    res.status(500).json({ error: 'Failed to approve request. Please try again.' });
   }
 });
 
@@ -134,8 +134,8 @@ router.patch('/:id/key-expiry', requireAuth(db, ['admin']), (req, res) => {
 
     res.json({ id, api_key_status: 'ACTIVE', api_key_expires_at: expiresAt });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: `Failed to update API key expiry: ${err.message}` });
+    console.error('[key-expiry update]', err);
+    res.status(500).json({ error: 'Failed to update API key expiry. Please try again.' });
   }
 });
 
@@ -157,8 +157,8 @@ router.post('/:id/revoke-key', requireAuth(db, ['admin']), (req, res) => {
 
     res.json({ id, api_key_status: 'REVOKED', api_key_revoked_at: revokedAt });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: `Failed to revoke API key: ${err.message}` });
+    console.error('[key revoke]', err);
+    res.status(500).json({ error: 'Failed to revoke API key. Please try again.' });
   }
 });
 
@@ -179,8 +179,8 @@ router.delete('/:id/key', requireAuth(db, ['admin']), (req, res) => {
 
     res.json({ id, api_key_status: 'DELETED' });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: `Failed to delete API key: ${err.message}` });
+    console.error('[key delete]', err);
+    res.status(500).json({ error: 'Failed to delete API key. Please try again.' });
   }
 });
 
@@ -194,8 +194,8 @@ router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), (
   try {
     res.json(listAuditLogs(db, req.user!));
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: `Failed to fetch audit logs: ${err.message}` });
+    console.error('[audit-logs fetch]', err);
+    res.status(500).json({ error: 'Failed to fetch audit logs. Please try again.' });
   }
 });
 
