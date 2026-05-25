@@ -99,8 +99,25 @@ export function listAuditLogs(db: Database.Database, user?: AccessUser) {
 }
 
 export function canReviewAccessRequest(db: Database.Database, user: AccessUser, requestId: string): GuardDecision {
-  const statusCheck = db.prepare('SELECT status, api_key, api_key_hash, api_key_status FROM access_requests WHERE id = ?').get(requestId) as any;
-  if (statusCheck && (statusCheck.status !== 'PENDING' || statusCheck.api_key || statusCheck.api_key_hash || ['REVOKED', 'DELETED'].includes(statusCheck.api_key_status || ''))) {
+  // Single query: fetch the request and ownership info atomically to avoid
+  // a TOCTOU window between the status check and the ownership check.
+  const record = db.prepare(`
+    SELECT r.id, r.status, r.api_key, r.api_key_hash, r.api_key_status, a.owning_mda_id
+    FROM access_requests r
+    JOIN apis a ON a.id = r.api_id
+    WHERE r.id = ?
+  `).get(requestId) as any;
+
+  if (!record) {
+    return { allowed: false, code: 'FORBIDDEN', message: 'Access request not found.' };
+  }
+
+  if (
+    record.status !== 'PENDING' ||
+    record.api_key ||
+    record.api_key_hash ||
+    ['REVOKED', 'DELETED'].includes(record.api_key_status || '')
+  ) {
     return {
       allowed: false,
       code: 'REQUEST_ALREADY_FINALIZED',
@@ -113,16 +130,10 @@ export function canReviewAccessRequest(db: Database.Database, user: AccessUser, 
     return { allowed: false, code: 'FORBIDDEN', message: 'Only admins and owning MDA API owners can approve this request.' };
   }
 
-  const request = db.prepare(`
-    SELECT r.id, r.status, r.api_key, r.api_key_hash, r.api_key_status
-    FROM access_requests r
-    JOIN apis a ON a.id = r.api_id
-    WHERE r.id = ? AND a.owning_mda_id = ?
-  `).get(requestId, user.mda_id) as any;
-
-  if (!request) {
+  if (record.owning_mda_id !== user.mda_id) {
     return { allowed: false, code: 'FORBIDDEN', message: 'API owners can only approve requests for APIs owned by their MDA.' };
   }
+
   return { allowed: true };
 }
 

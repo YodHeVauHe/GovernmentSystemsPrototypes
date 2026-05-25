@@ -83,14 +83,15 @@ export function normalizeSandboxLogPath(pathWithQuery: string) {
 
 export function sandboxMiddleware(db: Database.Database) {
   return (req: Request, res: Response, next: NextFunction) => {
-  // Generate or forward Correlation ID
-  const correlationId = req.headers['x-correlation-id'] || crypto.randomUUID();
-  res.setHeader('X-Correlation-ID', correlationId as string);
-
-  // Mock Rate Limit Headers
-  res.setHeader('X-RateLimit-Limit', '100');
-  res.setHeader('X-RateLimit-Remaining', '99');
-  res.setHeader('X-RateLimit-Reset', Math.floor(Date.now() / 1000) + 60);
+  // Generate or forward Correlation ID.
+  // Only accept client-supplied IDs matching a safe alphanumeric pattern to
+  // prevent header injection and audit-log poisoning.
+  const rawCorrelationId = req.headers['x-correlation-id'];
+  const correlationId =
+    typeof rawCorrelationId === 'string' && /^[\w\-]{1,64}$/.test(rawCorrelationId)
+      ? rawCorrelationId
+      : crypto.randomUUID();
+  res.setHeader('X-Correlation-ID', correlationId);
 
   // Mask sensitive values in logs (simple mock logger)
   const maskedBody = redactSandboxLogValue(req.body || {});

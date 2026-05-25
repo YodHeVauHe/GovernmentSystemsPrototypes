@@ -308,11 +308,11 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
     }
     res.status(201).json({ success: true, versionId, version, is_current: shouldMakeCurrent });
   } catch (err: any) {
-    console.error(err);
+    console.error('[version publish]', err);
     if (isOpenApiValidationError(err)) {
       return res.status(400).json({ error: err.message });
     }
-    res.status(500).json({ error: `Failed to publish version: ${err.message}` });
+    res.status(500).json({ error: 'Failed to publish version. Please try again.' });
   }
 });
 
@@ -336,8 +336,8 @@ app.post('/api/catalog/:id/versions/:version/current', requireAuth(db, ['admin',
     transaction();
     res.json({ success: true, version: req.params.version });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: `Failed to promote version: ${err.message}` });
+    console.error('[version promote]', err);
+    res.status(500).json({ error: 'Failed to promote version. Please try again.' });
   }
 });
 
@@ -359,8 +359,8 @@ app.delete('/api/catalog/:id/versions/:version', requireAuth(db, ['admin', 'api_
 
     res.json({ success: true, version: req.params.version });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: `Failed to delete version: ${err.message}` });
+    console.error('[version delete]', err);
+    res.status(500).json({ error: 'Failed to delete version. Please try again.' });
   }
 });
 
@@ -462,9 +462,27 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
     }
 
     const transaction = db.transaction(() => {
-      db.prepare(`
-        UPDATE apis SET
-          name = ?, owning_mda_id = ?, sector = ?, description = ?, lifecycle_status = ?,
+      // Compute field-level diff for the audit log before writing.
+      const trackedFields: Array<[string, unknown, unknown]> = [
+        ['name', existing.name, name ?? existing.name],
+        ['owning_mda_id', existing.owning_mda_id, owning_mda_id ?? existing.owning_mda_id],
+        ['sector', existing.sector, sector ?? existing.sector],
+        ['lifecycle_status', existing.lifecycle_status, lifecycle_status ?? existing.lifecycle_status],
+        ['sensitivity_level', existing.sensitivity_level, sensitivity_level ?? existing.sensitivity_level],
+        ['sandbox_available', Boolean(existing.sandbox_available), typeof sandbox_available === 'boolean' ? sandbox_available : Boolean(existing.sandbox_available)],
+        ['required_approval_level', existing.required_approval_level, required_approval_level ?? existing.required_approval_level],
+        ['security_classification', existing.security_classification, security_classification ?? existing.security_classification],
+        ['docs_visibility', existing.docs_visibility, hasDocsVisibilityPatch ? normalizedDocsVisibility : existing.docs_visibility],
+        ['compliance_status', existing.compliance_status, compliance_status ?? existing.compliance_status],
+      ];
+      const changedFields: Record<string, { from: unknown; to: unknown }> = {};
+      for (const [field, from, to] of trackedFields) {
+        if (String(from ?? '') !== String(to ?? '')) {
+          changedFields[field] = { from, to };
+        }
+      }
+
+      db.prepare(` sector = ?, description = ?, lifecycle_status = ?,
           sensitivity_level = ?, sandbox_available = ?, openapi_spec_path = ?, required_approval_level = ?,
           contact_office = ?, technical_owner = ?, personal_data_categories = ?, purpose_limitation = ?,
           data_minimization_note = ?, retention_class = ?, statutory_basis = ?, security_classification = ?,
@@ -539,7 +557,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
         'API_UPDATED',
         owning_mda_id ?? existing.owning_mda_id,
         req.params.id,
-        JSON.stringify({ api_name: name ?? existing.name, spec_updated: Boolean(versionPatch) })
+        JSON.stringify({ api_name: name ?? existing.name, spec_updated: Boolean(versionPatch), changed_fields: changedFields })
       );
     });
 
@@ -552,11 +570,11 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
     }
     res.json({ success: true, apiId: req.params.id });
   } catch (err: any) {
-    console.error(err);
+    console.error('[api update]', err);
     if (isOpenApiValidationError(err)) {
       return res.status(400).json({ error: err.message });
     }
-    res.status(500).json({ error: `Failed to update API: ${err.message}` });
+    res.status(500).json({ error: 'Failed to update API. Please try again.' });
   }
 });
 
@@ -593,8 +611,8 @@ app.delete('/api/catalog/:id', requireAuth(db, ['admin']), (req, res) => {
     deleteSpecFiles(specPaths, openapiRoot);
     res.json({ success: true, apiId: req.params.id });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: `Failed to delete API: ${err.message}` });
+    console.error('[api delete]', err);
+    res.status(500).json({ error: 'Failed to delete API. Please try again.' });
   }
 });
 
@@ -628,12 +646,11 @@ app.post('/api/catalog/validate-spec', requireAuth(db, ['admin', 'api_owner']), 
         version: validation.metadata.version,
         description: validation.metadata.description,
         endpointsCount: validation.metadata.endpointsCount
-      },
-      rawSpec: content
+      }
     });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ valid: false, error: `Internal validation error: ${err.message}` });
+    console.error('[validate-spec]', err);
+    res.status(500).json({ valid: false, error: 'Internal validation error. Please try again.' });
   }
 });
 
@@ -760,11 +777,11 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
 
     res.status(201).json({ success: true, apiId: id });
   } catch (err: any) {
-    console.error(err);
+    console.error('[api register]', err);
     if (isOpenApiValidationError(err)) {
       return res.status(400).json({ error: err.message });
     }
-    res.status(500).json({ error: `Failed to register API: ${err.message}` });
+    res.status(500).json({ error: 'Failed to register API. Please try again.' });
   }
 });
 
