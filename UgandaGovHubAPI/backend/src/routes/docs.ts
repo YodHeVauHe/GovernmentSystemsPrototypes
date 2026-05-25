@@ -23,8 +23,8 @@ export function docsRouter(db: Database.Database) {
     try {
       res.json(listVisibleDocsApis(db, req.user));
     } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: `Failed to fetch API docs: ${err.message}` });
+      console.error('[docs fetch]', err);
+      res.status(500).json({ error: 'Failed to fetch API docs. Please try again.' });
     }
   });
 
@@ -58,8 +58,8 @@ export function docsRouter(db: Database.Database) {
         spec_url: api.openapi_spec_path,
       });
     } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: `Failed to fetch API documentation: ${err.message}` });
+      console.error('[docs/:id fetch]', err);
+      res.status(500).json({ error: 'Failed to fetch API documentation. Please try again.' });
     }
   });
 
@@ -87,8 +87,8 @@ export function docsRouter(db: Database.Database) {
       const fileContents = fs.readFileSync(filePath, 'utf8');
       res.json(yaml.load(fileContents));
     } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: `Failed to parse API documentation: ${err.message}` });
+      console.error('[docs/:id/spec fetch]', err);
+      res.status(500).json({ error: 'Failed to parse API documentation. Please try again.' });
     }
   });
 
@@ -110,8 +110,8 @@ export function docsRouter(db: Database.Database) {
       }
       res.json({ id: req.params.id, docs_visibility: docsVisibility });
     } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: `Failed to update docs visibility: ${err.message}` });
+      console.error('[docs visibility update]', err);
+      res.status(500).json({ error: 'Failed to update docs visibility. Please try again.' });
     }
   });
 
