@@ -112,6 +112,13 @@ export function ensureDefaultAdmin(db: Database.Database) {
   if (!password && process.env.GOVHUB_DEMO_MODE !== 'true') {
     throw new Error('GOVHUB_ADMIN_PASSWORD is required unless GOVHUB_DEMO_MODE=true.');
   }
+  if (!password && process.env.GOVHUB_DEMO_MODE === 'true') {
+    console.warn(
+      '[SECURITY WARNING] GOVHUB_DEMO_MODE is enabled and GOVHUB_ADMIN_PASSWORD is not set. ' +
+      'The admin account will use the publicly known fallback password "AdminPass123!". ' +
+      'Do NOT expose this deployment over a public network.'
+    );
+  }
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) return;
 
@@ -292,7 +299,7 @@ export function sanitizeUser(user: AuthUser): PublicUser {
 }
 
 export function createSession(db: Database.Database, userId: string, now = new Date()) {
-  const token = `ghp_${crypto.randomBytes(32).toString('hex')}`;
+  const token = `ghb_${crypto.randomBytes(32).toString('hex')}`;
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
   db.prepare(`
     INSERT INTO sessions (id, user_id, token_hash, expires_at)
@@ -372,6 +379,10 @@ export function requireAuth(db: Database.Database, roles?: UserRole[]) {
     if (!roles) {
       if (!user) {
         return res.status(401).json({ error: 'Authentication is required.', code: 'UNAUTHENTICATED' });
+      }
+      // Even without a role restriction, suspended accounts are fully blocked.
+      if (user.status === 'SUSPENDED') {
+        return res.status(403).json({ error: 'This account has been suspended.', code: 'ACCOUNT_SUSPENDED' });
       }
       req.user = user;
       return next();

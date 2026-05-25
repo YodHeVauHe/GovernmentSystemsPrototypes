@@ -37,20 +37,34 @@ export function resolveDocsVisibility(api: Pick<ApiVisibilityRow, 'docs_visibili
 }
 
 function hasApprovedConsumerAccess(db: Database.Database, user: DocsAccessUser, apiId: string) {
-  const consumerColumn = user.mda_id ? 'consumer_mda_id' : 'consumer_user_id';
-  const consumerId = user.mda_id || user.id;
-  const record = db.prepare(`
-    SELECT id
-    FROM access_requests
-    WHERE api_id = ?
-      AND ${consumerColumn} = ?
-      AND status = 'APPROVED'
-      AND (api_key_hash IS NOT NULL OR api_key IS NOT NULL)
-      AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
-      AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
-    LIMIT 1
-  `).get(apiId, consumerId, new Date().toISOString());
-  return Boolean(record);
+  const now = new Date().toISOString();
+  // Use two separate parameterised queries — no dynamic column name interpolation.
+  if (user.mda_id) {
+    return Boolean(
+      db.prepare(`
+        SELECT id FROM access_requests
+        WHERE consumer_mda_id = ?
+          AND api_id = ?
+          AND status = 'APPROVED'
+          AND (api_key_hash IS NOT NULL OR api_key IS NOT NULL)
+          AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
+          AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
+        LIMIT 1
+      `).get(user.mda_id, apiId, now)
+    );
+  }
+  return Boolean(
+    db.prepare(`
+      SELECT id FROM access_requests
+      WHERE consumer_user_id = ?
+        AND api_id = ?
+        AND status = 'APPROVED'
+        AND (api_key_hash IS NOT NULL OR api_key IS NOT NULL)
+        AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
+        AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
+      LIMIT 1
+    `).get(user.id, apiId, now)
+  );
 }
 
 export function canViewApiDocs(db: Database.Database, user: DocsAccessUser | null | undefined, apiId: string): DocsDecision {

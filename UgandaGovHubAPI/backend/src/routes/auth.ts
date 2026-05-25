@@ -77,7 +77,19 @@ function validateSignup(body: any) {
       return `${field} is required.`;
     }
   }
-  if (!body.email.includes('@')) return 'A valid email is required.';
+
+  // Length limits to prevent database bloat and DoS via large payloads.
+  if (body.full_name.trim().length > 200) return 'full_name must be 200 characters or fewer.';
+  if (body.requested_organization.trim().length > 300) return 'requested_organization must be 300 characters or fewer.';
+  if (body.requested_purpose.trim().length > 2000) return 'requested_purpose must be 2000 characters or fewer.';
+
+  // RFC 5322-inspired email check: must have exactly one @, a non-empty local
+  // part, and a domain with at least one dot and no consecutive dots.
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(body.email.trim()) || body.email.includes('..')) {
+    return 'A valid email address is required.';
+  }
+
   if (body.password.length < 10) return 'Password must be at least 10 characters.';
   if (!isUserRole(body.requested_role)) return 'requested_role is invalid.';
   if (body.requested_role === 'admin') return 'Admin accounts must be created by an existing administrator.';
@@ -337,6 +349,12 @@ export function adminUsersRouter(db: Database.Database) {
 
     const existing = getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
+
+    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    if (!mutationDecision.allowed) {
+      return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
+    }
+
     const snapshot = getAccountSnapshot(db, req.params.id);
     if (!snapshot || snapshot.profile.verification_status !== 'submitted_for_review') {
       return res.status(400).json({ error: 'User verification must be submitted for review before approval.', code: 'VERIFICATION_NOT_SUBMITTED' });
