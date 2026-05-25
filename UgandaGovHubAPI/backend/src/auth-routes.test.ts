@@ -2,9 +2,9 @@ import assert from 'assert/strict';
 import express from 'express';
 import { createServer, type Server } from 'http';
 import Database from 'better-sqlite3';
-import { ensureAuthSchema, ensureDefaultAdmin, requireApprovedAuth, requireAuth } from './auth';
+import { ensureAuthSchema, ensureDefaultAdmin, hashPassword, requireApprovedAuth, requireAuth } from './auth';
 import { authRouter, adminUsersRouter } from './routes/auth';
-import { ensureAccountVerificationSchema } from './account-verification';
+import { ensureAccountVerificationSchema, getAccountSnapshot } from './account-verification';
 import { computeApiKeyHash, ensureAdminSchema } from './admin';
 
 async function startApp() {
@@ -136,6 +136,8 @@ async function run() {
     });
     assert.equal(draftAccount.response.status, 200);
     assert.equal(draftAccount.body.account.profile.verification_status, 'draft_profile');
+    assert.equal(draftAccount.body.account.user.password_hash, undefined);
+    assert.equal(draftAccount.body.account.user.mfa_secret_encrypted, undefined);
 
     const selfAssignAdminCategory = await request(baseUrl, '/api/auth/account/profile', {
       method: 'PATCH',
@@ -185,12 +187,84 @@ async function run() {
     });
     assert.equal(adminLogin.response.status, 200);
     const adminCookie = sessionCookie(adminLogin.response);
+    const adminSnapshot = getAccountSnapshot(db, adminLogin.body.user.id);
+    assert.equal(adminSnapshot?.profile.account_category, 'admin');
+    assert.equal(adminSnapshot?.profile.verification_status, 'verified');
+
+    process.env.GOVHUB_REQUIRE_ADMIN_MFA = 'true';
+    const mfaBlockedAdminList = await request(baseUrl, '/api/admin/users', {
+      headers: { cookie: adminCookie },
+    });
+    assert.equal(mfaBlockedAdminList.response.status, 403);
+    assert.equal(mfaBlockedAdminList.body.code, 'ADMIN_MFA_REQUIRED');
+    delete process.env.GOVHUB_REQUIRE_ADMIN_MFA;
+
+    db.prepare(`
+      INSERT INTO users (
+        id, full_name, email, password_hash, account_type, requested_role,
+        requested_mda_id, requested_organization, requested_purpose, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_REVIEW')
+    `).run(
+      'usr_public_admin_candidate',
+      'Public Admin Candidate',
+      'public.admin@example.com',
+      hashPassword('StrongPass123!'),
+      'public_developer',
+      'developer',
+      null,
+      'Independent Civic Developer',
+      'Request elevated platform access'
+    );
+    db.prepare(`
+      INSERT INTO user_profiles (user_id, verification_status, account_category)
+      VALUES (?, 'submitted_for_review', 'public_developer')
+    `).run('usr_public_admin_candidate');
+
+    const publicAdminPromotion = await request(baseUrl, '/api/admin/users/usr_public_admin_candidate/approve', {
+      method: 'POST',
+      headers: { cookie: adminCookie },
+      body: JSON.stringify({ role: 'admin', mda_id: null }),
+    });
+    assert.equal(publicAdminPromotion.response.status, 400);
+    assert.equal(publicAdminPromotion.body.code, 'ADMIN_PROMOTION_REQUIRES_GOVERNMENT_IDENTITY');
+
+    db.prepare(`
+      INSERT INTO users (
+        id, full_name, email, password_hash, account_type, requested_role,
+        requested_mda_id, requested_organization, requested_purpose, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_REVIEW')
+    `).run(
+      'usr_gov_admin_candidate',
+      'Government Admin Candidate',
+      'gov.admin@example.go.ug',
+      hashPassword('StrongPass123!'),
+      'government_employee',
+      'reviewer',
+      'mda-05',
+      'Ministry of ICT and National Guidance',
+      'Operate platform administration workflows'
+    );
+    db.prepare(`
+      INSERT INTO user_profiles (user_id, verification_status, account_category)
+      VALUES (?, 'submitted_for_review', 'government_employee')
+    `).run('usr_gov_admin_candidate');
+
+    const govAdminPromotion = await request(baseUrl, '/api/admin/users/usr_gov_admin_candidate/approve', {
+      method: 'POST',
+      headers: { cookie: adminCookie },
+      body: JSON.stringify({ role: 'admin', mda_id: 'mda-05' }),
+    });
+    assert.equal(govAdminPromotion.response.status, 200);
+    assert.equal(govAdminPromotion.body.user.role, 'admin');
+    const promotedAdminSnapshot = getAccountSnapshot(db, 'usr_gov_admin_candidate');
+    assert.equal(promotedAdminSnapshot?.profile.account_category, 'admin');
+    assert.equal(promotedAdminSnapshot?.profile.verification_status, 'verified');
 
     const users = await request(baseUrl, '/api/admin/users?status=PENDING_REVIEW', {
       headers: { cookie: adminCookie },
     });
     assert.equal(users.response.status, 200);
-    assert.equal(users.body.users.length, 2);
+    assert.equal(users.body.users.length, 3);
 
     const publicDeveloperApproval = await request(baseUrl, `/api/admin/users/${publicDeveloperSignup.body.user.id}/approve`, {
       method: 'POST',
@@ -267,6 +341,8 @@ async function run() {
     assert.equal(allUsers.response.status, 200);
     assert.equal(allUsers.body.users.some((user: any) => user.status === 'APPROVED'), true);
     assert.equal(allUsers.body.users.some((user: any) => user.status === 'PENDING_REVIEW'), true);
+    assert.equal(allUsers.body.users.some((user: any) => user.password_hash || user.mfa_secret_encrypted), false);
+    assert.equal(allUsers.body.users.some((user: any) => user.account?.user?.password_hash || user.account?.user?.mfa_secret_encrypted), false);
 
     const selfDelete = await request(baseUrl, `/api/admin/users/${adminLogin.body.user.id}`, {
       method: 'DELETE',

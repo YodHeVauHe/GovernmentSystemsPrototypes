@@ -26,6 +26,11 @@ export function AddApiPage() {
   const [loading, setLoading] = useState(false);
   const [validationError, setValidationError] = useState('');
   const [parsedSpec, setParsedSpec] = useState<any>(null);
+  const [validatedSpecInput, setValidatedSpecInput] = useState<{
+    sourceTab: 'url' | 'file' | 'text';
+    specText: string;
+    specUrl: string;
+  } | null>(null);
   
   // Governance Form Fields
   const [name, setName] = useState('');
@@ -89,6 +94,7 @@ export function AddApiPage() {
       }
 
       setParsedSpec(data);
+      setValidatedSpecInput({ sourceTab: activeSourceTab, specText, specUrl });
       setName(data.metadata.title);
       setSlug(slugify(data.metadata.title));
       setDescription(data.metadata.description);
@@ -127,7 +133,8 @@ export function AddApiPage() {
           lifecycle_status: lifecycleStatus,
           sensitivity_level: sensitivityLevel,
           sandbox_available: sandboxAvailable,
-          openapi_spec: parsedSpec.rawSpec,
+          openapi_spec: validatedSpecInput?.sourceTab === 'url' ? undefined : validatedSpecInput?.specText,
+          specUrl: validatedSpecInput?.sourceTab === 'url' ? validatedSpecInput.specUrl : undefined,
           required_approval_level: finalApproval,
           contact_office: contactOffice,
           technical_owner: technicalOwner,

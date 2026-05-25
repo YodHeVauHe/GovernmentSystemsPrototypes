@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
-import type { AuthUser, UserRole } from './auth';
+import { sanitizeUser, type AuthUser, type PublicUser, type UserRole } from './auth';
 import { decryptFields, encryptAtRest, encryptFields } from './crypto-at-rest';
 
 export type AccountType =
@@ -56,11 +56,12 @@ export type AccountProfile = {
 };
 
 export type AccountSnapshot = {
-  user: AuthUser;
+  user: PublicUser;
   profile: AccountProfile;
   documents: VerificationDocument[];
   requirements: AccountRequirement;
   privileges: PrivilegeSummary;
+  verification_progress: VerificationProgress;
 };
 
 export type AccountRequirement = {
@@ -74,6 +75,28 @@ export type PrivilegeSummary = {
   accessGroup: string;
   permissions: string[];
   restrictions: string[];
+};
+
+export type VerificationProgress = {
+  missing_fields: string[];
+  missing_documents: string[];
+  completed_fields: number;
+  total_fields: number;
+  completed_documents: number;
+  total_documents: number;
+  completed_requirements: number;
+  total_requirements: number;
+  can_submit: boolean;
+  next_action:
+    | 'complete_profile'
+    | 'upload_documents'
+    | 'submit_for_review'
+    | 'await_admin_review'
+    | 'respond_to_admin_request'
+    | 'approved'
+    | 'rejected'
+    | 'suspended';
+  message: string;
 };
 
 const ENCRYPTED_PROFILE_FIELDS: Array<keyof AccountProfile> = [
@@ -228,6 +251,41 @@ export function normalizeAccountType(value: string | null | undefined): AccountT
   return 'public_developer';
 }
 
+function initialAccountCategory(user: { account_type: string; requested_role?: string | null; role?: string | null; status?: string | null }): AccountType {
+  if (user.status === 'APPROVED' && (user.role === 'admin' || user.requested_role === 'admin')) {
+    return 'admin';
+  }
+  return normalizeAccountType(user.account_type);
+}
+
+function initialVerificationStatus(user: { status?: string | null; role?: string | null }): VerificationStatus {
+  if (user.status === 'APPROVED' && user.role) return 'verified';
+  if (user.status === 'REJECTED') return 'rejected';
+  if (user.status === 'SUSPENDED') return 'suspended';
+  return 'draft_profile';
+}
+
+function reconcileUserProfileWithAuthState(db: Database.Database, user: { id: string; status?: string | null; role?: string | null }) {
+  if (user.status !== 'APPROVED' || !user.role) return;
+  db.prepare(`
+    UPDATE user_profiles
+    SET verification_status = 'verified',
+        review_notes = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+      AND verification_status = 'draft_profile'
+  `).run(user.id);
+  if (user.role === 'admin') {
+    db.prepare(`
+      UPDATE user_profiles
+      SET account_category = 'admin',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+        AND account_category <> 'admin'
+    `).run(user.id);
+  }
+}
+
 export function ensureAccountVerificationSchema(db: Database.Database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS user_profiles (
@@ -270,13 +328,26 @@ export function ensureAccountVerificationSchema(db: Database.Database) {
     );
   `);
 
-  const users = db.prepare('SELECT id, account_type, requested_organization FROM users').all() as Array<{ id: string; account_type: string; requested_organization: string }>;
+  const users = db.prepare('SELECT id, account_type, requested_role, role, status, requested_organization FROM users').all() as Array<{
+    id: string;
+    account_type: string;
+    requested_role: string | null;
+    role: string | null;
+    status: string;
+    requested_organization: string;
+  }>;
   const insertProfile = db.prepare(`
-    INSERT OR IGNORE INTO user_profiles (user_id, account_category, organization_name)
-    VALUES (?, ?, ?)
+    INSERT OR IGNORE INTO user_profiles (user_id, verification_status, account_category, organization_name)
+    VALUES (?, ?, ?, ?)
   `);
   for (const user of users) {
-    insertProfile.run(user.id, normalizeAccountType(user.account_type), encryptAtRest(user.requested_organization || null));
+    insertProfile.run(
+      user.id,
+      initialVerificationStatus(user),
+      initialAccountCategory(user),
+      encryptAtRest(user.requested_organization || null)
+    );
+    reconcileUserProfileWithAuthState(db, user);
   }
   encryptExistingAccountVerificationData(db);
 }
@@ -383,31 +454,144 @@ export function getPrivilegeSummary(user: Pick<AuthUser, 'status' | 'role'>): Pr
   };
 }
 
+export function getVerificationProgress(
+  profile: AccountProfile,
+  documents: VerificationDocument[],
+  requirements: AccountRequirement
+): VerificationProgress {
+  const missingFields = requirements.requiredFields
+    .filter(field => !profile[field.key])
+    .map(field => field.label);
+  const submittedTypes = new Set(documents.map(document => document.type));
+  const missingDocuments = requirements.requiredDocuments
+    .filter(document => !submittedTypes.has(document.type))
+    .map(document => document.type);
+  const completedFields = requirements.requiredFields.length - missingFields.length;
+  const completedDocuments = requirements.requiredDocuments.length - missingDocuments.length;
+  const totalRequirements = requirements.requiredFields.length + requirements.requiredDocuments.length;
+  const completedRequirements = completedFields + completedDocuments;
+  const hasAllRequirements = missingFields.length === 0 && missingDocuments.length === 0;
+
+  if (profile.verification_status === 'verified') {
+    return {
+      missing_fields: [],
+      missing_documents: [],
+      completed_fields: requirements.requiredFields.length,
+      total_fields: requirements.requiredFields.length,
+      completed_documents: requirements.requiredDocuments.length,
+      total_documents: requirements.requiredDocuments.length,
+      completed_requirements: totalRequirements,
+      total_requirements: totalRequirements,
+      can_submit: false,
+      next_action: 'approved',
+      message: 'Your identity and organization verification is complete.',
+    };
+  }
+
+  if (profile.verification_status === 'submitted_for_review') {
+    return {
+      missing_fields: missingFields,
+      missing_documents: missingDocuments,
+      completed_fields: completedFields,
+      total_fields: requirements.requiredFields.length,
+      completed_documents: completedDocuments,
+      total_documents: requirements.requiredDocuments.length,
+      completed_requirements: completedRequirements,
+      total_requirements: totalRequirements,
+      can_submit: false,
+      next_action: 'await_admin_review',
+      message: 'Your verification package has been submitted and is waiting for administrator review.',
+    };
+  }
+
+  if (profile.verification_status === 'needs_more_information') {
+    return {
+      missing_fields: missingFields,
+      missing_documents: missingDocuments,
+      completed_fields: completedFields,
+      total_fields: requirements.requiredFields.length,
+      completed_documents: completedDocuments,
+      total_documents: requirements.requiredDocuments.length,
+      completed_requirements: completedRequirements,
+      total_requirements: totalRequirements,
+      can_submit: hasAllRequirements,
+      next_action: hasAllRequirements ? 'submit_for_review' : 'respond_to_admin_request',
+      message: profile.review_notes || 'An administrator requested more verification information before approval.',
+    };
+  }
+
+  if (profile.verification_status === 'rejected') {
+    return {
+      missing_fields: missingFields,
+      missing_documents: missingDocuments,
+      completed_fields: completedFields,
+      total_fields: requirements.requiredFields.length,
+      completed_documents: completedDocuments,
+      total_documents: requirements.requiredDocuments.length,
+      completed_requirements: completedRequirements,
+      total_requirements: totalRequirements,
+      can_submit: false,
+      next_action: 'rejected',
+      message: profile.review_notes || 'This verification request was rejected by an administrator.',
+    };
+  }
+
+  if (profile.verification_status === 'suspended') {
+    return {
+      missing_fields: missingFields,
+      missing_documents: missingDocuments,
+      completed_fields: completedFields,
+      total_fields: requirements.requiredFields.length,
+      completed_documents: completedDocuments,
+      total_documents: requirements.requiredDocuments.length,
+      completed_requirements: completedRequirements,
+      total_requirements: totalRequirements,
+      can_submit: false,
+      next_action: 'suspended',
+      message: 'This account is suspended and cannot complete verification.',
+    };
+  }
+
+  return {
+    missing_fields: missingFields,
+    missing_documents: missingDocuments,
+    completed_fields: completedFields,
+    total_fields: requirements.requiredFields.length,
+    completed_documents: completedDocuments,
+    total_documents: requirements.requiredDocuments.length,
+    completed_requirements: completedRequirements,
+    total_requirements: totalRequirements,
+    can_submit: hasAllRequirements,
+    next_action: missingFields.length ? 'complete_profile' : missingDocuments.length ? 'upload_documents' : 'submit_for_review',
+    message: hasAllRequirements
+      ? 'Your verification package is ready to submit for administrator review.'
+      : 'Complete verification before an administrator can approve dashboard and API access.',
+  };
+}
+
 export function getAccountSnapshot(db: Database.Database, userId: string): AccountSnapshot | null {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as AuthUser | undefined;
   if (!user) return null;
   ensureUserProfile(db, user.id, user.account_type, user.requested_organization);
+  reconcileUserProfileWithAuthState(db, user);
   const profile = decryptProfileFromStorage(db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId) as AccountProfile);
   const documents = (db.prepare('SELECT * FROM verification_documents WHERE user_id = ? ORDER BY uploaded_at DESC').all(userId) as VerificationDocument[])
     .map(decryptDocumentFromStorage);
   const accountType = normalizeAccountType(profile.account_category || user.account_type);
+  const requirements = ACCOUNT_TYPE_REQUIREMENTS[accountType];
   return {
-    user,
+    user: sanitizeUser(user),
     profile,
     documents,
-    requirements: ACCOUNT_TYPE_REQUIREMENTS[accountType],
+    requirements,
     privileges: getPrivilegeSummary(user),
+    verification_progress: getVerificationProgress(profile, documents, requirements),
   };
 }
 
 export function canSubmitVerification(snapshot: AccountSnapshot): { allowed: boolean; message?: string } {
-  const missingFields = snapshot.requirements.requiredFields
-    .filter(field => !snapshot.profile[field.key])
-    .map(field => field.label);
-  const submittedTypes = new Set(snapshot.documents.map(document => document.type));
-  const missingDocuments = snapshot.requirements.requiredDocuments
-    .filter(document => !submittedTypes.has(document.type))
-    .map(document => document.type);
+  const missingFields = snapshot.verification_progress.missing_fields;
+  const missingDocuments = snapshot.verification_progress.missing_documents;
 
   if (missingFields.length || missingDocuments.length) {
     return {

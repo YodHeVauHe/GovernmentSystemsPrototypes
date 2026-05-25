@@ -40,7 +40,12 @@ export function redactSandboxLogValue(value: unknown): unknown {
 
 export function normalizeSandboxLogPath(pathWithQuery: string) {
   const [pathname, query = ''] = pathWithQuery.split('?');
-  if (!query) return pathname;
+  const redactedPathname = pathname
+    .replace(/^\/api\/v1\/identity\/status\/[^/?#]+/, '/api/v1/identity/status/[REDACTED]')
+    .replace(/^\/api\/v1\/tax\/clearance\/[^/?#]+/, '/api/v1/tax/clearance/[REDACTED]')
+    .replace(/^\/api\/v1\/business\/registration\/[^/?#]+/, '/api/v1/business/registration/[REDACTED]')
+    .replace(/^\/api\/v1\/transport\/driving-permit\/status\/[^/?#]+/, '/api/v1/transport/driving-permit/status/[REDACTED]');
+  if (!query) return redactedPathname;
   const params = new URLSearchParams(query);
   for (const key of Array.from(params.keys())) {
     if (sensitiveLogKeys.has(key.toLowerCase())) {
@@ -48,104 +53,105 @@ export function normalizeSandboxLogPath(pathWithQuery: string) {
     }
   }
   const nextQuery = params.toString();
-  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+  return nextQuery ? `${redactedPathname}?${nextQuery}` : redactedPathname;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function sandboxMiddleware(db: Database.Database) {
   return (req: Request, res: Response, next: NextFunction) => {
-  // Always generate a server-side Correlation ID — never trust client input for audit logs
-  const correlationId = crypto.randomUUID();
-  res.setHeader('X-Correlation-ID', correlationId);
+    // Always generate a server-side Correlation ID — never trust client input for audit logs
+    const correlationId = crypto.randomUUID();
+    res.setHeader('X-Correlation-ID', correlationId);
 
-  // Echo the client's ID as X-Request-ID only if it is a valid UUID (no injection risk)
-  const clientRequestId = req.headers['x-correlation-id'];
-  if (typeof clientRequestId === 'string' && UUID_RE.test(clientRequestId)) {
-    res.setHeader('X-Request-ID', clientRequestId);
-  }
+    // Echo the client's ID as X-Request-ID only if it is a valid UUID (no injection risk)
+    const clientRequestId = req.headers['x-correlation-id'];
+    if (typeof clientRequestId === 'string' && UUID_RE.test(clientRequestId)) {
+      res.setHeader('X-Request-ID', clientRequestId);
+    }
 
-  // Mask sensitive values in logs (simple mock logger)
-  const maskedBody = redactSandboxLogValue(req.body || {});
-  
-  console.log(`[SANDBOX] ${req.method} ${normalizeSandboxLogPath(req.originalUrl)} | ID: ${correlationId} | Body:`, maskedBody);
+    // Mask sensitive values in logs (simple mock logger)
+    const maskedBody = redactSandboxLogValue(req.body || {});
 
-  // Enforce API Key
-  const apiKey = req.headers['x-govhub-api-key'] as string;
-  const apiId = getApiIdFromPath(db, req.originalUrl);
+    console.log(`[SANDBOX] ${req.method} ${normalizeSandboxLogPath(req.originalUrl)} | ID: ${correlationId} | Body:`, maskedBody);
+    const auditPath = normalizeSandboxLogPath(req.originalUrl);
 
-  if (!apiKey) {
-    logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
-      reason: 'The X-GovHub-API-Key header is missing.',
-      path: req.originalUrl,
+    // Enforce API Key
+    const apiKey = req.headers['x-govhub-api-key'] as string;
+    const apiId = getApiIdFromPath(db, req.originalUrl);
+
+    if (!apiKey) {
+      logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
+        reason: 'The X-GovHub-API-Key header is missing.',
+        path: auditPath,
+        method: req.method
+      });
+      return sendSandboxError(res, 'MISSING_API_KEY', 'The X-GovHub-API-Key header is missing.', 401);
+    }
+
+    const apiKeyHash = computeApiKeyHash(apiKey);
+    const requestRecord = db.prepare(`
+      SELECT
+        r.consumer_mda_id,
+        r.consumer_user_id,
+        u.status as consumer_user_status,
+        r.api_id,
+        r.status,
+        r.api_key_status,
+        r.api_key_expires_at,
+        r.api_key_revoked_at
+      FROM access_requests r
+      LEFT JOIN users u ON u.id = r.consumer_user_id
+      WHERE r.api_key_hash = ?
+    `).get(apiKeyHash) as any;
+    const accessDecision = computeApiKeyAccess(requestRecord, apiId);
+    if (!requestRecord) {
+      const invalidQuota = consumeRateLimit(db, 'sandbox_invalid', req.ip || req.socket.remoteAddress || 'unknown', INVALID_SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
+      res.setHeader('X-RateLimit-Limit', String(INVALID_SANDBOX_RATE_LIMIT));
+      res.setHeader('X-RateLimit-Remaining', String(Math.max(0, invalidQuota.remaining)));
+      res.setHeader('X-RateLimit-Reset', Math.floor(invalidQuota.resetAt / 1000));
+      if (!invalidQuota.allowed) {
+        return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'Too many invalid sandbox API key attempts.', 429);
+      }
+    } else {
+      const quota = consumeRateLimit(db, 'sandbox', apiKeyHash, SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
+      res.setHeader('X-RateLimit-Limit', String(SANDBOX_RATE_LIMIT));
+      res.setHeader('X-RateLimit-Remaining', String(Math.max(0, quota.remaining)));
+      res.setHeader('X-RateLimit-Reset', Math.floor(quota.resetAt / 1000));
+      if (!quota.allowed) {
+        return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'The sandbox rate limit for this API key has been exceeded.', 429);
+      }
+    }
+    if (!accessDecision.allowed && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
+      logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
+        reason: accessDecision.message,
+        path: auditPath,
+        method: req.method,
+        provided_key: getApiKeyPreview(apiKey)
+      });
+      return sendSandboxError(res, accessDecision.code, accessDecision.message, 403);
+    }
+
+    // Enforce endpoint/scope verification
+    if (!accessDecision.allowed && accessDecision.code === 'UNAUTHORIZED_ENDPOINT') {
+      logAuditEvent(db, 'SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
+        consumer_user_id: requestRecord.consumer_user_id,
+        reason: accessDecision.message,
+        path: auditPath,
+        method: req.method,
+        authorized_api: requestRecord.api_id
+      });
+      return sendSandboxError(res, accessDecision.code, accessDecision.message, 403);
+    }
+
+    // Key is valid and authorized
+    logAuditEvent(db, 'SANDBOX_CALL_ALLOWED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
+      consumer_user_id: requestRecord.consumer_user_id,
+      path: auditPath,
       method: req.method
     });
-    return sendSandboxError(res, 'MISSING_API_KEY', 'The X-GovHub-API-Key header is missing.', 401);
-  }
 
-  const apiKeyHash = computeApiKeyHash(apiKey);
-  const requestRecord = db.prepare(`
-    SELECT
-      r.consumer_mda_id,
-      r.consumer_user_id,
-      u.status as consumer_user_status,
-      r.api_id,
-      r.status,
-      r.api_key_status,
-      r.api_key_expires_at,
-      r.api_key_revoked_at
-    FROM access_requests r
-    LEFT JOIN users u ON u.id = r.consumer_user_id
-    WHERE r.api_key_hash = ?
-  `).get(apiKeyHash) as any;
-  const accessDecision = computeApiKeyAccess(requestRecord, apiId);
-  if (!requestRecord) {
-    const invalidQuota = consumeRateLimit(db, 'sandbox_invalid', req.ip || req.socket.remoteAddress || 'unknown', INVALID_SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
-    res.setHeader('X-RateLimit-Limit', String(INVALID_SANDBOX_RATE_LIMIT));
-    res.setHeader('X-RateLimit-Remaining', String(Math.max(0, invalidQuota.remaining)));
-    res.setHeader('X-RateLimit-Reset', Math.floor(invalidQuota.resetAt / 1000));
-    if (!invalidQuota.allowed) {
-      return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'Too many invalid sandbox API key attempts.', 429);
-    }
-  } else {
-    const quota = consumeRateLimit(db, 'sandbox', apiKeyHash, SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
-    res.setHeader('X-RateLimit-Limit', String(SANDBOX_RATE_LIMIT));
-    res.setHeader('X-RateLimit-Remaining', String(Math.max(0, quota.remaining)));
-    res.setHeader('X-RateLimit-Reset', Math.floor(quota.resetAt / 1000));
-    if (!quota.allowed) {
-      return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'The sandbox rate limit for this API key has been exceeded.', 429);
-    }
-  }
-  if (!accessDecision.allowed && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
-    logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
-      reason: accessDecision.message,
-      path: req.originalUrl,
-      method: req.method,
-      provided_key: getApiKeyPreview(apiKey)
-    });
-    return sendSandboxError(res, accessDecision.code, accessDecision.message, 403);
-  }
-
-  // Enforce endpoint/scope verification
-  if (!accessDecision.allowed && accessDecision.code === 'UNAUTHORIZED_ENDPOINT') {
-    logAuditEvent(db, 'SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
-      consumer_user_id: requestRecord.consumer_user_id,
-      reason: accessDecision.message,
-      path: req.originalUrl,
-      method: req.method,
-      authorized_api: requestRecord.api_id
-    });
-    return sendSandboxError(res, accessDecision.code, accessDecision.message, 403);
-  }
-
-  // Key is valid and authorized
-  logAuditEvent(db, 'SANDBOX_CALL_ALLOWED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
-    consumer_user_id: requestRecord.consumer_user_id,
-    path: req.originalUrl,
-    method: req.method
-  });
-
-  next();
+    next();
   };
 }
 

@@ -149,6 +149,19 @@ async function run() {
     });
     assert.equal(enable.response.status, 200);
     assert.equal(enable.body.user.mfa_enabled, true);
+    const enabledUser = db.prepare('SELECT mfa_enabled_at, mfa_secret_encrypted FROM users WHERE id = ?').get('usr_secure') as any;
+    assert.equal(typeof enabledUser.mfa_enabled_at, 'string');
+    assert.equal(typeof enabledUser.mfa_secret_encrypted, 'string');
+
+    const resetWhileEnabled = await request(baseUrl, '/api/auth/mfa/setup', {
+      method: 'POST',
+      headers: { cookie },
+    });
+    assert.equal(resetWhileEnabled.response.status, 409);
+    assert.equal(resetWhileEnabled.body.code, 'MFA_ALREADY_ENABLED');
+    const stillEnabledUser = db.prepare('SELECT mfa_enabled_at, mfa_secret_encrypted FROM users WHERE id = ?').get('usr_secure') as any;
+    assert.equal(stillEnabledUser.mfa_enabled_at, enabledUser.mfa_enabled_at);
+    assert.equal(stillEnabledUser.mfa_secret_encrypted, enabledUser.mfa_secret_encrypted);
 
     const missingMfa = await request(baseUrl, '/api/auth/login', {
       method: 'POST',

@@ -13,10 +13,13 @@
     "test:admin": "ts-node src/admin.test.ts",
     "test:account-verification": "ts-node src/account-verification.test.ts",
     "test:security-features": "ts-node src/security-features.test.ts",
+    "test:catalog-spec-input": "ts-node src/catalog-spec-input.test.ts",
+    "test:catalog-sql": "ts-node src/catalog-sql.test.ts",
+    "test:openapi-reconciliation": "ts-node src/openapi-reconciliation.test.ts",
     "test:versioning": "ts-node src/versioning.test.ts",
     "test:docs-access": "ts-node src/docs-access.test.ts",
     "test:sandbox": "ts-node src/sandbox.test.ts",
-    "test": "npm run test:auth && npm run test:access-control && npm run test:ids && npm run test:admin && npm run test:account-verification && npm run test:security-features && npm run test:versioning && npm run test:sandbox && npm run test:auth-routes && npm run test:docs-access"
+    "test": "npm run test:auth && npm run test:access-control && npm run test:ids && npm run test:admin && npm run test:account-verification && npm run test:security-features && npm run test:catalog-spec-input && npm run test:catalog-sql && npm run test:openapi-reconciliation && npm run test:versioning && npm run test:sandbox && npm run test:auth-routes && npm run test:docs-access"
   },
   "keywords": [],
   "author": "",

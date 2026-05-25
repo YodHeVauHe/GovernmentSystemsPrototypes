@@ -65,6 +65,10 @@ assert.deepEqual(
 let snapshot = getAccountSnapshot(db, 'usr_public');
 assert.equal(snapshot?.profile.verification_status, 'draft_profile');
 assert.equal(canSubmitVerification(snapshot!).allowed, false);
+assert.equal(snapshot?.verification_progress.can_submit, false);
+assert.equal(snapshot?.verification_progress.missing_fields.includes('National Identification Number'), true);
+assert.equal(snapshot?.verification_progress.missing_documents.includes('nin_confirmation'), true);
+assert.equal(snapshot?.verification_progress.next_action, 'complete_profile');
 
 db.prepare(`
   UPDATE user_profiles SET
@@ -90,6 +94,8 @@ upsertVerificationDocument(db, 'usr_public', {
 snapshot = getAccountSnapshot(db, 'usr_public');
 assert.equal(canSubmitVerification(snapshot!).allowed, false);
 assert.match(canSubmitVerification(snapshot!).message || '', /nin_confirmation/);
+assert.equal(snapshot?.verification_progress.can_submit, false);
+assert.deepEqual(snapshot?.verification_progress.missing_documents, ['nin_confirmation']);
 
 upsertVerificationDocument(db, 'usr_public', {
   type: 'nin_confirmation',
@@ -101,6 +107,9 @@ upsertVerificationDocument(db, 'usr_public', {
 
 snapshot = getAccountSnapshot(db, 'usr_public');
 assert.equal(canSubmitVerification(snapshot!).allowed, true);
+assert.equal(snapshot?.verification_progress.can_submit, true);
+assert.equal(snapshot?.verification_progress.completed_requirements, snapshot?.verification_progress.total_requirements);
+assert.equal(snapshot?.verification_progress.next_action, 'submit_for_review');
 
 const privileges = getPrivilegeSummary(getAccountSnapshot(db, 'usr_gov')!.user);
 assert.equal(privileges.accessGroup, 'Verified API Owner');

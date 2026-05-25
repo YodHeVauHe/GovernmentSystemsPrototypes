@@ -40,7 +40,7 @@ function getUserById(db: Database.Database, id: string) {
 
 function approvalRequiresMda(accountType: string | null | undefined, role: string) {
   const normalizedAccountType = normalizeAccountType(accountType || '');
-  return role === 'api_owner' || normalizedAccountType === 'government_employee' || normalizedAccountType === 'mda_api_owner';
+  return role === 'admin' || role === 'api_owner' || normalizedAccountType === 'government_employee' || normalizedAccountType === 'mda_api_owner';
 }
 
 function mdaExists(db: Database.Database, mdaId: string) {
@@ -234,6 +234,13 @@ export function authRouter(db: Database.Database) {
   });
 
   router.post('/mfa/setup', requireAuth(db), (req, res) => {
+    const user = getUserById(db, req.user!.id);
+    if (user.mfa_enabled_at) {
+      return res.status(409).json({
+        error: 'MFA is already enabled. Disable MFA before starting a new setup.',
+        code: 'MFA_ALREADY_ENABLED',
+      });
+    }
     const secret = generateTotpSecret();
     setUserMfaSecret(db, req.user!.id, secret);
     const issuer = encodeURIComponent('Uganda GovHub API');
@@ -417,6 +424,15 @@ export function adminUsersRouter(db: Database.Database) {
     if (!snapshot || snapshot.profile.verification_status !== 'submitted_for_review') {
       return res.status(400).json({ error: 'User verification must be submitted for review before approval.', code: 'VERIFICATION_NOT_SUBMITTED' });
     }
+    if (role === 'admin') {
+      const accountCategory = normalizeAccountType(snapshot.profile.account_category);
+      if (!['government_employee', 'mda_api_owner', 'admin'].includes(accountCategory)) {
+        return res.status(400).json({
+          error: 'Administrator accounts require verified government or MDA operator identity.',
+          code: 'ADMIN_PROMOTION_REQUIRES_GOVERNMENT_IDENTITY',
+        });
+      }
+    }
 
     const needsMda = approvalRequiresMda(existing.account_type, role);
     const approvedMdaId = needsMda ? mda_id || existing.requested_mda_id || null : null;
@@ -438,7 +454,14 @@ export function adminUsersRouter(db: Database.Database) {
             rejection_reason = NULL, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(role, approvedMdaId, req.user!.id, new Date().toISOString(), req.params.id);
-      db.prepare("UPDATE user_profiles SET verification_status = 'verified', review_notes = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?").run(req.params.id);
+      db.prepare(`
+        UPDATE user_profiles
+        SET verification_status = 'verified',
+            account_category = ?,
+            review_notes = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+      `).run(role === 'admin' ? 'admin' : snapshot.profile.account_category, req.params.id);
     });
 
     try {
