@@ -6,7 +6,7 @@
 
 **Architecture:** A single web application serves the developer portal, API catalog, interactive OpenAPI documentation, mock sandbox endpoints, access request workflow, and admin dashboard. API definitions are stored as OpenAPI files and enriched with Uganda-specific governance metadata.
 
-**Tech Stack:** Recommended baseline is Next.js or React for the portal, Node.js/Express or FastAPI for sandbox APIs, OpenAPI 3.1 for specs, Swagger UI or Redoc/Scalar for rendering, Prism or custom mock handlers for predictable sandbox responses, SQLite/PostgreSQL for MVP persistence, and Playwright for end-to-end demo validation.
+**Tech Stack:** The implemented prototype uses React/Vite for the portal, Node.js/Express for sandbox APIs, OpenAPI specs for machine-readable contracts, custom GovHub documentation pages for rendering, deterministic mock handlers for sandbox responses, SQLite for MVP persistence, and Playwright for end-to-end demo validation.
 
 ---
 
@@ -65,7 +65,7 @@ Expected output:
 
 - [ ] Create OpenAPI 3.1 specs under `openapi/`.
 - [ ] Include realistic request schemas, response schemas, examples, error codes, and sandbox API key security schemes.
-- [ ] Render docs in the API detail page using Swagger UI, Redoc, Scalar, or an equivalent OpenAPI renderer.
+- [ ] Render docs in API detail and docs pages using the custom GovHub OpenAPI documentation experience.
 - [ ] Add "Download OpenAPI JSON" and "Download OpenAPI YAML" actions.
 - [ ] Add code samples for cURL, JavaScript, Python, and Java where the renderer does not generate them automatically.
 

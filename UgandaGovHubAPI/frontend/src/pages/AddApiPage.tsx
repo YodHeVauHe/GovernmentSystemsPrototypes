@@ -3,8 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { IconArrowLeft, IconCheck, IconCircleCheck, IconCode, IconLink, IconLoader, IconUpload } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { useNotifications } from '../context/NotificationContext';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+import { API_BASE } from '@/lib/api-base';
 
 const slugify = (text: string) => {
   return text

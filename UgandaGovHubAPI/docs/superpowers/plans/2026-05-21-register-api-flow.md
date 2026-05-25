@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Create a high-fidelity Scalar-like API registration modal that lets admins validate OpenAPI specs (via URLs, uploaded files, or raw content) and register them as first-class citizens in the Uganda GovHub database with strict compliance parameters.
+**Goal:** Create a high-fidelity API registration modal that lets admins validate OpenAPI specs (via URLs, uploaded files, or raw content) and register them as first-class citizens in the Uganda GovHub database with strict compliance parameters.
 
 **Architecture:** A lightweight backend validator checks the uploaded or downloaded spec for standard OpenAPI compliance using `js-yaml`, returning parsed metadata to pre-populate the registry configuration form. Upon admin approval, the backend writes the YAML file to `backend/openapi/`, registers the SQLite database row, and records the `API_REGISTERED` audit log.
 

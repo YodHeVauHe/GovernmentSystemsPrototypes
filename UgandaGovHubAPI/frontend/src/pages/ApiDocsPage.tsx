@@ -10,8 +10,7 @@ import {
 } from '@tabler/icons-react';
 import { CodeSamples } from '@/components/CodeSamples';
 import { useUser } from '@/context/UserContext';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+import { API_BASE } from '@/lib/api-base';
 
 type DocsVisibility = 'public' | 'authenticated' | 'restricted';
 type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete' | 'options' | 'head' | 'trace';

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { API_BASE } from '@/lib/api-base';
 
 export type UserRole = 'developer' | 'api_owner' | 'admin' | 'reviewer';
 export type UserStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
@@ -22,6 +23,7 @@ export interface AuthUser {
   role: UserRole | null;
   mda_id: string | null;
   rejection_reason: string | null;
+  mfa_enabled: boolean;
 }
 
 interface SignupInput {
@@ -43,7 +45,7 @@ interface UserContextType {
   mdaId: string;
   isAuthenticated: boolean;
   isApproved: boolean;
-  login: (email: string, password: string) => Promise<AuthUser>;
+  login: (email: string, password: string, mfaCode?: string) => Promise<AuthUser>;
   signup: (input: SignupInput) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -54,8 +56,6 @@ interface UserContextType {
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
 export const MDAS_LIST: MDA[] = [
   { id: 'mda-01', name: 'National Identification and Registration Authority', shortName: 'NIRA' },
@@ -108,12 +108,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     refreshUser();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, mfaCode?: string) => {
     const body = await parseAuthResponse(await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, mfa_code: mfaCode || undefined }),
     }));
+    if (body.mfa_required) {
+      throw Object.assign(new Error('Enter your authenticator code.'), { code: 'MFA_REQUIRED' });
+    }
     setUser(body.user);
     return body.user as AuthUser;
   };

@@ -11,6 +11,8 @@ export function LoginPage() {
   const { login } = useUser();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -19,10 +21,15 @@ export function LoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      const user = await login(email, password);
+      const user = await login(email, password, mfaRequired ? mfaCode : undefined);
       navigate(user.status === 'APPROVED' ? '/dashboard' : '/account-status');
     } catch (err: any) {
-      setError(err.message || 'Unable to sign in.');
+      if (err.code === 'MFA_REQUIRED') {
+        setMfaRequired(true);
+        setError('');
+      } else {
+        setError(err.message || 'Unable to sign in.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -51,8 +58,21 @@ export function LoginPage() {
           <Label htmlFor="password">Password</Label>
           <Input id="password" type="password" value={password} onChange={event => setPassword(event.target.value)} required />
         </div>
+        {mfaRequired && (
+          <div className="space-y-2">
+            <Label htmlFor="mfa_code">Authenticator code</Label>
+            <Input
+              id="mfa_code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={mfaCode}
+              onChange={event => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              required
+            />
+          </div>
+        )}
         <Button type="submit" className="w-full" disabled={submitting}>
-          {submitting ? 'Signing in...' : 'Sign in'}
+          {submitting ? 'Signing in...' : mfaRequired ? 'Verify and sign in' : 'Sign in'}
         </Button>
         <p className="text-center text-sm text-[#8b8b8b]">
           Need access? <Link className="text-[#3ecf8e] hover:text-white" to="/signup">Create an account</Link>

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
+import { API_BASE } from '@/lib/api-base';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,8 +37,6 @@ import {
   IconTrash,
   IconX
 } from '@tabler/icons-react';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
 function dateToDateTimeLocalValue(date: Date) {
   const offset = date.getTimezoneOffset() * 60000;
@@ -417,9 +416,9 @@ export default function DashboardPage() {
       role === 'admin' ? fetchDashboardJson('/api/admin/users') : Promise.resolve({ users: [] }),
     ])
       .then(([accessData, auditData, matrixData, userData]) => {
-        setRequests(accessData);
-        setAuditLogs(auditData);
-        setMatrix(matrixData);
+        setRequests(Array.isArray(accessData) ? accessData : []);
+        setAuditLogs(Array.isArray(auditData) ? auditData : Array.isArray(auditData?.data) ? auditData.data : []);
+        setMatrix(Array.isArray(matrixData) ? matrixData : []);
         setAccountRequests(Array.isArray(userData.users) ? userData.users : []);
       })
       .catch(err => {
