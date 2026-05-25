@@ -101,7 +101,7 @@ function getAnalyticsStart(range: string) {
 
 function approvalRequiresMda(accountType: string | null | undefined, role: string) {
   const normalizedAccountType = accountType === 'government' ? 'government_employee' : accountType;
-  return role === 'api_owner' || normalizedAccountType === 'government_employee' || normalizedAccountType === 'mda_api_owner';
+  return role === 'admin' || role === 'api_owner' || normalizedAccountType === 'government_employee' || normalizedAccountType === 'mda_api_owner';
 }
 
 function AccountStatusBadge({ status }: { status: string }) {
@@ -378,6 +378,38 @@ async function fetchDashboardJson(path: string) {
   return body;
 }
 
+function normalizeAccountCategory(value?: string | null) {
+  if (value === 'government') return 'government_employee';
+  return value || 'public_developer';
+}
+
+function verificationStatusLabel(status?: string | null) {
+  return String(status || 'draft_profile').replace(/_/g, ' ');
+}
+
+function accountVerificationStatus(account: any) {
+  return account.account?.profile?.verification_status || 'draft_profile';
+}
+
+function canPromoteAccountToAdmin(account: any) {
+  const category = normalizeAccountCategory(account.account?.profile?.account_category || account.account_type);
+  return ['government_employee', 'mda_api_owner', 'admin'].includes(category);
+}
+
+function canRunAccountApproval(account: any) {
+  return accountVerificationStatus(account) === 'submitted_for_review';
+}
+
+function accountActionLabel(account: any, busy: boolean) {
+  if (busy) return 'Saving...';
+  const verificationStatus = accountVerificationStatus(account);
+  if (verificationStatus === 'draft_profile') return 'Waiting on user';
+  if (verificationStatus === 'needs_more_information') return 'Needs info';
+  if (verificationStatus === 'verified' && account.status === 'APPROVED') return 'Verified';
+  if (account.status === 'SUSPENDED' || account.status === 'REJECTED') return 'Restore';
+  return 'Approve';
+}
+
 export default function DashboardPage() {
   const [searchParams] = useSearchParams();
   const { user, role, mdaId, mdas } = useUser();
@@ -455,7 +487,10 @@ export default function DashboardPage() {
         if (!res.ok || result.error) throw new Error(result.error || 'Failed to approve access request');
         return result;
       })
-      .then(() => {
+      .then(result => {
+        if (result.api_key) {
+          window.sessionStorage.setItem(`govhub_api_key:${id}`, result.api_key);
+        }
         toast.success('API key generated', {
           description: 'The access request was approved and a sandbox key was generated.',
         });
@@ -478,6 +513,19 @@ export default function DashboardPage() {
     const nextRole = accountRoleInputs[user.id] || user.requested_role;
     const nextMda = accountMdaInputs[user.id] || user.requested_mda_id || mdas[0]?.id || '';
     const needsMda = approvalRequiresMda(user.account_type, nextRole);
+    const verificationStatus = accountVerificationStatus(user);
+    if (verificationStatus !== 'submitted_for_review') {
+      toast.info('Verification not ready', {
+        description: `${user.full_name} must finish and submit account verification before approval.`,
+      });
+      return;
+    }
+    if (nextRole === 'admin' && !canPromoteAccountToAdmin(user)) {
+      toast.error('Admin promotion blocked', {
+        description: 'Administrator accounts require a verified government or MDA operator identity.',
+      });
+      return;
+    }
     setAccountReviewing(user.id);
 
     fetch(`${API_BASE}/api/admin/users/${user.id}/approve`, {
@@ -1157,11 +1205,10 @@ export default function DashboardPage() {
                         const selectedRole = accountRoleInputs[account.id] || account.role || account.requested_role || 'developer';
                         const needsMda = approvalRequiresMda(account.account_type, selectedRole);
                         const selectedMda = accountMdaInputs[account.id] || account.mda_id || account.requested_mda_id || (needsMda ? mdas[0]?.id : '') || '';
-                        const primaryActionLabel =
-                          accountReviewing === account.id ? 'Saving...' :
-                          account.status === 'APPROVED' ? 'Update' :
-                          account.status === 'SUSPENDED' || account.status === 'REJECTED' ? 'Restore' :
-                          'Approve';
+                        const verificationStatus = accountVerificationStatus(account);
+                        const adminRoleBlocked = selectedRole === 'admin' && !canPromoteAccountToAdmin(account);
+                        const actionDisabled = accountReviewing === account.id || !canRunAccountApproval(account) || adminRoleBlocked;
+                        const primaryActionLabel = adminRoleBlocked ? 'Gov/MDA only' : accountActionLabel(account, accountReviewing === account.id);
 
                         return (
                           <div key={account.id} className="flex min-h-[236px] flex-col rounded-lg border border-[#2e2e2e] bg-[#181818] p-4">
@@ -1170,7 +1217,10 @@ export default function DashboardPage() {
                                 <div className="truncate text-[14px] font-semibold text-white" title={account.full_name}>{account.full_name}</div>
                                 <div className="mt-0.5 truncate text-[12px] text-[#8b8b8b]" title={account.email}>{account.email}</div>
                               </div>
-                              <AccountStatusBadge status={account.status} />
+                              <div className="text-right">
+                                <AccountStatusBadge status={account.status} />
+                                <div className="mt-1 text-[11px] capitalize text-[#8b8b8b]">{verificationStatusLabel(verificationStatus)}</div>
+                              </div>
                             </div>
                             <div className="mt-4 grid grid-cols-2 gap-3 text-[12px]">
                               <div className="min-w-0">
@@ -1191,13 +1241,19 @@ export default function DashboardPage() {
                                 <option value="developer">Developer</option>
                                 <option value="api_owner">API Owner</option>
                                 <option value="reviewer">Reviewer</option>
-                                <option value="admin">Admin</option>
+                                <option value="admin" disabled={!canPromoteAccountToAdmin(account)}>Admin</option>
                               </select>
                               <select value={selectedMda} disabled={!needsMda} onChange={event => setAccountMdaInputs(current => ({ ...current, [account.id]: event.target.value }))} className="h-[32px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:outline-none focus:border-[#444] disabled:opacity-40">
                                 {!needsMda && <option value="">Not applicable</option>}
                                 {mdas.map(mda => <option key={mda.id} value={mda.id}>{mda.shortName}</option>)}
                               </select>
-                              <button type="button" onClick={() => handleApproveAccount(account)} disabled={accountReviewing === account.id} className="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:opacity-50">
+                              <button
+                                type="button"
+                                onClick={() => handleApproveAccount(account)}
+                                disabled={actionDisabled}
+                                title={canRunAccountApproval(account) ? undefined : 'User must submit verification before approval.'}
+                                className="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:opacity-50"
+                              >
                                 <IconCircleCheck className="h-3.5 w-3.5" />
                                 {primaryActionLabel}
                               </button>
@@ -1249,11 +1305,10 @@ export default function DashboardPage() {
                       const selectedRole = accountRoleInputs[user.id] || user.role || user.requested_role || 'developer';
                       const needsMda = approvalRequiresMda(user.account_type, selectedRole);
                       const selectedMda = accountMdaInputs[user.id] || user.mda_id || user.requested_mda_id || (needsMda ? mdas[0]?.id : '') || '';
-                      const primaryActionLabel =
-                        accountReviewing === user.id ? 'Saving...' :
-                        user.status === 'APPROVED' ? 'Update' :
-                        user.status === 'SUSPENDED' || user.status === 'REJECTED' ? 'Restore' :
-                        'Approve';
+                      const verificationStatus = accountVerificationStatus(user);
+                      const adminRoleBlocked = selectedRole === 'admin' && !canPromoteAccountToAdmin(user);
+                      const actionDisabled = accountReviewing === user.id || !canRunAccountApproval(user) || adminRoleBlocked;
+                      const primaryActionLabel = adminRoleBlocked ? 'Gov/MDA only' : accountActionLabel(user, accountReviewing === user.id);
 
                       return (
                         <TableRow key={user.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
@@ -1268,7 +1323,7 @@ export default function DashboardPage() {
                           <TableCell className="py-3.5 px-3">
                             <AccountStatusBadge status={user.status} />
                             {user.account?.profile?.verification_status && (
-                              <div className="mt-1 text-[11px] text-[#8b8b8b]">{String(user.account.profile.verification_status).replace(/_/g, ' ')}</div>
+                              <div className="mt-1 text-[11px] capitalize text-[#8b8b8b]">{verificationStatusLabel(verificationStatus)}</div>
                             )}
                           </TableCell>
                           <TableCell className="py-3.5 px-3 text-[13px] text-[#8b8b8b] max-w-[150px] truncate" title={user.requested_organization}>
@@ -1286,7 +1341,7 @@ export default function DashboardPage() {
                               <option value="developer">Developer</option>
                               <option value="api_owner">API Owner</option>
                               <option value="reviewer">Reviewer</option>
-                              <option value="admin">Admin</option>
+                              <option value="admin" disabled={!canPromoteAccountToAdmin(user)}>Admin</option>
                             </select>
                           </TableCell>
                           <TableCell className="py-3.5 px-3">
@@ -1307,7 +1362,8 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() => handleApproveAccount(user)}
-                                disabled={accountReviewing === user.id}
+                                disabled={actionDisabled}
+                                title={canRunAccountApproval(user) ? undefined : 'User must submit verification before approval.'}
                                 className="inline-flex h-[28px] items-center gap-1.5 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:opacity-50"
                               >
                                 <IconCircleCheck className="h-3.5 w-3.5" />

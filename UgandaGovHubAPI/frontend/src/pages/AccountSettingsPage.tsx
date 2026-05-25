@@ -41,6 +41,15 @@ type AccountSnapshot = {
     permissions: string[];
     restrictions: string[];
   };
+  verification_progress?: {
+    missing_fields: string[];
+    missing_documents: string[];
+    completed_requirements: number;
+    total_requirements: number;
+    can_submit: boolean;
+    next_action: string;
+    message: string;
+  };
 };
 
 async function accountRequest(path: string, init: RequestInit = {}) {
@@ -337,6 +346,46 @@ export function AccountSettingsPage() {
             </div>
           )}
         </div>
+
+        {account && account.profile.verification_status !== 'verified' && (
+          <div className="mb-6 rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-foreground">
+                  Finish verification to unlock dashboard and API access
+                </div>
+                <div className="mt-1 text-xs leading-5 text-foreground-light">
+                  {account.verification_progress?.message || 'Complete your profile, upload required documents, then submit for administrator review.'}
+                </div>
+                {account.verification_progress && (account.verification_progress.missing_fields.length > 0 || account.verification_progress.missing_documents.length > 0) && (
+                  <div className="mt-2 text-[11px] text-foreground-muted">
+                    Missing: {[...account.verification_progress.missing_fields, ...account.verification_progress.missing_documents].slice(0, 5).join(', ')}
+                  </div>
+                )}
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('flow')}>View steps</Button>
+                <Button size="sm" onClick={() => setActiveTab(account.verification_progress?.missing_documents.length ? 'documents' : 'profile')}>
+                  Continue
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {user?.role === 'admin' && !user.mfa_enabled && (
+          <div className="mb-6 rounded-lg border border-amber-400/25 bg-amber-400/5 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-foreground">Administrator MFA is not enabled</div>
+                <div className="mt-1 text-xs leading-5 text-foreground-light">
+                  Platform administrators authenticate with password and session controls. Enable MFA before demoing privileged account approval and catalog management.
+                </div>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setActiveTab('security')}>Open security</Button>
+            </div>
+          </div>
+        )}
 
         {account && (
           <div className="grid grid-cols-1 gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:overflow-hidden">

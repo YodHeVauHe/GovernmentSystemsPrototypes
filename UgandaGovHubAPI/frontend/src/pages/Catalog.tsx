@@ -480,14 +480,15 @@ function PublishVersionModal({
   const publish = async () => {
     setPublishing(true);
     setError('');
+    const requestSource = { sourceTab, specText, specUrl };
 
     try {
       const validateResponse = await fetch(`${API_BASE}/api/catalog/validate-spec`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          specUrl: sourceTab === 'url' ? specUrl : undefined,
-          specText: sourceTab === 'url' ? undefined : specText,
+          specUrl: requestSource.sourceTab === 'url' ? requestSource.specUrl : undefined,
+          specText: requestSource.sourceTab === 'url' ? undefined : requestSource.specText,
         }),
       });
       const parsed = await validateResponse.json();
@@ -499,10 +500,11 @@ function PublishVersionModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          openapi_spec: parsed.rawSpec,
+          openapi_spec: requestSource.sourceTab === 'url' ? undefined : requestSource.specText,
+          specUrl: requestSource.sourceTab === 'url' ? requestSource.specUrl : undefined,
           status: 'Published',
           make_current: makeCurrent,
-          notes: notes || (sourceTab === 'url' ? `Published from ${specUrl}` : 'Published from inline OpenAPI source'),
+          notes: notes || (requestSource.sourceTab === 'url' ? `Published from ${requestSource.specUrl}` : 'Published from inline OpenAPI source'),
         }),
       });
       const result = await response.json();
@@ -1223,10 +1225,13 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
 
   // Resolve current API key value for auto header display
   const resolvedKey = useMemo(() => {
-    if (apiKeyOption === 'approved') return '';
+    if (apiKeyOption === 'approved') {
+      const requestId = approvedRequests[0]?.id;
+      return requestId ? window.sessionStorage.getItem(`govhub_api_key:${requestId}`) || '' : '';
+    }
     if (apiKeyOption === 'custom') return customApiKey;
     return '';
-  }, [apiKeyOption, customApiKey]);
+  }, [apiKeyOption, customApiKey, approvedRequests]);
 
   // Auto-generated default headers for the sandbox request builder.
   const autoHeaders = useMemo((): SandboxParameterRow[] => {
@@ -1318,12 +1323,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
     setResponse(null);
 
     // Resolve API Key
-    let key = '';
-    if (apiKeyOption === 'approved') {
-      key = '';
-    } else if (apiKeyOption === 'custom') {
-      key = customApiKey;
-    }
+    const key = apiKeyOption === 'none' ? '' : resolvedKey;
 
     const correlationId = generatePublicId('tx_client');
 
@@ -1512,7 +1512,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
               {apiKeyOption === 'approved' && (
                 approvedRequests.length > 0 ? (
                   <span className="text-[11px] text-[#3ecf8e] font-mono truncate max-w-[200px]">
-                    {approvedRequests[0].api_key_preview} saved. Paste full key as custom to call.
+                    {resolvedKey ? `${approvedRequests[0].api_key_preview} loaded for this browser session.` : `${approvedRequests[0].api_key_preview} saved. Paste full key as custom to call.`}
                   </span>
                 ) : (
                   <span className="text-[11px] text-orange-400">No approved keys</span>

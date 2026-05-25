@@ -27,6 +27,9 @@ import { docsRouter } from './routes/docs';
 import { generatePublicId } from './ids';
 import { initAuditColumnCache } from './audit';
 import { createTransportServer, getTlsConfig } from './tls';
+import { resolveCatalogSpecInput } from './catalog-spec-input';
+import { UPDATE_API_SQL } from './catalog-sql';
+import { shouldRemoveOpenApiFile } from './openapi-reconciliation';
 
 dotenv.config();
 
@@ -87,13 +90,11 @@ initAuditColumnCache(db); // warm the audit column cache after all schema migrat
         knownPaths.add(path.basename(row.openapi_spec_path));
       }
     }
-    const diskFiles = fs.readdirSync(openapiRoot).filter(f => f.endsWith('.yaml') || f.endsWith('.json'));
+    const diskFiles = fs.readdirSync(openapiRoot).filter(file => shouldRemoveOpenApiFile(file, knownPaths));
     for (const file of diskFiles) {
-      if (!knownPaths.has(file)) {
-        const orphan = path.join(openapiRoot, file);
-        console.warn(`[STARTUP] Removing orphaned spec file: ${orphan}`);
-        try { fs.unlinkSync(orphan); } catch (e) { console.error(`[STARTUP] Failed to remove orphan: ${orphan}`, e); }
-      }
+      const orphan = path.join(openapiRoot, file);
+      console.warn(`[STARTUP] Removing orphaned spec file: ${orphan}`);
+      try { fs.unlinkSync(orphan); } catch (e) { console.error(`[STARTUP] Failed to remove orphan: ${orphan}`, e); }
     }
   } catch (err) {
     console.error('[STARTUP] Orphan spec reconciliation failed:', err);
@@ -306,20 +307,17 @@ app.get('/api/catalog/:id/versions', optionalAuth(db), (req, res) => {
   }
 });
 
-app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), (req, res) => {
-  const { openapi_spec, status, notes, make_current } = req.body;
-
-  if (!openapi_spec || !openapi_spec.trim()) {
-    return res.status(400).json({ error: 'openapi_spec is required.' });
-  }
+app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), async (req, res) => {
+  const { status, notes, make_current } = req.body;
 
   try {
+    const openapiSpec = await resolveCatalogSpecInput(req.body, fetchSpecFromUrl);
     const api = db.prepare('SELECT id FROM apis WHERE id = ?').get(req.params.id) as any;
     if (!api) {
       return res.status(404).json({ error: 'API not found' });
     }
 
-    const metadata = parseSpecMetadata(openapi_spec);
+    const metadata = parseSpecMetadata(openapiSpec);
     const version = metadata.version;
     const existing = db.prepare('SELECT id FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, version);
     if (existing) {
@@ -329,7 +327,7 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
     const versionId = `${req.params.id}-${slugifyVersion(version)}`;
     const specFilename = `${versionId}.yaml`;
     const relativeSpecPath = `/openapi/${specFilename}`;
-    const specFile = writeOpenApiSpecFile(specFilename, openapi_spec);
+    const specFile = writeOpenApiSpecFile(specFilename, openapiSpec);
 
     const insertVersion = db.prepare(`
       INSERT INTO api_versions (
@@ -351,7 +349,7 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
           req.params.id,
           version,
           relativeSpecPath,
-          getSpecSha(openapi_spec),
+          getSpecSha(openapiSpec),
           metadata.endpointsCount,
           metadata.openapiVersion,
           status || 'Published',
@@ -379,6 +377,9 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
     res.status(201).json({ success: true, versionId, version, is_current: shouldMakeCurrent });
   } catch (err: any) {
     console.error('[version publish]', err);
+    if (err?.code === 'SPEC_INPUT_REQUIRED' || err?.code === 'SPEC_URL_FETCH_FAILED') {
+      return res.status(400).json({ error: err.message });
+    }
     if (isOpenApiValidationError(err)) {
       return res.status(400).json({ error: err.message });
     }
@@ -464,7 +465,7 @@ app.get('/api/catalog/:id/spec', optionalAuth(db), (req, res) => {
   }
 });
 
-app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), (req, res) => {
+app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), async (req, res) => {
   const {
     name,
     owning_mda_id,
@@ -513,19 +514,21 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
     let specPath = existing.openapi_spec_path;
     let versionPatch: any = null;
     let pendingSpecFile: ReturnType<typeof writeOpenApiSpecFile> | null = null;
-    if (typeof openapi_spec === 'string' && openapi_spec.trim()) {
-      const metadata = parseSpecMetadata(openapi_spec);
+    const hasSpecPatch = (typeof openapi_spec === 'string' && openapi_spec.trim()) || (typeof req.body?.specUrl === 'string' && req.body.specUrl.trim());
+    if (hasSpecPatch) {
+      const resolvedSpec = await resolveCatalogSpecInput(req.body, fetchSpecFromUrl);
+      const metadata = parseSpecMetadata(resolvedSpec);
       const currentVersion = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND is_current = 1').get(req.params.id) as any;
       const specFilename = currentVersion?.openapi_spec_path
         ? path.basename(currentVersion.openapi_spec_path)
         : `${req.params.id}-${slugifyVersion(metadata.version)}.yaml`;
       specPath = `/openapi/${specFilename}`;
-      pendingSpecFile = writeOpenApiSpecFile(specFilename, openapi_spec);
+      pendingSpecFile = writeOpenApiSpecFile(specFilename, resolvedSpec);
       versionPatch = {
         versionId: currentVersion?.id || `${req.params.id}-${slugifyVersion(metadata.version)}`,
         version: metadata.version,
         specPath,
-        specSha: getSpecSha(openapi_spec),
+        specSha: getSpecSha(resolvedSpec),
         endpointsCount: metadata.endpointsCount,
         openapiVersion: metadata.openapiVersion,
       };
@@ -552,13 +555,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
         }
       }
 
-      db.prepare(` sector = ?, description = ?, lifecycle_status = ?,
-          sensitivity_level = ?, sandbox_available = ?, openapi_spec_path = ?, required_approval_level = ?,
-          contact_office = ?, technical_owner = ?, personal_data_categories = ?, purpose_limitation = ?,
-          data_minimization_note = ?, retention_class = ?, statutory_basis = ?, security_classification = ?,
-          sla_target = ?, compliance_status = ?, docs_visibility = ?
-        WHERE id = ?
-      `).run(
+      db.prepare(UPDATE_API_SQL).run(
         name ?? existing.name,
         owning_mda_id ?? existing.owning_mda_id,
         sector ?? existing.sector,
@@ -724,7 +721,7 @@ app.post('/api/catalog/validate-spec', requireAuth(db, ['admin', 'api_owner']), 
   }
 });
 
-app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => {
+app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
   const {
     name,
     owning_mda_id,
@@ -747,8 +744,8 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
     compliance_status
   } = req.body;
 
-    if (!name || !owning_mda_id || !openapi_spec) {
-    return res.status(400).json({ error: 'Missing mandatory fields: name, owning_mda_id, and openapi_spec are required.' });
+  if (!name || !owning_mda_id) {
+    return res.status(400).json({ error: 'Missing mandatory fields: name and owning_mda_id are required.' });
   }
   if (!mdaExists(owning_mda_id)) {
     return res.status(400).json({ error: 'owning_mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
@@ -762,8 +759,9 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
   const relativeSpecPath = `/openapi/${specFilename}`;
 
   try {
-    const metadata = parseSpecMetadata(openapi_spec);
-    const specFile = writeOpenApiSpecFile(specFilename, openapi_spec);
+    const openapiSpec = await resolveCatalogSpecInput(req.body, fetchSpecFromUrl);
+    const metadata = parseSpecMetadata(openapiSpec);
+    const specFile = writeOpenApiSpecFile(specFilename, openapiSpec);
 
     // Insert into SQLite database
     const stmt = db.prepare(`
@@ -811,7 +809,7 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
           id,
           metadata.version,
           relativeSpecPath,
-          getSpecSha(openapi_spec),
+          getSpecSha(openapiSpec),
           metadata.endpointsCount,
           metadata.openapiVersion,
           'Published',
@@ -848,6 +846,9 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), (req, res) => 
     res.status(201).json({ success: true, apiId: id });
   } catch (err: any) {
     console.error('[api register]', err);
+    if (err?.code === 'SPEC_INPUT_REQUIRED' || err?.code === 'SPEC_URL_FETCH_FAILED') {
+      return res.status(400).json({ error: err.message });
+    }
     if (isOpenApiValidationError(err)) {
       return res.status(400).json({ error: err.message });
     }

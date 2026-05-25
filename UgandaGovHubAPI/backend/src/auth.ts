@@ -36,7 +36,7 @@ export type PublicUser = Omit<AuthUser, 'password_hash' | 'mfa_secret_encrypted'
 
 export type AccessDecision =
   | { allowed: true }
-  | { allowed: false; code: 'UNAUTHENTICATED' | 'ACCOUNT_NOT_APPROVED' | 'FORBIDDEN'; message: string };
+  | { allowed: false; code: 'UNAUTHENTICATED' | 'ACCOUNT_NOT_APPROVED' | 'ADMIN_MFA_REQUIRED' | 'FORBIDDEN'; message: string };
 
 declare global {
   namespace Express {
@@ -455,6 +455,18 @@ export function canAccess(user: AuthUser | null | undefined, roles?: UserRole[])
   }
   if (!user.role || (roles && !roles.includes(user.role))) {
     return { allowed: false, code: 'FORBIDDEN', message: 'Your account does not have permission to access this feature.' };
+  }
+  if (
+    process.env.GOVHUB_REQUIRE_ADMIN_MFA === 'true' &&
+    user.role === 'admin' &&
+    roles?.includes('admin') &&
+    !user.mfa_enabled_at
+  ) {
+    return {
+      allowed: false,
+      code: 'ADMIN_MFA_REQUIRED',
+      message: 'Administrator multi-factor authentication is required before using privileged workflows.',
+    };
   }
   return { allowed: true };
 }
