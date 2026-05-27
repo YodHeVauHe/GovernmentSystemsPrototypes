@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uganda GovHub API System Architecture Submission</title>
+  <style>
+    @page { size: A4; margin: 0; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #9ca3af;
+      color: #e5e7eb;
+      font-family: Lato, "Segoe UI", Arial, sans-serif;
+      line-height: 1.38;
+    }
+    .page {
+      position: relative;
+      width: 210mm;
+      height: 297mm;
+      margin: 0 auto;
+      padding: 14mm 16mm 13mm;
+      background: #1f2933;
+      page-break-after: always;
+      overflow: hidden;
+    }
+    .page:last-child { page-break-after: auto; }
+    .page::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(34, 197, 94, .06), transparent 38%),
+        radial-gradient(circle at 95% 8%, rgba(34, 197, 94, .09), transparent 30%);
+      pointer-events: none;
+    }
+    .screen-page {
+      width: 210mm;
+      height: 297mm;
+      padding: 12mm 14mm 12mm;
+      background: #1b2730;
+    }
+    .screen-page::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 130mm;
+      background: var(--screen-bg) center bottom / cover no-repeat;
+      opacity: .08;
+      filter: saturate(.85);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .screen-page .page-head {
+      margin-bottom: 6mm;
+      padding-bottom: 5mm;
+    }
+    .screen-page .kicker { font-size: 10px; }
+    .screen-page h2 { font-size: 27px; }
+    .screen-page .lead {
+      max-width: 690px;
+      font-size: 13px;
+      line-height: 1.34;
+    }
+    .page > * { position: relative; z-index: 1; }
+    .cover {
+      padding: 15mm 16mm;
+      background:
+        linear-gradient(90deg, rgba(2, 6, 23, .96) 0%, rgba(15, 23, 42, .9) 48%, rgba(15, 23, 42, .66) 100%),
+        url("assets/apiCatalog.png") center / cover;
+    }
+    .brand-row, .page-head, .footer {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      color: #f8fafc;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: block;
+      border-radius: 8px;
+      box-shadow: 0 0 0 1px rgba(52, 211, 153, .35);
+    }
+    .brand span {
+      display: block;
+      margin-top: 1px;
+      color: #cbd5e1;
+      font-weight: 500;
+    }
+    .kicker {
+      color: #34d399;
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 {
+      max-width: 620px;
+      margin-top: 39mm;
+      color: #f8fafc;
+      font-size: 38px;
+      line-height: 1.03;
+      letter-spacing: 0;
+    }
+    h2 {
+      max-width: 620px;
+      margin-top: 3mm;
+      color: #f8fafc;
+      font-size: 26px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+    h3 {
+      color: #f8fafc;
+      font-size: 14px;
+    }
+    .subtitle, .lead {
+      max-width: 680px;
+      color: #cbd5e1;
+      font-size: 12.5px;
+    }
+    .subtitle {
+      max-width: 585px;
+      margin-top: 7mm;
+      font-size: 14px;
+    }
+    .page-head {
+      padding-bottom: 7mm;
+      border-bottom: 1px solid rgba(148, 163, 184, .28);
+      margin-bottom: 7mm;
+    }
+    .page-num {
+      min-width: 29mm;
+      color: #94a3b8;
+      font-size: 9px;
+      text-align: right;
+      font-weight: 800;
+    }
+    .cover-grid, .metric-row, .three-col {
+      display: grid;
+      gap: 7px;
+    }
+    .cover-grid {
+      grid-template-columns: repeat(3, 1fr);
+      margin-top: 34mm;
+    }
+    .metric-row { grid-template-columns: repeat(4, 1fr); margin: 7mm 0; }
+    .three-col { grid-template-columns: repeat(3, 1fr); margin-top: 7mm; }
+    .card, .metric, .cover-card, .node, .shot-card, table {
+      border: 1px solid rgba(148, 163, 184, .26);
+      background: rgba(31, 41, 51, .92);
+      border-radius: 8px;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, .16);
+    }
+    .cover-card, .card, .metric, .node { padding: 12px; }
+    .cover-card span, .metric span, .label {
+      display: block;
+      color: #94a3b8;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+    .cover-card b {
+      display: block;
+      margin-top: 7px;
+      color: #f8fafc;
+      font-size: 12px;
+    }
+    .metric strong {
+      display: block;
+      margin-bottom: 5px;
+      color: #f8fafc;
+      font-size: 23px;
+      line-height: 1;
+    }
+    .card p, .card li, .node p, td {
+      color: #d1d5db;
+      font-size: 11px;
+    }
+    .card h3, .node h3 { margin-bottom: 6px; }
+    ul { margin: 7px 0 0; padding-left: 16px; }
+    li { margin: 3px 0; }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7mm;
+    }
+    .diagram {
+      display: grid;
+      grid-template-columns: 1fr 22mm 1fr;
+      gap: 7px;
+      margin-top: 7mm;
+      align-items: stretch;
+    }
+    .node.accent {
+      background: rgba(6, 78, 59, .82);
+      border-color: rgba(52, 211, 153, .38);
+    }
+    .arrow {
+      display: grid;
+      place-items: center;
+      color: #34d399;
+      font-size: 8.5px;
+      font-weight: 900;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .wide { grid-column: 1 / -1; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      margin-top: 4mm;
+      font-size: 10px;
+    }
+    th, td {
+      padding: 7px 8px;
+      border-bottom: 1px solid rgba(148, 163, 184, .22);
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      color: #a7f3d0;
+      background: rgba(15, 23, 42, .72);
+      font-size: 8.5px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .shot-card {
+      padding: 7px;
+      background: #111827;
+    }
+    .screen-page .shot-card {
+      padding: 5px;
+      border-color: rgba(52, 211, 153, .28);
+      box-shadow: 0 18px 42px rgba(0, 0, 0, .26);
+    }
+    .screenshot {
+      display: block;
+      width: 100%;
+      max-height: 151mm;
+      object-fit: contain;
+      border-radius: 5px;
+      border: 1px solid #020617;
+      background: #020617;
+    }
+    .large-shot { max-height: 151mm; }
+    .screen-page .large-shot {
+      height: auto;
+      max-height: 151mm;
+      object-fit: contain;
+    }
+    .caption {
+      display: grid;
+      grid-template-columns: 32mm 1fr;
+      gap: 8px;
+      margin-top: 6px;
+      color: #cbd5e1;
+      font-size: 11px;
+    }
+    .caption b {
+      color: #34d399;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      font-size: 9.5px;
+    }
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+      margin-top: 6mm;
+    }
+    .screen-page .evidence-grid { gap: 8px; }
+    .evidence {
+      min-height: 32mm;
+      padding: 12px;
+      border: 1px solid rgba(148, 163, 184, .22);
+      border-radius: 8px;
+      background: rgba(15, 23, 42, .62);
+    }
+    .screen-page .evidence {
+      background: rgba(15, 23, 42, .76);
+      border-color: rgba(148, 163, 184, .28);
+    }
+    .evidence b {
+      display: block;
+      color: #f8fafc;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .evidence span {
+      color: #cbd5e1;
+      font-size: 11px;
+      line-height: 1.42;
+    }
+    .callout {
+      margin-top: 6mm;
+      padding: 12px;
+      border-left: 4px solid #34d399;
+      background: rgba(6, 78, 59, .55);
+      color: #d1fae5;
+      border-radius: 8px;
+      font-size: 10.5px;
+    }
+    .fill-band {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+      margin-top: 7mm;
+    }
+    .fill-tile {
+      min-height: 30mm;
+      padding: 11px;
+      border: 1px solid rgba(52, 211, 153, .24);
+      border-radius: 8px;
+      background:
+        linear-gradient(180deg, rgba(15, 23, 42, .88), rgba(15, 23, 42, .58)),
+        repeating-linear-gradient(135deg, rgba(52, 211, 153, .08) 0 1px, transparent 1px 9px);
+    }
+    .fill-tile b {
+      display: block;
+      color: #f8fafc;
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+    .fill-tile span {
+      color: #cbd5e1;
+      font-size: 9.5px;
+      line-height: 1.42;
+    }
+    .deep-panel {
+      margin-top: 7mm;
+      min-height: 55mm;
+      padding: 13px;
+      border: 1px solid rgba(148, 163, 184, .24);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(6, 78, 59, .58), rgba(15, 23, 42, .76)),
+        repeating-linear-gradient(0deg, rgba(148, 163, 184, .08) 0 1px, transparent 1px 13px);
+    }
+    .deep-panel h3 { margin-bottom: 7px; }
+    .deep-panel p, .deep-panel li {
+      color: #d1d5db;
+      font-size: 10px;
+    }
+    .flow-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin-top: 7mm;
+    }
+    .flow-step {
+      min-height: 28mm;
+      padding: 8px;
+      border: 1px solid rgba(52, 211, 153, .25);
+      border-radius: 8px;
+      background: rgba(15, 23, 42, .72);
+    }
+    .flow-step strong {
+      display: block;
+      color: #34d399;
+      font-size: 15px;
+      margin-bottom: 5px;
+    }
+    .flow-step span {
+      color: #cbd5e1;
+      font-size: 9px;
+      line-height: 1.38;
+    }
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6mm;
+    }
+    .pill {
+      padding: 5px 8px;
+      border: 1px solid rgba(52, 211, 153, .4);
+      border-radius: 999px;
+      background: rgba(6, 78, 59, .55);
+      color: #a7f3d0;
+      font-size: 8px;
+      font-weight: 900;
+    }
+    .footer {
+      position: absolute;
+      left: 16mm;
+      right: 16mm;
+      bottom: 7mm;
+      padding-top: 4mm;
+      border-top: 1px solid rgba(148, 163, 184, .24);
+      color: #94a3b8;
+      font-size: 8.2px;
+      z-index: 2;
+    }
+    .screen-page .footer {
+      left: 14mm;
+      right: 14mm;
+      bottom: 7mm;
+    }
+
+    /* Final print theme: light executive report for reliable PDF viewing. */
+    body {
+      background: #b8bec6;
+      color: #111827;
+    }
+    .page,
+    .screen-page {
+      background: #e8edf2;
+      color: #111827;
+    }
+    .page::before,
+    .screen-page::after {
+      display: none;
+    }
+    .cover {
+      background:
+        linear-gradient(180deg, #eef2f6 0%, #dfe6ec 100%);
+      color: #111827;
+    }
+    .brand,
+    h1,
+    h2,
+    h3,
+    .cover-card b,
+    .metric strong,
+    .card h3,
+    .node h3,
+    .evidence b,
+    .fill-tile b,
+    .deep-panel h3 {
+      color: #020617;
+    }
+    .brand span,
+    .subtitle,
+    .lead,
+    .card p,
+    .card li,
+    .node p,
+    .evidence span,
+    .fill-tile span,
+    .flow-step span,
+    .deep-panel p,
+    .deep-panel li,
+    td {
+      color: #111827;
+    }
+    .page,
+    .page *,
+    .screen-page,
+    .screen-page * {
+      color: #111827;
+    }
+    .kicker,
+    .caption b,
+    .flow-step strong {
+      color: #065f46;
+    }
+    .card,
+    .metric,
+    .cover-card,
+    .node,
+    .shot-card,
+    table,
+    .evidence,
+    .fill-tile,
+    .deep-panel,
+    .flow-step {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+      box-shadow: none;
+    }
+    .node.accent,
+    .callout {
+      background: #dff6ea;
+      border-color: #10b981;
+      color: #064e3b;
+    }
+    .screen-page .shot-card {
+      background: #f8fafc;
+      border-color: #94a3b8;
+      box-shadow: none;
+    }
+    .screen-page .evidence {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .screen-page .evidence b {
+      color: #0f172a;
+    }
+    .screen-page .evidence span {
+      color: #334155;
+    }
+    .caption {
+      color: #334155;
+      background: #f8fafc;
+    }
+    th {
+      color: #020617;
+      background: #dbe7df;
+    }
+    .pill {
+      background: #dff6ea;
+      color: #065f46;
+      border-color: #10b981;
+    }
+    .footer {
+      color: #111827;
+      border-top-color: #cbd5e1;
+    }
+    .footer span,
+    .page-num,
+    .cover-card span,
+    .metric span,
+    .label {
+      color: #1f2937;
+    }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div class="brand-row">
+      <div class="brand"><img class="brand-mark" src="assets/favicon.svg" alt="Uganda GovHub API icon"><div>Uganda GovHub API<span>Developer Portal and Sandbox</span></div></div>
+      <div class="kicker">Government Systems Prototype Showcase</div>
+    </div>
+    <h1>System Architecture for Governed MDA API Interoperability</h1>
+    <p class="subtitle">A visual architecture submission showing platform components, data flow, security boundaries, user workflows, API governance, sandbox execution, and production-readiness path for Uganda GovHub API.</p>
+    <div class="cover-grid">
+      <div class="cover-card"><span>Thematic area</span><b>Area 10: Interoperability and Data Exchange</b></div>
+      <div class="cover-card"><span>Submission scope</span><b>Working prototype using deterministic sandbox records</b></div>
+      <div class="cover-card"><span>Prepared for</span><b>MoICT&NG Prototype Showcase</b></div>
+    </div>
+    <div class="footer"><span>Uganda GovHub API System Architecture</span><span>Page 1 of 18</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-head">
+      <div><div class="kicker">01 / Executive Architecture View</div><h2>What the system is designed to do</h2><p class="lead">Uganda GovHub API is a developer portal, sandbox, and governance console for Ministries, Departments, and Agencies. It demonstrates how government APIs can be discovered, documented, requested, approved, tested, and audited without exposing live citizen records.</p></div>
+      <div class="page-num">Page 2 of 18</div>
+    </div>
+    <div class="metric-row">
+      <div class="metric"><strong>5</strong><span>Seeded showcase APIs</span></div>
+      <div class="metric"><strong>4</strong><span>Operational demo roles</span></div>
+      <div class="metric"><strong>10</strong><span>Platform screenshots</span></div>
+      <div class="metric"><strong>0</strong><span>Live production calls</span></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <h3>Current implementation</h3>
+        <p>The prototype is a local full-stack web application. The frontend is React, TypeScript, Vite, React Router, and GovHub UI components. The backend is Node.js, Express, TypeScript, OpenAPI YAML files, and PostgreSQL through the `pg` driver.</p>
+        <ul>
+          <li>Routes include catalog, docs, API detail, dashboard, settings, and API registration.</li>
+          <li>Seeded accounts represent developer, API owner, compliance reviewer, and platform administrator roles.</li>
+          <li>PostgreSQL stores users, sessions, MDAs, API records, access requests, audit logs, API keys, rate limits, and verification metadata.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Government deployment intent</h3>
+        <p>The architecture separates public discovery from operational access. It places policy metadata next to API contracts, requires account and API-level approval, scopes sandbox credentials, and records audit events with correlation IDs.</p>
+        <ul>
+          <li>Mock records keep the showcase repeatable and safe.</li>
+          <li>Live NIRA, URA, URSB, MoWT, and NITA-U systems are not called in the prototype.</li>
+          <li>The design can be hardened for production without replacing the core governance workflow.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">This submission follows the Ministry guidance by showing the main components, communication paths, storage and security controls, user access routes, APIs and integrations, hosting posture, screenshots of key workflows, and practical readiness considerations.</div>
+    <div class="footer"><span>Executive architecture view</span><span>Uganda GovHub API</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-head">
+      <div><div class="kicker">02 / Architecture Diagram</div><h2>System components and communication paths</h2><p class="lead">Users reach the React portal through a browser. The portal calls the Express backend over REST/JSON. PostgreSQL holds application state, OpenAPI files hold machine-readable contracts, and sandbox handlers simulate approved government API calls.</p></div>
+      <div class="page-num">Page 3 of 18</div>
+    </div>
+    <div class="diagram">
+      <div class="node accent"><h3>Users and access channels</h3><p>Public visitors, MDA developers, API owners, reviewers, and administrators use browser access over HTTPS/TLS.</p></div>
+      <div class="arrow">REST / JSON</div>
+      <div class="node"><h3>Frontend portal</h3><p>React + TypeScript + Vite. Catalog, docs, access request, dashboard, account settings, and Add API workflows.</p></div>
+      <div class="node"><h3>Backend REST API</h3><p>Node.js + Express + TypeScript. Auth, catalog, docs visibility, approval workflow, sandbox policy, admin actions, audit events.</p></div>
+      <div class="arrow">read/write</div>
+      <div class="node"><h3>PostgreSQL database</h3><p>Users, sessions, MDAs, APIs, versions, access requests, key hashes, audit logs, verification data, and rate limits.</p></div>
+      <div class="node"><h3>OpenAPI files</h3><p>Machine-readable API contracts stored under backend/openapi with version metadata and controlled visibility.</p></div>
+      <div class="arrow">scoped key</div>
+      <div class="node"><h3>Sandbox APIs</h3><p>NIRA-style identity, URA-style tax status, URSB business lookup, MoWT permit status, and composite eligibility.</p></div>
+      <div class="node wide accent"><h3>Production integration boundary</h3><p>Future approved links to live government systems or national integration infrastructure. The prototype does not connect to live NIRA, URA, URSB, MoWT, NITA-U, or other production systems.</p></div>
+    </div>
+    <div class="pill-row">
+      <span class="pill">HTTPS/TLS</span><span class="pill">HSTS posture</span><span class="pill">CORS allow-list</span><span class="pill">Verified accounts</span><span class="pill">RBAC</span><span class="pill">Scoped sandbox keys</span><span class="pill">Rate limits</span><span class="pill">Correlation IDs</span><span class="pill">Audit logs</span>
+    </div>
+    <div class="footer"><span>Component diagram</span><span>Page 3 of 18</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-head">
+      <div><div class="kicker">03 / Component Inventory</div><h2>Architecture components requested by the guidance</h2><p class="lead">The system presents the main parts in a way a technical evaluation panel can review for fitness, interoperability, security, maintainability, and transferability.</p></div>
+      <div class="page-num">Page 4 of 18</div>
+    </div>
+    <table>
+      <thead><tr><th>Component</th><th>Implemented design</th><th>What it shows for evaluation</th></tr></thead>
+      <tbody>
+        <tr><td>Frontend / user interface</td><td>React, TypeScript, Vite, dashboard UI components, API docs pages, account pages, and catalog workflows.</td><td>Browser access for public discovery, verified account operations, requests, approvals, audit review, and API onboarding.</td></tr>
+        <tr><td>Backend / application layer</td><td>Node.js, Express, TypeScript routes, middleware, policy helpers, OpenAPI validation, docs visibility, access control, audit service, and sandbox handlers.</td><td>Business logic is centralized behind REST endpoints with auth, role, visibility, sandbox scope, rate-limit, and audit controls.</td></tr>
+        <tr><td>Database layer</td><td>PostgreSQL through `pg`; local demo can run in a postgres:16-alpine container and deployment can use hosted Postgres.</td><td>Data categories and relationships are explicit, transferable, and suitable for a production relational database path.</td></tr>
+        <tr><td>Authentication and access</td><td>Signup/login, account review states, seeded demo accounts, role-based access, MFA support, bearer sessions, scoped API keys, expiry, revocation, and docs visibility rules.</td><td>Public transparency is separated from operational trust; developers, owners, reviewers, and admins have distinct permissions.</td></tr>
+        <tr><td>APIs and integrations</td><td>Catalog and docs APIs plus sandbox endpoints for identity, tax, business registration, driving permit, and composite eligibility scenarios.</td><td>Documented APIs are exposed; prototype integrations use internal mock handlers only.</td></tr>
+        <tr><td>Security controls</td><td>TLS/HSTS hooks, CORS allow-listing, body limits, password hashing, encrypted sensitive fields, key hashing, rate limits, correlation IDs, redacted logs, and structured denial responses.</td><td>Security is applied across access, storage, transport, API execution, and audit review.</td></tr>
+      </tbody>
+    </table>
+    <div class="footer"><span>Component inventory</span><span>Page 4 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiCatalog.png')">
+    <div class="page-head">
+      <div><div class="kicker">04 / Platform Evidence</div><h2>Interoperability catalog</h2><p class="lead">The catalog gives MDAs one place to discover API products across agencies, filter by status and compliance, and begin a governed access workflow.</p></div>
+      <div class="page-num">Page 5 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiCatalog.png" alt="API catalog screen"><div class="caption"><b>Catalog</b><span>Seeded APIs from NIRA, URA, URSB, MoWT, and MoICT are discoverable by sector, lifecycle, compliance state, and sensitivity.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>User access</b><span>Browser-based portal with role-aware shell and platform identity state.</span></div>
+      <div class="evidence"><b>Discovery</b><span>Catalog cards expose owner, sector, lifecycle, and sensitivity signals.</span></div>
+      <div class="evidence"><b>Operations</b><span>Search, filters, Add API action, and service-health state are visible.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: API catalog</span><span>Page 5 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiDetails.png')">
+    <div class="page-head">
+      <div><div class="kicker">05 / Platform Evidence</div><h2>API detail and technical contract</h2><p class="lead">API detail pages place documentation, governance metadata, sandbox access, lifecycle controls, version publishing, and downloadable specifications in one workflow.</p></div>
+      <div class="page-num">Page 6 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiDetails.png" alt="API detail screen"><div class="caption"><b>API detail</b><span>The NIRA Identity Verification API shows lifecycle status, sensitivity, OpenAPI versioning, code samples, and access-request entry points.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>Contracts</b><span>Endpoint methods and sample requests are generated from the API definition.</span></div>
+      <div class="evidence"><b>Governance</b><span>Sensitivity and lifecycle labels make policy state visible beside the technical contract.</span></div>
+      <div class="evidence"><b>Control</b><span>Publish, edit, delete, download, docs, and request-access actions are role-aware.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: API detail</span><span>Page 6 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiDocs.png')">
+    <div class="page-head">
+      <div><div class="kicker">06 / Platform Evidence</div><h2>Restricted API documentation</h2><p class="lead">Documentation pages explain endpoint purpose, security requirements, server URLs, access requirements, and integration flow while preserving visibility restrictions for sensitive APIs.</p></div>
+      <div class="page-num">Page 7 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiDocs.png" alt="API documentation screen"><div class="caption"><b>API docs</b><span>Restricted documentation is visible to authorized roles and approved consumers, with access requirements and integration flow presented beside the API contract.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>Visibility</b><span>Restricted documentation is not treated as a public page for all users.</span></div>
+      <div class="evidence"><b>Integration</b><span>Server, security scheme, endpoint, and guide sections are visible to implementers.</span></div>
+      <div class="evidence"><b>Traceability</b><span>Docs explain that protected calls require approved access and API keys.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: API docs</span><span>Page 7 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiSandbox.png')">
+    <div class="page-head">
+      <div><div class="kicker">07 / Platform Evidence</div><h2>Sandbox console simulator</h2><p class="lead">The sandbox console demonstrates scoped API key enforcement, approved-key selection, request parameters, response headers, rate-limit metadata, and correlation IDs.</p></div>
+      <div class="page-num">Page 8 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiSandbox.png" alt="Sandbox console simulator"><div class="caption"><b>Sandbox</b><span>The simulator sends requests using an approved key and returns mock responses with request headers, response headers, rate-limit values, and `x-correlation-id` traceability.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>Scope check</b><span>Sandbox requests require a loaded approved key for the target API.</span></div>
+      <div class="evidence"><b>Safe data</b><span>Responses are deterministic mock outputs, not live government data.</span></div>
+      <div class="evidence"><b>Auditability</b><span>Correlation IDs and rate-limit headers support operational traceability.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: sandbox</span><span>Page 8 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiAccessRequest.png')">
+    <div class="page-head">
+      <div><div class="kicker">08 / Platform Evidence</div><h2>Access request workflow</h2><p class="lead">Consumers request API access with explicit purpose, lawful basis, environment, volume tier, and requested data fields so data sharing is reviewable before credentials are issued.</p></div>
+      <div class="page-num">Page 9 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiAccessRequest.png" alt="API access request modal"><div class="caption"><b>Request</b><span>The request form captures target API, environment, volume tier, requested data fields, statutory basis, and purpose statement.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>Purpose limitation</b><span>Business purpose and statutory basis are mandatory review inputs.</span></div>
+      <div class="evidence"><b>Data minimization</b><span>The requester selects fields rather than receiving all available data.</span></div>
+      <div class="evidence"><b>Environment control</b><span>Sandbox access is separated from any future production access path.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: access request</span><span>Page 9 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiApproval.png')">
+    <div class="page-head">
+      <div><div class="kicker">09 / Platform Evidence</div><h2>Approval and key lifecycle</h2><p class="lead">Owners or administrators can review requests, approve scoped keys, set expiry, and manage pending or active access from the operational dashboard.</p></div>
+      <div class="page-num">Page 10 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiApproval.png" alt="API access approval dashboard"><div class="caption"><b>Approve</b><span>The dashboard exposes pending and active requests with consumer MDA, API, basis, purpose, field tier, status, expiry, and action controls.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>Governance</b><span>Reviewers see legal basis, purpose, field selection, and status before approval.</span></div>
+      <div class="evidence"><b>Credential control</b><span>Issued keys are scoped, expiring, and manageable from the dashboard.</span></div>
+      <div class="evidence"><b>Oversight</b><span>Dashboard counters expose approved channels, pending approvals, audited hits, and compliance rate.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: approvals</span><span>Page 10 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiAccessMatrix.png')">
+    <div class="page-head">
+      <div><div class="kicker">10 / Platform Evidence</div><h2>Government interoperability matrix</h2><p class="lead">The matrix gives MoICT and reviewers a ministry-level map of approved data-sharing channels between consuming MDAs and source APIs.</p></div>
+      <div class="page-num">Page 11 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiAccessMatrix.png" alt="Interoperability matrix"><div class="caption"><b>Matrix</b><span>The interoperability matrix gives a ministry-level view of approved MDA data-sharing channels across source API products.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>Interoperability map</b><span>Shows who is approved to consume which government API.</span></div>
+      <div class="evidence"><b>Audit support</b><span>Approved channels can be compared against audit-log activity.</span></div>
+      <div class="evidence"><b>Risk visibility</b><span>Inactive or missing channels are visually distinct from approved relationships.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: access matrix</span><span>Page 11 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiAdd1.png')">
+    <div class="page-head">
+      <div><div class="kicker">11 / Platform Evidence</div><h2>OpenAPI import and validation</h2><p class="lead">Authorized users can register new APIs by importing OpenAPI specifications from a URL, uploaded file, or raw code before completing governance metadata.</p></div>
+      <div class="page-num">Page 12 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiAdd1.png" alt="Add API import screen"><div class="caption"><b>Import</b><span>Spec URL, upload, and raw-code modes support OpenAPI onboarding without manually rebuilding endpoint documentation.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>Onboarding</b><span>New MDA APIs can enter the registry through a standardized workflow.</span></div>
+      <div class="evidence"><b>Contract-first</b><span>OpenAPI validation happens before the catalog record is created.</span></div>
+      <div class="evidence"><b>Maintainability</b><span>Machine-readable contracts reduce manual documentation drift.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: API import</span><span>Page 12 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiAdd2.png')">
+    <div class="page-head">
+      <div><div class="kicker">12 / Platform Evidence</div><h2>Governance metadata capture</h2><p class="lead">After validation, the registry flow captures owner namespace, access level, functional description, sector, SLA target, and registry coordinate preview.</p></div>
+      <div class="page-num">Page 13 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiAdd2.png" alt="Add API validation and metadata screen"><div class="caption"><b>Metadata</b><span>The validation result extracts title, version, endpoint count, namespace, access level, description, sector, SLA, and registry coordinate preview.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>Ownership</b><span>Owning MDA namespace and access control level are required registry attributes.</span></div>
+      <div class="evidence"><b>Service quality</b><span>SLA target and lifecycle status support operational review.</span></div>
+      <div class="evidence"><b>Registry coordinate</b><span>The API receives a predictable coordinate for catalog and documentation linkage.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: API metadata</span><span>Page 13 of 18</span></div>
+  </section>
+
+  <section class="page screen-page" style="--screen-bg:url('assets/apiAccountSettings.png')">
+    <div class="page-head">
+      <div><div class="kicker">13 / Platform Evidence</div><h2>Account settings and verification state</h2><p class="lead">The account settings surface shows how user identity and MDA authorization are managed before operational API access is granted.</p></div>
+      <div class="page-num">Page 14 of 18</div>
+    </div>
+    <div class="shot-card"><img class="screenshot large-shot" src="assets/apiAccountSettings.png" alt="Account settings screen"><div class="caption"><b>Account settings</b><span>The verified developer account demonstrates account category, national ID/card placeholders, profile controls, verification status, and access-group readiness for platform authorization.</span></div></div>
+    <div class="evidence-grid">
+      <div class="evidence"><b>Identity</b><span>Profile and account category fields support reviewable user identity.</span></div>
+      <div class="evidence"><b>Verification</b><span>Verified status is visible in the account surface and top-level shell.</span></div>
+      <div class="evidence"><b>Privileges</b><span>Organization, documents, security, privileges, and setup flow are separated.</span></div>
+    </div>
+    <div class="footer"><span>Screenshot evidence: account settings</span><span>Page 14 of 18</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-head">
+      <div><div class="kicker">14 / Data Flow and Security</div><h2>How data moves through the prototype</h2><p class="lead">The core flow starts with API discovery and ends with an audited sandbox transaction. Access is explicit, credentials are scoped, and every allowed or denied sandbox call can be traced by correlation ID.</p></div>
+      <div class="page-num">Page 15 of 18</div>
+    </div>
+    <div class="metric-row">
+      <div class="metric"><strong>1</strong><span>Discover</span></div>
+      <div class="metric"><strong>2</strong><span>Request</span></div>
+      <div class="metric"><strong>3</strong><span>Approve</span></div>
+      <div class="metric"><strong>4</strong><span>Audit</span></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <h3>Stored data categories</h3>
+        <ul>
+          <li>Catalog and governance metadata for each MDA API product.</li>
+          <li>OpenAPI contracts and version records.</li>
+          <li>User, session, account verification, role, and MDA assignment records.</li>
+          <li>Access requests, lawful basis, requested fields, expiry, revocation state, and API key hashes.</li>
+          <li>Audit events with MDA/API context, actor, event type, correlation ID, timestamp, and redacted metadata.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Implemented security controls</h3>
+        <ul>
+          <li>Transport security hooks for TLS/HSTS and CORS allow-listing.</li>
+          <li>Password hashing, MFA support, role-based access, and verified account states.</li>
+          <li>AES-256-GCM sensitive-field encryption support and hash-only API key storage.</li>
+          <li>Scoped sandbox keys, endpoint authorization, expiry, revocation, and rate limits.</li>
+          <li>Server-generated correlation IDs, audit logs, and sensitive-value redaction.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">No live citizen, tax, business, or permit records are exchanged. Sandbox handlers return deterministic mock responses that demonstrate interoperability behavior without exposing production government data.</div>
+    <div class="footer"><span>Data flow and security</span><span>Page 15 of 18</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-head">
+      <div><div class="kicker">15 / Interoperability</div><h2>APIs represented in the prototype</h2><p class="lead">The seeded catalog demonstrates how several MDAs could publish governed, documented services through one discovery and sandbox experience. The implementation uses mock handlers only.</p></div>
+      <div class="page-num">Page 16 of 18</div>
+    </div>
+    <table>
+      <thead><tr><th>Owner</th><th>API product</th><th>Primary interoperability value</th><th>Classification</th></tr></thead>
+      <tbody>
+        <tr><td>NIRA</td><td>Identity Verification</td><td>Verify identity match and return the minimum fields needed for a lawful service workflow.</td><td>Restricted</td></tr>
+        <tr><td>URA</td><td>Tax Compliance Status</td><td>Check tax-clearance style status for eligibility, procurement, and compliance workflows.</td><td>Official</td></tr>
+        <tr><td>URSB</td><td>Business Registration Lookup</td><td>Validate business registration facts, current status, and registry details.</td><td>Public</td></tr>
+        <tr><td>MoWT</td><td>Driving Permit Verification</td><td>Confirm permit validity, class authorization, expiry, and suspension state.</td><td>Official</td></tr>
+        <tr><td>MoICT</td><td>Service Uganda Composite Eligibility</td><td>Show multi-agency orchestration using approved sandbox scopes and correlation IDs.</td><td>Restricted</td></tr>
+      </tbody>
+    </table>
+    <div class="three-col">
+      <div class="card"><h3>Current prototype</h3><p>Requests terminate inside the Express backend. Middleware validates key status and scope, then route handlers return deterministic mock responses and structured errors.</p></div>
+      <div class="card"><h3>Production pathway</h3><p>A production deployment would connect through approved national integration infrastructure or MDA gateways, with contract testing, adapter services, message signing, monitoring, and data-sharing agreements.</p></div>
+      <div class="card"><h3>Owner accountability</h3><p>Each API keeps an owning MDA, technical owner, approval authority, statutory basis, purpose limitation, retention class, and audit requirement.</p></div>
+    </div>
+    <div class="callout">External-system statement: NIRA, URA, URSB, MoWT, NITA-U, and other production government systems are not integrated in this prototype. They are represented through realistic mock contracts and sandbox handlers.</div>
+    <div class="deep-panel">
+      <h3>Integration control model</h3>
+      <p>GovHub is positioned as a governed API portal and sandbox layer around MDA-owned services. The production version would preserve agency ownership while standardizing documentation, approval, credential control, monitoring, and audit visibility.</p>
+      <div class="flow-row">
+        <div class="flow-step"><strong>01</strong><span>MDA publishes API contract and governance metadata.</span></div>
+        <div class="flow-step"><strong>02</strong><span>Consumer discovers the API and submits lawful access purpose.</span></div>
+        <div class="flow-step"><strong>03</strong><span>Owner or reviewer approves scoped access and expiry.</span></div>
+        <div class="flow-step"><strong>04</strong><span>Sandbox call executes with key scope and rate-limit checks.</span></div>
+        <div class="flow-step"><strong>05</strong><span>Audit trail records actor, MDA, API, event, and correlation ID.</span></div>
+      </div>
+    </div>
+    <div class="footer"><span>Interoperability and boundaries</span><span>Page 16 of 18</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-head">
+      <div><div class="kicker">16 / Deployment Readiness</div><h2>Path from showcase prototype to government deployment</h2><p class="lead">The local prototype is intentionally small, but the architecture identifies where production hardening would be applied: runtime isolation, database hosting, secret management, monitoring, backup, and approved integration channels.</p></div>
+      <div class="page-num">Page 17 of 18</div>
+    </div>
+    <div class="two-col">
+      <div class="card"><h3>Current hosting model</h3><p>Frontend runs as a Vite React application. Backend runs as an Express service, defaulting to localhost. PostgreSQL and OpenAPI files support the repeatable local demonstration.</p></div>
+      <div class="card"><h3>Production hardening path</h3><p>Serve static assets behind approved hosting, run backend services in containers or managed application services, use managed PostgreSQL, centralized logs, backups, KMS-backed secrets, and approved integration gateways.</p></div>
+    </div>
+    <div class="three-col">
+      <div class="card"><h3>Scalability</h3><p>The REST API is stateless apart from database and file-storage dependencies. Multiple backend instances can serve traffic behind a load balancer when shared storage is centralized.</p></div>
+      <div class="card"><h3>Resilience</h3><p>Production should use managed relational storage, backups, disaster recovery, health checks, deployment rollback, and separate secret management.</p></div>
+      <div class="card"><h3>Security operations</h3><p>Move sandbox access toward key rotation, replay protection, stronger signing, centralized logs, monitoring alerts, and tamper-evident audit anchoring where required.</p></div>
+    </div>
+    <div class="fill-band">
+      <div class="fill-tile"><b>Runtime</b><span>Containerized backend services behind approved ingress, health checks, and rollout controls.</span></div>
+      <div class="fill-tile"><b>Data</b><span>Managed PostgreSQL, backups, retention policy, encryption keys, and recovery procedures.</span></div>
+      <div class="fill-tile"><b>Secrets</b><span>KMS-backed environment secrets, key rotation, least-privilege service credentials.</span></div>
+      <div class="fill-tile"><b>Observability</b><span>Central logs, metrics, request traces, audit export, and incident alerts.</span></div>
+    </div>
+    <div class="deep-panel">
+      <h3>Production readiness sequence</h3>
+      <ul>
+        <li>Replace local development servers with hosted frontend assets and load-balanced backend runtime.</li>
+        <li>Move OpenAPI storage and PostgreSQL persistence to managed, backed-up infrastructure.</li>
+        <li>Integrate approved national or MDA gateway adapters behind explicit data-sharing agreements.</li>
+        <li>Run contract tests, access-control tests, audit-log checks, vulnerability scanning, and operational rehearsal before pilot use.</li>
+      </ul>
+    </div>
+    <div class="footer"><span>Deployment readiness</span><span>Page 17 of 18</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-head">
+      <div><div class="kicker">17 / Submission Mapping</div><h2>Coverage of the Ministry architecture guidance</h2><p class="lead">The document explicitly maps system components, user access, storage, security, data flow, APIs, integrations, hosting, and future readiness to the requested architecture submission elements.</p></div>
+      <div class="page-num">Page 18 of 18</div>
+    </div>
+    <table>
+      <thead><tr><th>Guidance item</th><th>Where it is addressed in this submission</th></tr></thead>
+      <tbody>
+        <tr><td>Main components</td><td>Architecture diagram, component inventory, and platform screenshots show the frontend, backend, PostgreSQL database, OpenAPI storage, sandbox services, and production boundary.</td></tr>
+        <tr><td>Communication and protocols</td><td>Browser access, REST/JSON API calls, scoped sandbox key checks, HTTPS/TLS posture, and correlation IDs are described across the architecture and security sections.</td></tr>
+        <tr><td>Data storage and security</td><td>PostgreSQL categories, OpenAPI files, encrypted fields, key hashing, rate limits, redaction, and audit logging are covered in the component and data-flow sections.</td></tr>
+        <tr><td>User access</td><td>Public visitors, verified developers, API owners, reviewers, administrators, account settings, and account review states are shown in text and screenshots.</td></tr>
+        <tr><td>External integrations</td><td>The integration section identifies NIRA-style, URA-style, URSB-style, MoWT-style, and composite sandbox APIs, and clearly states production systems are not called.</td></tr>
+        <tr><td>Hosting and infrastructure</td><td>The current local environment is distinguished from the production hardening path: load-balanced services, managed Postgres, secret storage, backups, logs, and monitoring.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">This PDF is intended as an architecture submission for the Government Systems Prototype Showcase. It communicates system substance: components, data movement, operational controls, security posture, integration boundaries, and visible platform workflows.</div>
+    <div class="fill-band">
+      <div class="fill-tile"><b>Components</b><span>Frontend, backend, database, OpenAPI storage, sandbox services, and future integration boundary.</span></div>
+      <div class="fill-tile"><b>Security</b><span>Authentication, account verification, RBAC, key hashing, encryption support, rate limits, redaction.</span></div>
+      <div class="fill-tile"><b>Workflows</b><span>Discovery, docs, access request, approval, sandbox execution, matrix review, API onboarding.</span></div>
+      <div class="fill-tile"><b>Readiness</b><span>Production hosting path, managed database, secrets, monitoring, backups, and gateway integration.</span></div>
+    </div>
+    <div class="deep-panel">
+      <h3>Evaluator takeaway</h3>
+      <p>The prototype is not a live national integration platform and does not exchange production citizen data. It is a working architecture model for how MDA APIs can be made discoverable, governed, documented, requestable, testable, and auditable through a common developer portal and sandbox.</p>
+      <p style="margin-top:7px">The architecture is intentionally transferable: React and TypeScript on the frontend, Node.js and Express on the backend, OpenAPI as the contract format, PostgreSQL for persistence, and standard HTTP security controls for deployment hardening.</p>
+    </div>
+    <div class="footer"><span>Submission mapping</span><span>Uganda GovHub API System Architecture</span></div>
+  </section>
+</body>
+</html>

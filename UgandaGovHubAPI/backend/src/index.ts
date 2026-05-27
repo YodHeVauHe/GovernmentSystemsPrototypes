@@ -1,8 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import path from 'path';
-import fs from 'fs';
 import yaml from 'js-yaml';
 import crypto from 'crypto';
 import dns from 'dns/promises';
@@ -15,7 +13,7 @@ import { accessRouter } from './routes/access';
 import { drivingPermitRouter } from './routes/driving-permit';
 import { compositeRouter } from './routes/composite';
 import { ensureApiVersionSchema, getSpecSha, parseSpecMetadata, slugifyVersion, validateOpenApiSpec } from './versioning';
-import { deleteSpecFiles, ensureAdminSchema, removeExistingSpecFiles, resolveOpenApiFilePath } from './admin';
+import { ensureAdminSchema } from './admin';
 import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers, optionalAuth, requireAuth } from './auth';
 import { adminUsersRouter, authRouter } from './routes/auth';
 import { canTransferApiOwnership, requireApiManager } from './access-control';
@@ -28,15 +26,14 @@ import { initAuditColumnCache } from './audit';
 import { createTransportServer, getTlsConfig } from './tls';
 import { resolveCatalogSpecInput } from './catalog-spec-input';
 import { UPDATE_API_SQL } from './catalog-sql';
-import { shouldRemoveOpenApiFile } from './openapi-reconciliation';
-import { createDb } from './db';
+import { createDb, hasColumn } from './db';
+import { getCurrentSpecForApi, getSpecByPath, getVersionSpecForApi, normalizeOpenApiPath } from './openapi-store';
 
 dotenv.config();
 
-const app = express();
+export const app = express();
 const port = Number(process.env.PORT || 4000);
 const host = process.env.HOST || '127.0.0.1';
-const openapiRoot = path.join(__dirname, '../openapi');
 
 const allowedOrigins = (process.env.GOVHUB_ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
@@ -86,6 +83,7 @@ async function ensureCatalogSchema() {
       sensitivity_level TEXT,
       sandbox_available BOOLEAN,
       openapi_spec_path TEXT,
+      openapi_spec_text TEXT,
       required_approval_level TEXT,
       contact_office TEXT,
       technical_owner TEXT,
@@ -101,29 +99,9 @@ async function ensureCatalogSchema() {
       FOREIGN KEY (owning_mda_id) REFERENCES mdas (id)
     );
   `);
-}
 
-// Startup reconciliation: remove any spec files on disk that have no matching DB row.
-// This recovers from a crash between the DB transaction commit and the file deletion.
-async function reconcileOrphanedSpecFiles() {
-  if (!fs.existsSync(openapiRoot)) return;
-  const knownPaths = new Set<string>();
-  try {
-    const rows = await db.prepare('SELECT openapi_spec_path FROM apis WHERE openapi_spec_path IS NOT NULL').all() as any[];
-    const versionRows = await db.prepare('SELECT openapi_spec_path FROM api_versions WHERE openapi_spec_path IS NOT NULL').all() as any[];
-    for (const row of [...rows, ...versionRows]) {
-      if (typeof row.openapi_spec_path === 'string') {
-        knownPaths.add(path.basename(row.openapi_spec_path));
-      }
-    }
-    const diskFiles = fs.readdirSync(openapiRoot).filter(file => shouldRemoveOpenApiFile(file, knownPaths));
-    for (const file of diskFiles) {
-      const orphan = path.join(openapiRoot, file);
-      console.warn(`[STARTUP] Removing orphaned spec file: ${orphan}`);
-      try { fs.unlinkSync(orphan); } catch (e) { console.error(`[STARTUP] Failed to remove orphan: ${orphan}`, e); }
-    }
-  } catch (err) {
-    console.error('[STARTUP] Orphan spec reconciliation failed:', err);
+  if (!await hasColumn(db, 'apis', 'openapi_spec_text')) {
+    await db.exec('ALTER TABLE apis ADD COLUMN openapi_spec_text TEXT');
   }
 }
 
@@ -238,36 +216,30 @@ async function mdaExists(mdaId: string) {
   return Boolean(await await db.prepare('SELECT id FROM mdas WHERE id = ?').get(mdaId));
 }
 
-function writeOpenApiSpecFile(filename: string, content: string) {
-  const finalPath = path.join(openapiRoot, path.basename(filename));
-  const tempPath = `${finalPath}.${crypto.randomUUID()}.tmp`;
-  fs.writeFileSync(tempPath, content, 'utf8');
-  return {
-    finalPath,
-    tempPath,
-    commit() {
-      fs.renameSync(tempPath, finalPath);
-    },
-    cleanup() {
-      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-    },
-  };
-}
-
 function isOpenApiValidationError(err: any) {
   const message = String(err?.message || '');
   return message.startsWith('Invalid specification:') || message === 'Specification parsed to an invalid object.';
 }
 
-// Serve static OpenAPI files through the same visibility policy used by /api/docs.
-app.use('/openapi', optionalAuth(db), async (req, res, next) => {
-  const decision = await canDownloadOpenApiAsset(db, req.user, `/openapi${req.path}`);
+app.get('/openapi/:filename', optionalAuth(db), async (req, res) => {
+  const openapiPath = normalizeOpenApiPath(String(req.params.filename));
+  if (!openapiPath) {
+    return res.status(404).json({ error: 'API documentation was not found.', code: 'NOT_FOUND' });
+  }
+
+  const decision = await canDownloadOpenApiAsset(db, req.user, openapiPath);
   if (!decision.allowed) {
     const status = decision.code === 'UNAUTHENTICATED' ? 401 : decision.code === 'NOT_FOUND' ? 404 : 403;
     return res.status(status).json({ error: decision.message, code: decision.code });
   }
-  next();
-}, express.static(openapiRoot));
+
+  const spec = await getSpecByPath(db, openapiPath);
+  if (!spec) {
+    return res.status(404).json({ error: 'Spec not found', code: 'SPEC_NOT_FOUND' });
+  }
+
+  res.type('yaml').send(spec.openapi_spec_text);
+});
 
 app.get('/api/health', async (req, res) => {
   res.json({ status: 'ok', service: 'Uganda GovHub API Mock Sandbox' });
@@ -353,53 +325,47 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
     const versionId = `${req.params.id}-${slugifyVersion(version)}`;
     const specFilename = `${versionId}.yaml`;
     const relativeSpecPath = `/openapi/${specFilename}`;
-    const specFile = writeOpenApiSpecFile(specFilename, openapiSpec);
 
     const insertVersion = await db.prepare(`
       INSERT INTO api_versions (
-        id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
+        id, api_id, version, openapi_spec_path, openapi_spec_text, spec_sha, endpoints_count,
         openapi_version, status, is_current, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const shouldMakeCurrent = Boolean(make_current);
-    try {
-      const transaction = db.transaction(async () => {
-        if (shouldMakeCurrent) {
-          await db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
-          await db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(relativeSpecPath, req.params.id);
-        }
+    const transaction = db.transaction(async () => {
+      if (shouldMakeCurrent) {
+        await db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
+        await db.prepare('UPDATE apis SET openapi_spec_path = ?, openapi_spec_text = ? WHERE id = ?').run(relativeSpecPath, openapiSpec, req.params.id);
+      }
 
-        insertVersion.run(
-          versionId,
-          req.params.id,
-          version,
-          relativeSpecPath,
-          getSpecSha(openapiSpec),
-          metadata.endpointsCount,
-          metadata.openapiVersion,
-          status || 'Published',
-          shouldMakeCurrent,
-          notes || null
-        );
+      await insertVersion.run(
+        versionId,
+        req.params.id,
+        version,
+        relativeSpecPath,
+        openapiSpec,
+        getSpecSha(openapiSpec),
+        metadata.endpointsCount,
+        metadata.openapiVersion,
+        status || 'Published',
+        shouldMakeCurrent,
+        notes || null
+      );
 
-        await db.prepare(`
-          INSERT INTO audit_logs (id, event_type, api_id, details)
-          VALUES (?, ?, ?, ?)
-        `).run(
-          generatePublicId('audit'),
-          'API_VERSION_PUBLISHED',
-          req.params.id,
-          JSON.stringify({ version, make_current: shouldMakeCurrent, endpoints_count: metadata.endpointsCount })
-        );
-      });
+      await db.prepare(`
+        INSERT INTO audit_logs (id, event_type, api_id, details)
+        VALUES (?, ?, ?, ?)
+      `).run(
+        generatePublicId('audit'),
+        'API_VERSION_PUBLISHED',
+        req.params.id,
+        JSON.stringify({ version, make_current: shouldMakeCurrent, endpoints_count: metadata.endpointsCount })
+      );
+    });
 
-      await transaction;
-      specFile.commit();
-    } catch (err) {
-      specFile.cleanup();
-      throw err;
-    }
+    await transaction;
     res.status(201).json({ success: true, versionId, version, is_current: shouldMakeCurrent });
   } catch (err: any) {
     console.error('[version publish]', err);
@@ -423,7 +389,7 @@ app.post('/api/catalog/:id/versions/:version/current', requireAuth(db, ['admin',
     const transaction = db.transaction(async () => {
       await db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
       await db.prepare('UPDATE api_versions SET is_current = 1 WHERE id = ?').run(version.id);
-      await db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(version.openapi_spec_path, req.params.id);
+      await db.prepare('UPDATE apis SET openapi_spec_path = ?, openapi_spec_text = ? WHERE id = ?').run(version.openapi_spec_path, version.openapi_spec_text, req.params.id);
       await db.prepare(`
         INSERT INTO audit_logs (id, event_type, api_id, details)
         VALUES (?, ?, ?, ?)
@@ -465,26 +431,19 @@ app.delete('/api/catalog/:id/versions/:version', requireAuth(db, ['admin', 'api_
 app.get('/api/catalog/:id/spec', optionalAuth(db), async (req, res) => {
   try {
     const requestedVersion = typeof req.query.version === 'string' ? req.query.version : null;
-    const api = requestedVersion
-      ? await db.prepare('SELECT openapi_spec_path FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, requestedVersion) as any
-      : await db.prepare('SELECT openapi_spec_path FROM apis WHERE id = ?').get(req.params.id) as any;
-    if (!api || !api.openapi_spec_path) {
+    const spec = requestedVersion
+      ? await getVersionSpecForApi(db, String(req.params.id), requestedVersion)
+      : await getCurrentSpecForApi(db, String(req.params.id));
+    if (!spec) {
       return res.status(404).json({ error: 'API spec not found' });
     }
-    const decision = await canDownloadOpenApiAsset(db, req.user, api.openapi_spec_path);
+    const decision = await canDownloadOpenApiAsset(db, req.user, spec.openapi_spec_path);
     if (!decision.allowed) {
       const status = decision.code === 'UNAUTHENTICATED' ? 401 : decision.code === 'NOT_FOUND' ? 404 : 403;
       return res.status(status).json({ error: decision.message, code: decision.code });
     }
-    
-    const filePath = resolveOpenApiFilePath(openapiRoot, api.openapi_spec_path);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Spec file missing on disk' });
-    }
-    
-    const fileContents = fs.readFileSync(filePath, 'utf8');
-    const data = yaml.load(fileContents);
-    res.json(data);
+
+    res.json(yaml.load(spec.openapi_spec_text));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to parse spec' });
@@ -538,22 +497,23 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
     }
 
     let specPath = existing.openapi_spec_path;
+    let specText = existing.openapi_spec_text;
     let versionPatch: any = null;
-    let pendingSpecFile: ReturnType<typeof writeOpenApiSpecFile> | null = null;
     const hasSpecPatch = (typeof openapi_spec === 'string' && openapi_spec.trim()) || (typeof req.body?.specUrl === 'string' && req.body.specUrl.trim());
     if (hasSpecPatch) {
       const resolvedSpec = await resolveCatalogSpecInput(req.body, fetchSpecFromUrl);
       const metadata = parseSpecMetadata(resolvedSpec);
       const currentVersion = await db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND is_current = 1').get(req.params.id) as any;
       const specFilename = currentVersion?.openapi_spec_path
-        ? path.basename(currentVersion.openapi_spec_path)
+        ? currentVersion.openapi_spec_path.replace(/^\/openapi\/+/, '')
         : `${req.params.id}-${slugifyVersion(metadata.version)}.yaml`;
       specPath = `/openapi/${specFilename}`;
-      pendingSpecFile = writeOpenApiSpecFile(specFilename, resolvedSpec);
+      specText = resolvedSpec;
       versionPatch = {
         versionId: currentVersion?.id || `${req.params.id}-${slugifyVersion(metadata.version)}`,
         version: metadata.version,
         specPath,
+        specText: resolvedSpec,
         specSha: getSpecSha(resolvedSpec),
         endpointsCount: metadata.endpointsCount,
         openapiVersion: metadata.openapiVersion,
@@ -590,6 +550,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
         sensitivity_level ?? existing.sensitivity_level,
         typeof sandbox_available === 'boolean' ? (sandbox_available ? 1 : 0) : existing.sandbox_available,
         specPath,
+        specText,
         required_approval_level ?? existing.required_approval_level,
         contact_office ?? existing.contact_office,
         technical_owner ?? existing.technical_owner,
@@ -610,11 +571,12 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
         if (currentVersion) {
           await db.prepare(`
             UPDATE api_versions SET
-              version = ?, openapi_spec_path = ?, spec_sha = ?, endpoints_count = ?, openapi_version = ?, notes = ?
+              version = ?, openapi_spec_path = ?, openapi_spec_text = ?, spec_sha = ?, endpoints_count = ?, openapi_version = ?, notes = ?
             WHERE id = ?
           `).run(
             versionPatch.version,
             versionPatch.specPath,
+            versionPatch.specText,
             versionPatch.specSha,
             versionPatch.endpointsCount,
             versionPatch.openapiVersion,
@@ -624,14 +586,15 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
         } else {
           await db.prepare(`
             INSERT INTO api_versions (
-              id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
+              id, api_id, version, openapi_spec_path, openapi_spec_text, spec_sha, endpoints_count,
               openapi_version, status, is_current, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             versionPatch.versionId,
             req.params.id,
             versionPatch.version,
             versionPatch.specPath,
+            versionPatch.specText,
             versionPatch.specSha,
             versionPatch.endpointsCount,
             versionPatch.openapiVersion,
@@ -654,13 +617,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
       );
     });
 
-    try {
-      await transaction;
-      if (pendingSpecFile) pendingSpecFile.commit();
-    } catch (err) {
-      if (pendingSpecFile) pendingSpecFile.cleanup();
-      throw err;
-    }
+    await transaction;
     res.json({ success: true, apiId: req.params.id });
   } catch (err: any) {
     console.error('[api update]', err);
@@ -678,12 +635,6 @@ app.delete('/api/catalog/:id', requireAuth(db, ['admin']), async (req, res) => {
       return res.status(404).json({ error: 'API not found' });
     }
 
-    const versionSpecs = await db.prepare('SELECT openapi_spec_path FROM api_versions WHERE api_id = ?').all(req.params.id) as any[];
-    const specPaths = removeExistingSpecFiles([
-      api.openapi_spec_path,
-      ...versionSpecs.map(version => version.openapi_spec_path),
-    ]);
-
     const transaction = db.transaction(async () => {
       await db.prepare('DELETE FROM access_requests WHERE api_id = ?').run(req.params.id);
       await db.prepare('DELETE FROM api_versions WHERE api_id = ?').run(req.params.id);
@@ -696,12 +647,11 @@ app.delete('/api/catalog/:id', requireAuth(db, ['admin']), async (req, res) => {
         'API_DELETED',
         api.owning_mda_id,
         req.params.id,
-        JSON.stringify({ api_name: api.name, removed_spec_files: specPaths })
+        JSON.stringify({ api_name: api.name })
       );
     });
 
     await transaction;
-    deleteSpecFiles(specPaths, openapiRoot);
     res.json({ success: true, apiId: req.params.id });
   } catch (err: any) {
     console.error('[api delete]', err);
@@ -787,87 +737,82 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), async (req, re
   try {
     const openapiSpec = await resolveCatalogSpecInput(req.body, fetchSpecFromUrl);
     const metadata = parseSpecMetadata(openapiSpec);
-    const specFile = writeOpenApiSpecFile(specFilename, openapiSpec);
 
     // Insert into PostgreSQL catalog tables
     const stmt = await db.prepare(`
       INSERT INTO apis (
         id, name, owning_mda_id, sector, description, lifecycle_status,
-        sensitivity_level, sandbox_available, openapi_spec_path, required_approval_level, contact_office,
+        sensitivity_level, sandbox_available, openapi_spec_path, openapi_spec_text, required_approval_level, contact_office,
         technical_owner, personal_data_categories, purpose_limitation, data_minimization_note,
         retention_class, statutory_basis, security_classification, sla_target, compliance_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    try {
-      const transaction = db.transaction(async () => {
-        stmt.run(
-          id,
-          name,
-          owning_mda_id,
-          sector || 'General',
-          description || '',
-          lifecycle_status || 'Draft',
-          sensitivity_level || 'Medium',
-          sandbox_available ? 1 : 0,
-          relativeSpecPath,
-          required_approval_level || 'General Public',
-          contact_office || 'info@govhub.go.ug',
-          technical_owner || 'GovHub Systems',
-          personal_data_categories || '',
-          purpose_limitation || '',
-          data_minimization_note || '',
-          retention_class || 'Default',
-          statutory_basis || 'None',
-          security_classification || 'Official',
-          sla_target || '99.5%',
-          compliance_status || 'Draft'
-        );
+    const transaction = db.transaction(async () => {
+      await stmt.run(
+        id,
+        name,
+        owning_mda_id,
+        sector || 'General',
+        description || '',
+        lifecycle_status || 'Draft',
+        sensitivity_level || 'Medium',
+        sandbox_available ? 1 : 0,
+        relativeSpecPath,
+        openapiSpec,
+        required_approval_level || 'General Public',
+        contact_office || 'info@govhub.go.ug',
+        technical_owner || 'GovHub Systems',
+        personal_data_categories || '',
+        purpose_limitation || '',
+        data_minimization_note || '',
+        retention_class || 'Default',
+        statutory_basis || 'None',
+        security_classification || 'Official',
+        sla_target || '99.5%',
+        compliance_status || 'Draft'
+      );
 
-        const versionId = `${id}-${slugifyVersion(metadata.version)}`;
-        await db.prepare(`
-          INSERT INTO api_versions (
-            id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
-            openapi_version, status, is_current, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          versionId,
-          id,
-          metadata.version,
-          relativeSpecPath,
-          getSpecSha(openapiSpec),
-          metadata.endpointsCount,
-          metadata.openapiVersion,
-          'Published',
-          1,
-          'Initial registry version'
-        );
+      const versionId = `${id}-${slugifyVersion(metadata.version)}`;
+      await db.prepare(`
+        INSERT INTO api_versions (
+          id, api_id, version, openapi_spec_path, openapi_spec_text, spec_sha, endpoints_count,
+          openapi_version, status, is_current, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        versionId,
+        id,
+        metadata.version,
+        relativeSpecPath,
+        openapiSpec,
+        getSpecSha(openapiSpec),
+        metadata.endpointsCount,
+        metadata.openapiVersion,
+        'Published',
+        1,
+        'Initial registry version'
+      );
 
-        const auditStmt = await db.prepare(`
-          INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
-          VALUES (?, ?, ?, ?, ?)
-        `);
-        const auditId = generatePublicId('audit');
-        auditStmt.run(
-          auditId,
-          'API_REGISTERED',
-          owning_mda_id,
-          id,
-          JSON.stringify({
-            api_name: name,
-            registered_by_role: req.user?.role || 'unknown',
-            registered_by_user_id: req.user?.id || null,
-            sector,
-            sensitivity_level
-          })
-        );
-      });
-      await transaction;
-      specFile.commit();
-    } catch (err) {
-      specFile.cleanup();
-      throw err;
-    }
+      const auditStmt = await db.prepare(`
+        INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const auditId = generatePublicId('audit');
+      await auditStmt.run(
+        auditId,
+        'API_REGISTERED',
+        owning_mda_id,
+        id,
+        JSON.stringify({
+          api_name: name,
+          registered_by_role: req.user?.role || 'unknown',
+          registered_by_user_id: req.user?.id || null,
+          sector,
+          sensitivity_level
+        })
+      );
+    });
+    await transaction;
 
     res.status(201).json({ success: true, apiId: id });
   } catch (err: any) {
@@ -904,27 +849,31 @@ app.use('/api/v1', async (req, res) => {
 });
 
 export let server: ReturnType<typeof createTransportServer>;
+let initialized: Promise<void> | null = null;
 
-async function start() {
-  await ensureCatalogSchema();
-  await ensureAuthSchema(db);
-  await ensureAdminSchema(db);
-  await ensureApiVersionSchema(db);
-  await ensureDefaultAdmin(db);
-  await ensureDemoUsers(db);
-  await ensureAccountVerificationSchema(db);
-  await ensureDocsSchema(db);
-  await initAuditColumnCache(db);
-  await reconcileOrphanedSpecFiles();
+export function initializeApp() {
+  if (!initialized) {
+    initialized = (async () => {
+      await ensureCatalogSchema();
+      await ensureAuthSchema(db);
+      await ensureAdminSchema(db);
+      await ensureApiVersionSchema(db);
+      await ensureDefaultAdmin(db);
+      await ensureDemoUsers(db);
+      await ensureAccountVerificationSchema(db);
+      await ensureDocsSchema(db);
+      await initAuditColumnCache(db);
+    })();
+  }
+  return initialized;
+}
+
+export async function start() {
+  await initializeApp();
 
   server = createTransportServer(app).listen(port, host, () => {
     const protocol = getTlsConfig().enabled ? 'https' : 'http';
     console.log(`Backend running at ${protocol}://${host}:${port}`);
   });
+  return server;
 }
-
-start().catch(async err => {
-  console.error('[STARTUP] Failed to start backend:', err);
-  await db.close();
-  process.exit(1);
-});

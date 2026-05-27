@@ -33,7 +33,7 @@ npm run dev
 
 The frontend can run by itself, but authenticated pages, catalog data, docs, and sandbox workflows need the backend running at port `4000`.
 
-The frontend resolves the backend URL from `VITE_API_BASE_URL` when set. If it is not set, it uses the current browser hostname with backend port `4000`, which keeps `localhost` and `127.0.0.1` sessions consistent.
+The frontend resolves the backend URL from `VITE_API_BASE_URL` when set. If it is not set on `localhost` or `127.0.0.1`, it uses the current browser hostname with backend port `4000`. In deployed environments, it falls back to same-origin requests so Vercel can route `/api/*` and `/openapi/*` to the backend function.
 
 Example:
 
