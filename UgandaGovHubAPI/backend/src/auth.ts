@@ -90,7 +90,9 @@ export function getTotpCode(secret: string, now = new Date(), stepSeconds = 30) 
   const counter = Math.floor(now.getTime() / 1000 / stepSeconds);
   const counterBuffer = Buffer.alloc(8);
   counterBuffer.writeBigUInt64BE(BigInt(counter));
-  const hmac = crypto.createHmac('sha1', base32Decode(secret)).update(counterBuffer).digest();
+  const hmac = crypto.createHmac('sha1', crypto.createSecretKey(Uint8Array.from(base32Decode(secret))))
+    .update(Uint8Array.from(counterBuffer))
+    .digest();
   const offset = hmac[hmac.length - 1] & 0x0f;
   const binary = ((hmac[offset] & 0x7f) << 24) |
     ((hmac[offset + 1] & 0xff) << 16) |
@@ -105,7 +107,7 @@ export function verifyTotpCode(secret: string, code: string, now = new Date()) {
   for (const offset of [-1, 0, 1]) {
     const comparisonDate = new Date(now.getTime() + offset * 30_000);
     const expected = getTotpCode(secret, comparisonDate);
-    if (crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(normalizedCode))) {
+    if (crypto.timingSafeEqual(Uint8Array.from(Buffer.from(expected)), Uint8Array.from(Buffer.from(normalizedCode)))) {
       return true;
     }
   }
@@ -144,7 +146,7 @@ export function verifyPassword(password: string, storedHash: string) {
 
   const candidate = crypto.scryptSync(password, salt, 64);
   const expected = Buffer.from(hash, 'hex');
-  return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
+  return candidate.length === expected.length && crypto.timingSafeEqual(Uint8Array.from(candidate), Uint8Array.from(expected));
 }
 
 export async function ensureAuthSchema(db: DbClient) {
@@ -484,7 +486,7 @@ export function requireAuth(db: DbClient, roles?: UserRole[]) {
     }
     const decision = canAccess(user, roles);
 
-    if (!decision.allowed) {
+    if (decision.allowed === false) {
       const status = decision.code === 'UNAUTHENTICATED' ? 401 : decision.code === 'ACCOUNT_NOT_APPROVED' ? 403 : 403;
       return res.status(status).json({ error: decision.message, code: decision.code });
     }

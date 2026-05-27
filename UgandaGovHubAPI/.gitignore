@@ -20,3 +20,4 @@ AGENTS.md
 
 # Git worktrees
 .worktrees/
+.vercel

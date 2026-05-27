@@ -228,7 +228,7 @@ app.get('/openapi/:filename', optionalAuth(db), async (req, res) => {
   }
 
   const decision = await canDownloadOpenApiAsset(db, req.user, openapiPath);
-  if (!decision.allowed) {
+  if (decision.allowed === false) {
     const status = decision.code === 'UNAUTHENTICATED' ? 401 : decision.code === 'NOT_FOUND' ? 404 : 403;
     return res.status(status).json({ error: decision.message, code: decision.code });
   }
@@ -264,7 +264,7 @@ app.get('/api/catalog/:id', optionalAuth(db), async (req, res) => {
   try {
     const apiId = String(req.params.id);
     const decision = await canViewApiDocs(db, req.user, apiId);
-    if (!decision.allowed) {
+    if (decision.allowed === false) {
       return res.status(statusForDocsDecision(decision.code)).json({ error: decision.message, code: decision.code });
     }
     const api = await db.prepare('SELECT * FROM apis WHERE id = ?').get(apiId);
@@ -281,7 +281,7 @@ app.get('/api/catalog/:id/versions', optionalAuth(db), async (req, res) => {
   try {
     const apiId = String(req.params.id);
     const decision = await canViewApiDocs(db, req.user, apiId);
-    if (!decision.allowed) {
+    if (decision.allowed === false) {
       return res.status(statusForDocsDecision(decision.code)).json({ error: decision.message, code: decision.code });
     }
     const current = await db.prepare('SELECT spec_sha FROM api_versions WHERE api_id = ? AND is_current = 1').get(apiId) as any;
@@ -438,7 +438,7 @@ app.get('/api/catalog/:id/spec', optionalAuth(db), async (req, res) => {
       return res.status(404).json({ error: 'API spec not found' });
     }
     const decision = await canDownloadOpenApiAsset(db, req.user, spec.openapi_spec_path);
-    if (!decision.allowed) {
+    if (decision.allowed === false) {
       const status = decision.code === 'UNAUTHENTICATED' ? 401 : decision.code === 'NOT_FOUND' ? 404 : 403;
       return res.status(status).json({ error: decision.message, code: decision.code });
     }
@@ -481,7 +481,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
     }
     if (Object.prototype.hasOwnProperty.call(req.body, 'owning_mda_id')) {
       const ownerTransferDecision = canTransferApiOwnership(req.user!);
-      if (!ownerTransferDecision.allowed) {
+      if (ownerTransferDecision.allowed === false) {
         return res.status(403).json({ error: ownerTransferDecision.message, code: ownerTransferDecision.code });
       }
       if (typeof owning_mda_id !== 'string' || !(await mdaExists(owning_mda_id))) {
