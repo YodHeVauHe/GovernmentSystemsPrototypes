@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/dashboard/components/app-sidebar';
@@ -158,6 +160,8 @@ function App() {
           <AppShell />
         </BrowserRouter>
         <Toaster position="bottom-right" richColors />
+        <Analytics />
+        <SpeedInsights />
       </NotificationProvider>
     </UserProvider>
   );
