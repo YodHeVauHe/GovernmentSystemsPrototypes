@@ -379,7 +379,7 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
           metadata.endpointsCount,
           metadata.openapiVersion,
           status || 'Published',
-          shouldMakeCurrent ? 1 : 0,
+          shouldMakeCurrent,
           notes || null
         );
 
