@@ -19,11 +19,11 @@ router.post('/', requireAuth(db, ['developer', 'admin']), async (req, res) => {
   }
 
   const mdaDecision = resolveConsumerMdaForRequest(req.user!, consumer_mda_id);
-  if (!mdaDecision.allowed) {
+  if (mdaDecision.allowed === false) {
     return res.status(403).json({ error: mdaDecision.message, code: mdaDecision.code });
   }
   const apiDecision = await canSubmitAccessRequest(db, api_id);
-  if (!apiDecision.allowed) {
+  if (apiDecision.allowed === false) {
     return res.status(404).json({ error: apiDecision.message, code: apiDecision.code });
   }
 
@@ -88,7 +88,7 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req,
       return res.status(404).json({ error: 'Request not found' });
     }
     const reviewDecision = await canReviewAccessRequest(db, req.user!, id);
-    if (!reviewDecision.allowed) {
+    if (reviewDecision.allowed === false) {
       return res.status(403).json({ error: reviewDecision.message, code: reviewDecision.code });
     }
 

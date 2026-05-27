@@ -20,6 +20,14 @@ function getEncryptionKey() {
   return crypto.createHash('sha256').update(raw).digest();
 }
 
+function asUint8Array(buffer: Buffer) {
+  return Uint8Array.from(buffer);
+}
+
+function getEncryptionKeyObject() {
+  return crypto.createSecretKey(asUint8Array(getEncryptionKey()));
+}
+
 export function isEncryptedAtRest(value: unknown): value is string {
   return typeof value === 'string' && value.startsWith(PREFIX);
 }
@@ -27,11 +35,11 @@ export function isEncryptedAtRest(value: unknown): value is string {
 export function encryptAtRest(value: string | null | undefined): string | null {
   if (value === null || value === undefined || value === '') return value ?? null;
   if (isEncryptedAtRest(value)) return value;
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', getEncryptionKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  const iv = asUint8Array(crypto.randomBytes(12));
+  const cipher = crypto.createCipheriv('aes-256-gcm', getEncryptionKeyObject(), iv);
+  const ciphertext = cipher.update(value, 'utf8', 'base64url') + cipher.final('base64url');
   const tag = cipher.getAuthTag();
-  return `${PREFIX}${iv.toString('base64url')}:${tag.toString('base64url')}:${ciphertext.toString('base64url')}`;
+  return `${PREFIX}${Buffer.from(iv).toString('base64url')}:${Buffer.from(asUint8Array(tag)).toString('base64url')}:${ciphertext}`;
 }
 
 export function decryptAtRest(value: string | null | undefined): string | null {
@@ -41,12 +49,9 @@ export function decryptAtRest(value: string | null | undefined): string | null {
   if (!ivPart || !tagPart || !ciphertextPart) {
     throw new Error('Encrypted value is malformed.');
   }
-  const decipher = crypto.createDecipheriv('aes-256-gcm', getEncryptionKey(), Buffer.from(ivPart, 'base64url'));
-  decipher.setAuthTag(Buffer.from(tagPart, 'base64url'));
-  return Buffer.concat([
-    decipher.update(Buffer.from(ciphertextPart, 'base64url')),
-    decipher.final(),
-  ]).toString('utf8');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', getEncryptionKeyObject(), asUint8Array(Buffer.from(ivPart, 'base64url')));
+  decipher.setAuthTag(asUint8Array(Buffer.from(tagPart, 'base64url')));
+  return decipher.update(ciphertextPart, 'base64url', 'utf8') + decipher.final('utf8');
 }
 
 export function encryptFields<T extends Record<string, any>>(row: T, fields: string[]): T {

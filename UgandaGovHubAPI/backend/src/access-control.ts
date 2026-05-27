@@ -183,7 +183,7 @@ export function requireApiManager(db: DbClient, getApiId: (req: Request) => stri
       return res.status(401).json({ error: 'Authentication is required.', code: 'UNAUTHENTICATED' });
     }
     const decision = await canManageApi(db, req.user, getApiId(req));
-    if (!decision.allowed) {
+    if (decision.allowed === false) {
       return res.status(403).json({ error: decision.message, code: decision.code });
     }
     next();

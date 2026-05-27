@@ -30,7 +30,7 @@ export function docsRouter(db: DbClient) {
   router.get('/:id', optionalAuth(db), async (req, res) => {
     try {
       const decision = await canViewApiDocs(db, req.user, String(req.params.id));
-      if (!decision.allowed) {
+      if (decision.allowed === false) {
         return res.status(statusForCode(decision.code)).json({
           error: decision.message,
           code: decision.code,
@@ -65,7 +65,7 @@ export function docsRouter(db: DbClient) {
   router.get('/:id/spec', optionalAuth(db), async (req, res) => {
     try {
       const decision = await canViewApiDocs(db, req.user, String(req.params.id));
-      if (!decision.allowed) {
+      if (decision.allowed === false) {
         return res.status(statusForCode(decision.code)).json({
           error: decision.message,
           code: decision.code,
@@ -92,7 +92,7 @@ export function docsRouter(db: DbClient) {
     }
 
     const managerDecision = await canManageApi(db, req.user!, String(req.params.id));
-    if (!managerDecision.allowed) {
+    if (managerDecision.allowed === false) {
       return res.status(403).json({ error: managerDecision.message, code: managerDecision.code });
     }
 

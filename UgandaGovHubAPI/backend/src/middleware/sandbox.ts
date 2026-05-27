@@ -123,7 +123,7 @@ export function sandboxMiddleware(db: Db) {
         return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'The sandbox rate limit for this API key has been exceeded.', 429);
       }
     }
-    if (!accessDecision.allowed && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
+    if (accessDecision.allowed === false && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
       await logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
         reason: accessDecision.message,
         path: auditPath,
@@ -134,7 +134,7 @@ export function sandboxMiddleware(db: Db) {
     }
 
     // Enforce endpoint/scope verification
-    if (!accessDecision.allowed && accessDecision.code === 'UNAUTHORIZED_ENDPOINT') {
+    if (accessDecision.allowed === false && accessDecision.code === 'UNAUTHORIZED_ENDPOINT') {
       await logAuditEvent(db, 'SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
         consumer_user_id: requestRecord.consumer_user_id,
         reason: accessDecision.message,
