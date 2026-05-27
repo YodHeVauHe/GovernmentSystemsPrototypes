@@ -15,6 +15,20 @@ import { AccountStatusPage } from './pages/AccountStatusPage';
 import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { DocsPage } from './pages/DocsPage';
 import { ApiDocsPage } from './pages/ApiDocsPage';
+import { NotFoundPage } from './pages/NotFoundPage';
+
+const authRoutes = ['/login', '/signup', '/account-status'];
+const knownRoutes = [
+  '/',
+  '/catalog/add',
+  '/dashboard',
+  '/account/settings',
+  '/docs',
+];
+
+function isKnownAppRoute(pathname: string) {
+  return knownRoutes.includes(pathname) || pathname.startsWith('/docs/') || pathname.startsWith('/api/');
+}
 
 function RouteLoadingBar() {
   const location = useLocation();
@@ -67,8 +81,9 @@ function AuthenticatedRoute({ children }: { children: React.ReactNode }) {
 function AppShell() {
   const location = useLocation();
   const { loading, isAuthenticated, isApproved } = useUser();
-  const authPage = ['/login', '/signup', '/account-status'].includes(location.pathname);
+  const authPage = authRoutes.includes(location.pathname);
   const publicDocsPage = location.pathname === '/docs' || location.pathname.startsWith('/docs/');
+  const knownAppRoute = isKnownAppRoute(location.pathname);
   const [sidebarOpen, setSidebarOpen] = useState(!publicDocsPage);
 
   useEffect(() => {
@@ -83,6 +98,7 @@ function AppShell() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/account-status" element={<AccountStatusPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     );
   }
@@ -91,11 +107,11 @@ function AppShell() {
     return <div className="flex min-h-dvh items-center justify-center bg-[#181818] text-sm text-[#8b8b8b]">Loading...</div>;
   }
 
-  if (!isAuthenticated && !publicDocsPage) {
+  if (!isAuthenticated && knownAppRoute && !publicDocsPage) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  if (!isApproved && location.pathname !== "/account/settings" && !publicDocsPage) {
+  if (!isApproved && knownAppRoute && location.pathname !== "/account/settings" && !publicDocsPage) {
     return <Navigate to="/account-status" replace />;
   }
 
@@ -125,6 +141,7 @@ function AppShell() {
               <Route path="/api/:id" element={<ApiDetail />} />
               <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
               <Route path="/account/settings" element={<AuthenticatedRoute><AccountSettingsPage /></AuthenticatedRoute>} />
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </div>
         </div>
