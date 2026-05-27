@@ -14,6 +14,7 @@ import {
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
 import { API_BASE } from '@/lib/api-base';
+import { buildPendingAccessRequestNotifications } from '@/lib/access-request-notifications';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -440,7 +441,7 @@ function accountActionLabel(account: any, busy: boolean) {
 export default function DashboardPage() {
   const [searchParams] = useSearchParams();
   const { user, role, mdaId, mdas } = useUser();
-  const { addNotification } = useNotifications();
+  const { addNotification, notifications } = useNotifications();
   const [requests, setRequests] = useState<any[]>([]);
   const [accountRequests, setAccountRequests] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -502,6 +503,24 @@ export default function DashboardPage() {
       setActiveTab('approvals');
     }
   }, [fetchDashboardData, role, mdaId]);
+
+  useEffect(() => {
+    if (role !== 'admin' && role !== 'api_owner') return;
+
+    const existingKeys = new Set(
+      notifications
+        .map(notification => notification.dedupeKey)
+        .filter((key): key is string => Boolean(key))
+    );
+    buildPendingAccessRequestNotifications(requests, existingKeys).forEach(notification => {
+      addNotification({
+        dedupeKey: notification.key,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+      });
+    });
+  }, [addNotification, notifications, requests, role]);
 
   const handleApprove = (id: string) => {
     const request = requests.find(req => req.id === id);

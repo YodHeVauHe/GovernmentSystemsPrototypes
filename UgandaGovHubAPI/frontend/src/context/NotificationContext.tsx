@@ -6,6 +6,7 @@ export type AppNotificationType = 'api' | 'access' | 'key' | 'account';
 
 export interface AppNotification {
   id: string;
+  dedupeKey?: string;
   type: AppNotificationType;
   title: string;
   message: string;
@@ -14,6 +15,7 @@ export interface AppNotification {
 }
 
 interface AddNotificationInput {
+  dedupeKey?: string;
   type: AppNotificationType;
   title: string;
   message: string;
@@ -98,12 +100,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     if (!targetStorageKey) return;
 
     const createNext = (current: AppNotification[]) => [
-      {
+      ...(notificationBody.dedupeKey && current.some(item => item.dedupeKey === notificationBody.dedupeKey) ? [] : [{
         ...notificationBody,
         id: generatePublicId('notification'),
         createdAt: new Date().toISOString(),
         read: false,
-      },
+      }]),
       ...current,
     ].slice(0, 20);
 
