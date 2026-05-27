@@ -20,11 +20,13 @@ function toPostgresPlaceholders(sql: string) {
   return sql.replace(/\?/g, () => `$${++index}`);
 }
 
-function normalizeSql(sql: string) {
+export function normalizeSql(sql: string) {
   return sql
     .replace(/\bINSERT OR IGNORE\b/gi, 'INSERT')
     .replace(/\bBOOLEAN DEFAULT 0\b/gi, 'BOOLEAN DEFAULT FALSE')
     .replace(/\bBOOLEAN DEFAULT 1\b/gi, 'BOOLEAN DEFAULT TRUE')
+    .replace(/\bis_current\s*=\s*0\b/gi, 'is_current = FALSE')
+    .replace(/\bis_current\s*=\s*1\b/gi, 'is_current = TRUE')
     .replace(/\bDATETIME\b/gi, 'TIMESTAMPTZ');
 }
 
