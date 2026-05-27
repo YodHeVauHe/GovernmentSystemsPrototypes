@@ -43,9 +43,10 @@ const db = new Database(':memory:');
 db.exec(`
   CREATE TABLE apis (
     id TEXT PRIMARY KEY,
-    openapi_spec_path TEXT
+    openapi_spec_path TEXT,
+    openapi_spec_text TEXT
   );
-  INSERT INTO apis (id, openapi_spec_path) VALUES ('api-nira-01', '/openapi/nira-identity.yaml');
+  INSERT INTO apis (id, openapi_spec_path, openapi_spec_text) VALUES ('api-nira-01', '/openapi/nira-identity.yaml', 'openapi: 3.0.0\ninfo:\n  title: NIRA\n  version: 1.0.0\npaths: {}');
 `);
 ensureApiVersionSchema(db);
 const backfilledVersions = db.prepare('SELECT COUNT(*) as count FROM api_versions WHERE api_id = ?').get('api-nira-01') as { count: number };

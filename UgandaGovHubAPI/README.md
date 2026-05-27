@@ -26,13 +26,33 @@ GovHub API models a secure interoperability layer around government APIs:
 - Dashboard views for approvals, accounts, access matrix, analytics, and audit logs.
 - API registration and OpenAPI validation for onboarding new ministry services.
 
+## Platform Screenshots
+
+### Interoperability Catalog
+
+![Uganda GovHub API catalog showing seeded MDA API products](docs/architecture-pdf/assets/apiCatalog.png)
+
+The catalog lets users discover government API products by agency, sector, lifecycle, compliance status, and sensitivity level.
+
+### Governed Access Review
+
+![GovHub dashboard showing access approval workflow](docs/architecture-pdf/assets/apiApproval.png)
+
+The dashboard shows pending and active access requests, including consumer MDA, requested API, lawful basis, field tier, status, expiry, and approval actions.
+
+### Sandbox Execution
+
+![GovHub sandbox console showing approved-key request and mock API response](docs/architecture-pdf/assets/apiSandbox.png)
+
+The sandbox console demonstrates scoped API-key use, request parameters, response headers, rate-limit metadata, and correlation IDs with deterministic mock data.
+
 ## Current Implementation
 
 The app is implemented as a local full-stack prototype:
 
 - **Frontend:** React, TypeScript, Vite, React Router, and GovHub-specific UI components.
 - **Backend:** Node.js, Express, TypeScript, PostgreSQL via `pg`.
-- **API contracts:** OpenAPI files stored in `backend/openapi/`.
+- **API contracts:** OpenAPI specs stored in Postgres and served through `/openapi/*.yaml`.
 - **Auth:** Cookie-backed sessions with seeded demo accounts.
 - **Security controls:** MFA setup and enforcement, role-based access control, sensitive field encryption at rest, TLS/HSTS support, audit logging, and privacy metadata aligned to Uganda's Data Protection and Privacy Act, 2019.
 - **Integrations:** Mock/sandbox services for NIRA-style identity verification, URA-style tax status, URSB-style business lookup, driving permit verification, and composite eligibility checks. There are no live external integrations.
@@ -96,7 +116,34 @@ npm run test:e2e
 npm run test:a11y
 ```
 
-## Vercel/Postgres Deployment
+## Full Vercel Deployment
+
+The app can deploy as one Vercel project:
+
+- Vercel builds the Vite frontend from `frontend/`.
+- Vercel routes `/api/*` and `/openapi/*` to the Express API function.
+- Vercel routes all other paths to the React Router SPA fallback.
+- Postgres is the persistent store for app data and OpenAPI spec text.
+
+Required Vercel environment variables:
+
+```bash
+DATABASE_URL=postgresql://...
+GOVHUB_TRUST_TLS_TERMINATION=true
+GOVHUB_ALLOWED_ORIGINS=https://your-app.vercel.app,https://your-custom-domain.com
+GOVHUB_ADMIN_EMAIL=admin@ict.go.ug
+GOVHUB_ADMIN_PASSWORD=...
+GOVHUB_DEMO_DEVELOPER_EMAIL=...
+GOVHUB_DEMO_DEVELOPER_PASSWORD=...
+GOVHUB_DEMO_API_OWNER_EMAIL=...
+GOVHUB_DEMO_API_OWNER_PASSWORD=...
+GOVHUB_DEMO_REVIEWER_EMAIL=...
+GOVHUB_DEMO_REVIEWER_PASSWORD=...
+```
+
+`VITE_API_BASE_URL` can be omitted on Vercel when same-origin routing is used.
+
+## Vercel/Postgres Notes
 
 Use a hosted Postgres database for deployed environments. Set one of these variables in Vercel:
 

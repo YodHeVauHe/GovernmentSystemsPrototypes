@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@vercel/node": "^5.8.5",
     "axe-core": "^4.11.4"
   }
 }

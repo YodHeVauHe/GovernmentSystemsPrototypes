@@ -1,9 +1,7 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import yaml from 'js-yaml';
 import type { DbClient } from './db';
-import { exec, many, one, run } from './db';
+import { exec, hasColumn, many, one, run } from './db';
 
 type VersionStatusInput = {
   currentSha?: string;
@@ -76,6 +74,7 @@ export async function ensureApiVersionSchema(db: DbClient) {
       api_id TEXT NOT NULL,
       version TEXT NOT NULL,
       openapi_spec_path TEXT NOT NULL,
+      openapi_spec_text TEXT,
       spec_sha TEXT NOT NULL,
       endpoints_count INTEGER DEFAULT 0,
       openapi_version TEXT,
@@ -88,30 +87,32 @@ export async function ensureApiVersionSchema(db: DbClient) {
     );
   `);
 
-  const apis = await many(db, 'SELECT id, openapi_spec_path FROM apis');
-  const openapiDir = path.join(__dirname, '../openapi');
+  if (!await hasColumn(db, 'api_versions', 'openapi_spec_text')) {
+    await exec(db, 'ALTER TABLE api_versions ADD COLUMN openapi_spec_text TEXT');
+  }
+
+  const apis = await many(db, 'SELECT id, openapi_spec_path, openapi_spec_text FROM apis');
 
   for (const api of apis) {
     const count = await one<{ count: string }>(db, 'SELECT COUNT(*) as count FROM api_versions WHERE api_id = $1', [api.id]);
     if (Number(count?.count || 0) > 0 || !api.openapi_spec_path) continue;
 
-    const specPath = path.join(__dirname, '..', api.openapi_spec_path);
-    if (!fs.existsSync(specPath)) continue;
-
-    const specText = fs.readFileSync(specPath, 'utf8');
+    const specText = api.openapi_spec_text;
+    if (!specText) continue;
     const metadata = parseSpecMetadata(specText);
     const versionId = `${api.id}-${slugifyVersion(metadata.version)}`;
     await run(db, `
       INSERT INTO api_versions (
-        id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
+        id, api_id, version, openapi_spec_path, openapi_spec_text, spec_sha, endpoints_count,
         openapi_version, status, is_current, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       ON CONFLICT (api_id, version) DO NOTHING
     `, [
       versionId,
       api.id,
       metadata.version,
       api.openapi_spec_path,
+      specText,
       getSpecSha(specText),
       metadata.endpointsCount,
       metadata.openapiVersion,
@@ -119,9 +120,5 @@ export async function ensureApiVersionSchema(db: DbClient) {
       true,
       'Backfilled from current catalog spec'
     ]);
-  }
-
-  if (!fs.existsSync(openapiDir)) {
-    fs.mkdirSync(openapiDir, { recursive: true });
   }
 }

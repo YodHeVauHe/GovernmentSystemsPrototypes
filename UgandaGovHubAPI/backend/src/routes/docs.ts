@@ -1,13 +1,11 @@
 import { Router } from 'express';
-import fs from 'fs';
-import path from 'path';
 import yaml from 'js-yaml';
 import { optionalAuth, requireAuth } from '../auth';
 import { canManageApi } from '../access-control';
-import { resolveOpenApiFilePath } from '../admin';
 import { canViewApiDocs, listVisibleDocsApis, resolveDocsVisibility, type DocsVisibility } from '../docs-access';
 import type { DbClient } from '../db';
 import { one, run } from '../db';
+import { getCurrentSpecForApi } from '../openapi-store';
 
 const visibilityValues = new Set<DocsVisibility>(['public', 'authenticated', 'restricted']);
 
@@ -75,18 +73,12 @@ export function docsRouter(db: DbClient) {
         });
       }
 
-      const api = await one(db, 'SELECT openapi_spec_path FROM apis WHERE id = $1', [req.params.id]);
-      if (!api?.openapi_spec_path) {
+      const spec = await getCurrentSpecForApi(db, String(req.params.id));
+      if (!spec) {
         return res.status(404).json({ error: 'OpenAPI document is missing for this API.', code: 'SPEC_NOT_FOUND' });
       }
 
-      const filePath = resolveOpenApiFilePath(path.join(__dirname, '../../openapi'), String(api.openapi_spec_path));
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: 'Spec file missing on disk', code: 'SPEC_NOT_FOUND' });
-      }
-
-      const fileContents = fs.readFileSync(filePath, 'utf8');
-      res.json(yaml.load(fileContents));
+      res.json(yaml.load(spec.openapi_spec_text));
     } catch (err: any) {
       console.error('[docs/:id/spec fetch]', err);
       res.status(500).json({ error: 'Failed to parse API documentation. Please try again.' });

@@ -29,7 +29,8 @@ db.exec(`
     sandbox_available BOOLEAN,
     required_approval_level TEXT,
     contact_office TEXT,
-    openapi_spec_path TEXT
+    openapi_spec_path TEXT,
+    openapi_spec_text TEXT
   );
 
   CREATE TABLE access_requests (
