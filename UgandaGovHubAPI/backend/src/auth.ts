@@ -1,8 +1,9 @@
 import crypto from 'crypto';
-import type Database from 'better-sqlite3';
 import type { NextFunction, Request, Response } from 'express';
 import { ensureRateLimitSchema } from './rate-limit';
 import { decryptAtRest, encryptAtRest } from './crypto-at-rest';
+import type { DbClient } from './db';
+import { exec, hasColumn, one, run } from './db';
 
 export const USER_ROLES = ['developer', 'api_owner', 'admin', 'reviewer'] as const;
 export type UserRole = typeof USER_ROLES[number];
@@ -115,14 +116,12 @@ export function getMfaSecret(user: Pick<AuthUser, 'mfa_secret_encrypted'>) {
   return decryptAtRest(user.mfa_secret_encrypted);
 }
 
-export function setUserMfaSecret(db: Database.Database, userId: string, secret: string) {
-  db.prepare('UPDATE users SET mfa_secret_encrypted = ?, mfa_enabled_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(encryptAtRest(secret), userId);
+export async function setUserMfaSecret(db: DbClient, userId: string, secret: string) {
+  await run(db, 'UPDATE users SET mfa_secret_encrypted = $1, mfa_enabled_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [encryptAtRest(secret), userId]);
 }
 
-export function enableUserMfa(db: Database.Database, userId: string, now = new Date()) {
-  db.prepare('UPDATE users SET mfa_enabled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(now.toISOString(), userId);
+export async function enableUserMfa(db: DbClient, userId: string, now = new Date()) {
+  await run(db, 'UPDATE users SET mfa_enabled_at = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [now.toISOString(), userId]);
 }
 
 export function isUserRole(value: unknown): value is UserRole {
@@ -148,9 +147,9 @@ export function verifyPassword(password: string, storedHash: string) {
   return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
 }
 
-export function ensureAuthSchema(db: Database.Database) {
-  ensureRateLimitSchema(db);
-  db.exec(`
+export async function ensureAuthSchema(db: DbClient) {
+  await ensureRateLimitSchema(db);
+  await exec(db, `
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       full_name TEXT NOT NULL,
@@ -169,8 +168,8 @@ export function ensureAuthSchema(db: Database.Database) {
       rejection_reason TEXT,
       mfa_secret_encrypted TEXT,
       mfa_enabled_at TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
@@ -178,18 +177,16 @@ export function ensureAuthSchema(db: Database.Database) {
       user_id TEXT NOT NULL,
       token_hash TEXT NOT NULL UNIQUE,
       expires_at TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
       revoked_at TEXT,
       FOREIGN KEY (user_id) REFERENCES users (id)
     );
   `);
-  const columns = db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
-  const names = new Set(columns.map(column => column.name));
-  if (!names.has('mfa_secret_encrypted')) db.exec('ALTER TABLE users ADD COLUMN mfa_secret_encrypted TEXT');
-  if (!names.has('mfa_enabled_at')) db.exec('ALTER TABLE users ADD COLUMN mfa_enabled_at TEXT');
+  if (!await hasColumn(db, 'users', 'mfa_secret_encrypted')) await exec(db, 'ALTER TABLE users ADD COLUMN mfa_secret_encrypted TEXT');
+  if (!await hasColumn(db, 'users', 'mfa_enabled_at')) await exec(db, 'ALTER TABLE users ADD COLUMN mfa_enabled_at TEXT');
 }
 
-export function ensureDefaultAdmin(db: Database.Database) {
+export async function ensureDefaultAdmin(db: DbClient) {
   const email = normalizeEmail(process.env.GOVHUB_ADMIN_EMAIL || 'admin@ict.go.ug');
   let password = process.env.GOVHUB_ADMIN_PASSWORD;
 
@@ -203,16 +200,16 @@ export function ensureDefaultAdmin(db: Database.Database) {
     console.warn('[GOVHUB DEMO] Set GOVHUB_ADMIN_PASSWORD to persist this across restarts.');
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  const existing = await one(db, 'SELECT id FROM users WHERE email = $1', [email]);
   if (existing) return;
 
-  db.prepare(`
+  await run(db, `
     INSERT INTO users (
       id, full_name, email, password_hash, account_type, requested_role,
       requested_mda_id, requested_organization, requested_purpose, status,
       role, mda_id, reviewed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+  `, [
     `user-${crypto.randomUUID()}`,
     'Platform Admin',
     email,
@@ -226,7 +223,7 @@ export function ensureDefaultAdmin(db: Database.Database) {
     'admin',
     'mda-05',
     new Date().toISOString()
-  );
+  ]);
 }
 
 type DemoUserSeed = {
@@ -345,21 +342,21 @@ const demoUsers: DemoUserSeed[] = [
   },
 ];
 
-export function ensureDemoUsers(db: Database.Database) {
+export async function ensureDemoUsers(db: DbClient) {
   if (process.env.GOVHUB_DEMO_MODE !== 'true') return;
   for (const demoUser of demoUsers) {
     const email = normalizeEmail(process.env[`${demoUser.envPrefix}_EMAIL`] || demoUser.fallbackEmail);
     const password = process.env[`${demoUser.envPrefix}_PASSWORD`] || demoUser.fallbackPassword;
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const existing = await one(db, 'SELECT id FROM users WHERE email = $1', [email]);
     if (existing) continue;
 
-    db.prepare(`
+    await run(db, `
       INSERT INTO users (
         id, full_name, email, password_hash, account_type, requested_role,
         requested_mda_id, requested_organization, requested_purpose, status,
         role, mda_id, reviewed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    `, [
       `usr_${crypto.randomUUID()}`,
       demoUser.fullName,
       email,
@@ -373,7 +370,7 @@ export function ensureDemoUsers(db: Database.Database) {
       demoUser.role,
       demoUser.mdaId,
       demoUser.status === 'APPROVED' ? new Date().toISOString() : null
-    );
+    ]);
   }
 }
 
@@ -385,30 +382,29 @@ export function sanitizeUser(user: AuthUser): PublicUser {
   };
 }
 
-export function createSession(db: Database.Database, userId: string, now = new Date()) {
+export async function createSession(db: DbClient, userId: string, now = new Date()) {
   const token = `ghb_${crypto.randomBytes(32).toString('hex')}`;
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
-  db.prepare(`
+  await run(db, `
     INSERT INTO sessions (id, user_id, token_hash, expires_at)
-    VALUES (?, ?, ?, ?)
-  `).run(`session-${crypto.randomUUID()}`, userId, hashToken(token), expiresAt);
+    VALUES ($1, $2, $3, $4)
+  `, [`session-${crypto.randomUUID()}`, userId, hashToken(token), expiresAt]);
   return token;
 }
 
-export function revokeSession(db: Database.Database, token: string) {
-  db.prepare('UPDATE sessions SET revoked_at = ? WHERE token_hash = ?')
-    .run(new Date().toISOString(), hashToken(token));
+export async function revokeSession(db: DbClient, token: string) {
+  await run(db, 'UPDATE sessions SET revoked_at = $1 WHERE token_hash = $2', [new Date().toISOString(), hashToken(token)]);
 }
 
-export function getSessionUser(db: Database.Database, token: string, now = new Date()): AuthUser | null {
-  const user = db.prepare(`
+export async function getSessionUser(db: DbClient, token: string, now = new Date()): Promise<AuthUser | null> {
+  const user = await one<AuthUser>(db, `
     SELECT u.*
     FROM sessions s
     JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ?
+    WHERE s.token_hash = $1
       AND s.revoked_at IS NULL
-      AND s.expires_at > ?
-  `).get(hashToken(token), now.toISOString()) as AuthUser | undefined;
+      AND s.expires_at > $2
+  `, [hashToken(token), now.toISOString()]);
   return user || null;
 }
 
@@ -471,10 +467,10 @@ export function canAccess(user: AuthUser | null | undefined, roles?: UserRole[])
   return { allowed: true };
 }
 
-export function requireAuth(db: Database.Database, roles?: UserRole[]) {
-  return (req: Request, res: Response, next: NextFunction) => {
+export function requireAuth(db: DbClient, roles?: UserRole[]) {
+  return async (req: Request, res: Response, next: NextFunction) => {
     const token = getBearerToken(req);
-    const user = token ? getSessionUser(db, token) : null;
+    const user = token ? await getSessionUser(db, token) : null;
     if (!roles) {
       if (!user) {
         return res.status(401).json({ error: 'Authentication is required.', code: 'UNAUTHENTICATED' });
@@ -500,10 +496,10 @@ export function requireAuth(db: Database.Database, roles?: UserRole[]) {
 
 export const requireApprovedAuth = requireAuth;
 
-export function optionalAuth(db: Database.Database) {
-  return (req: Request, _res: Response, next: NextFunction) => {
+export function optionalAuth(db: DbClient) {
+  return async (req: Request, _res: Response, next: NextFunction) => {
     const token = getBearerToken(req);
-    req.user = token ? getSessionUser(db, token) || undefined : undefined;
+    req.user = token ? await getSessionUser(db, token) || undefined : undefined;
     next();
   };
 }

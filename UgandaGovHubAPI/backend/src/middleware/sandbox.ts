@@ -1,17 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import type Database from 'better-sqlite3';
 import { buildRegisteredSandboxMappings, computeApiKeyAccess, computeApiKeyHash, getApiKeyPreview, resolveSandboxApiId, type SandboxApiMapping } from '../admin';
 import { logAuditEvent } from '../audit';
 import { consumeRateLimit } from '../rate-limit';
+import type { Db } from '../db';
+import { many, one } from '../db';
 
-function getDynamicSandboxMappings(db: Database.Database): SandboxApiMapping[] {
-  const rows = db.prepare('SELECT id, sandbox_available FROM apis WHERE sandbox_available = 1').all() as any[];
+async function getDynamicSandboxMappings(db: Db): Promise<SandboxApiMapping[]> {
+  const rows = await many(db, 'SELECT id, sandbox_available FROM apis WHERE sandbox_available = TRUE');
   return buildRegisteredSandboxMappings(rows);
 }
 
-function getApiIdFromPath(db: Database.Database, url: string): string | null {
-  return resolveSandboxApiId(url) || resolveSandboxApiId(url, getDynamicSandboxMappings(db));
+async function getApiIdFromPath(db: Db, url: string): Promise<string | null> {
+  return resolveSandboxApiId(url) || resolveSandboxApiId(url, await getDynamicSandboxMappings(db));
 }
 
 const SANDBOX_RATE_LIMIT = Number(process.env.GOVHUB_SANDBOX_RATE_LIMIT || 100);
@@ -58,8 +59,8 @@ export function normalizeSandboxLogPath(pathWithQuery: string) {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function sandboxMiddleware(db: Database.Database) {
-  return (req: Request, res: Response, next: NextFunction) => {
+export function sandboxMiddleware(db: Db) {
+  return async (req: Request, res: Response, next: NextFunction) => {
     // Always generate a server-side Correlation ID — never trust client input for audit logs
     const correlationId = crypto.randomUUID();
     res.setHeader('X-Correlation-ID', correlationId);
@@ -78,10 +79,10 @@ export function sandboxMiddleware(db: Database.Database) {
 
     // Enforce API Key
     const apiKey = req.headers['x-govhub-api-key'] as string;
-    const apiId = getApiIdFromPath(db, req.originalUrl);
+    const apiId = await getApiIdFromPath(db, req.originalUrl);
 
     if (!apiKey) {
-      logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
+      await logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
         reason: 'The X-GovHub-API-Key header is missing.',
         path: auditPath,
         method: req.method
@@ -90,7 +91,7 @@ export function sandboxMiddleware(db: Database.Database) {
     }
 
     const apiKeyHash = computeApiKeyHash(apiKey);
-    const requestRecord = db.prepare(`
+    const requestRecord = await one(db, `
       SELECT
         r.consumer_mda_id,
         r.consumer_user_id,
@@ -102,11 +103,11 @@ export function sandboxMiddleware(db: Database.Database) {
         r.api_key_revoked_at
       FROM access_requests r
       LEFT JOIN users u ON u.id = r.consumer_user_id
-      WHERE r.api_key_hash = ?
-    `).get(apiKeyHash) as any;
+      WHERE r.api_key_hash = $1
+    `, [apiKeyHash]);
     const accessDecision = computeApiKeyAccess(requestRecord, apiId);
     if (!requestRecord) {
-      const invalidQuota = consumeRateLimit(db, 'sandbox_invalid', req.ip || req.socket.remoteAddress || 'unknown', INVALID_SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
+      const invalidQuota = await consumeRateLimit(db, 'sandbox_invalid', req.ip || req.socket.remoteAddress || 'unknown', INVALID_SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
       res.setHeader('X-RateLimit-Limit', String(INVALID_SANDBOX_RATE_LIMIT));
       res.setHeader('X-RateLimit-Remaining', String(Math.max(0, invalidQuota.remaining)));
       res.setHeader('X-RateLimit-Reset', Math.floor(invalidQuota.resetAt / 1000));
@@ -114,7 +115,7 @@ export function sandboxMiddleware(db: Database.Database) {
         return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'Too many invalid sandbox API key attempts.', 429);
       }
     } else {
-      const quota = consumeRateLimit(db, 'sandbox', apiKeyHash, SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
+      const quota = await consumeRateLimit(db, 'sandbox', apiKeyHash, SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
       res.setHeader('X-RateLimit-Limit', String(SANDBOX_RATE_LIMIT));
       res.setHeader('X-RateLimit-Remaining', String(Math.max(0, quota.remaining)));
       res.setHeader('X-RateLimit-Reset', Math.floor(quota.resetAt / 1000));
@@ -123,7 +124,7 @@ export function sandboxMiddleware(db: Database.Database) {
       }
     }
     if (!accessDecision.allowed && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
-      logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
+      await logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
         reason: accessDecision.message,
         path: auditPath,
         method: req.method,
@@ -134,7 +135,7 @@ export function sandboxMiddleware(db: Database.Database) {
 
     // Enforce endpoint/scope verification
     if (!accessDecision.allowed && accessDecision.code === 'UNAUTHORIZED_ENDPOINT') {
-      logAuditEvent(db, 'SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
+      await logAuditEvent(db, 'SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
         consumer_user_id: requestRecord.consumer_user_id,
         reason: accessDecision.message,
         path: auditPath,
@@ -145,7 +146,7 @@ export function sandboxMiddleware(db: Database.Database) {
     }
 
     // Key is valid and authorized
-    logAuditEvent(db, 'SANDBOX_CALL_ALLOWED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
+    await logAuditEvent(db, 'SANDBOX_CALL_ALLOWED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
       consumer_user_id: requestRecord.consumer_user_id,
       path: auditPath,
       method: req.method

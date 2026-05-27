@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import type Database from 'better-sqlite3';
 import {
   createSession,
   clearSessionCookie,
@@ -29,13 +28,15 @@ import {
   upsertVerificationDocument,
 } from '../account-verification';
 import { clearRateLimit, consumeRateLimit } from '../rate-limit';
+import type { Db, DbClient } from '../db';
+import { many, one, run, tableExists } from '../db';
 
-function getUserByEmail(db: Database.Database, email: string) {
-  return db.prepare('SELECT * FROM users WHERE email = ?').get(normalizeEmail(email)) as any;
+async function getUserByEmail(db: DbClient, email: string) {
+  return one(db, 'SELECT * FROM users WHERE email = $1', [normalizeEmail(email)]);
 }
 
-function getUserById(db: Database.Database, id: string) {
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any;
+async function getUserById(db: DbClient, id: string) {
+  return one(db, 'SELECT * FROM users WHERE id = $1', [id]);
 }
 
 function approvalRequiresMda(accountType: string | null | undefined, role: string) {
@@ -43,20 +44,17 @@ function approvalRequiresMda(accountType: string | null | undefined, role: strin
   return role === 'admin' || role === 'api_owner' || normalizedAccountType === 'government_employee' || normalizedAccountType === 'mda_api_owner';
 }
 
-function mdaExists(db: Database.Database, mdaId: string) {
-  return Boolean(db.prepare('SELECT id FROM mdas WHERE id = ?').get(mdaId));
+async function mdaExists(db: DbClient, mdaId: string) {
+  return Boolean(await one(db, 'SELECT id FROM mdas WHERE id = $1', [mdaId]));
 }
 
-function revokeUserApiKeys(db: Database.Database, userId: string, status: 'REVOKED' | 'DELETED' = 'REVOKED') {
+async function revokeUserApiKeys(db: DbClient, userId: string, status: 'REVOKED' | 'DELETED' = 'REVOKED') {
   // Check table existence before attempting writes so we don't mask real errors
-  const tableExists = (db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='access_requests'"
-  ).get() as any);
-  if (!tableExists) return; // Unit fixtures may omit the access schema
+  if (!await tableExists(db, 'access_requests')) return; // Unit fixtures may omit the access schema
 
   const revokedAt = new Date().toISOString();
   if (status === 'DELETED') {
-    db.prepare(`
+    await run(db, `
       UPDATE access_requests
       SET api_key = NULL,
           api_key_hash = NULL,
@@ -64,19 +62,19 @@ function revokeUserApiKeys(db: Database.Database, userId: string, status: 'REVOK
           api_key_revoked_at = ?,
           api_key_expires_at = NULL,
           consumer_user_id = NULL
-      WHERE consumer_user_id = ?
-    `).run(revokedAt, userId);
+      WHERE consumer_user_id = $2
+    `, [revokedAt, userId]);
     return;
   }
 
-  db.prepare(`
+  await run(db, `
     UPDATE access_requests
     SET api_key_status = 'REVOKED',
-        api_key_revoked_at = ?
-    WHERE consumer_user_id = ?
+        api_key_revoked_at = $1
+    WHERE consumer_user_id = $2
       AND api_key_hash IS NOT NULL
       AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
-  `).run(revokedAt, userId);
+  `, [revokedAt, userId]);
 }
 
 // RFC 5322-simplified: local@domain.tld  (no consecutive dots, no leading/trailing dots)
@@ -115,56 +113,56 @@ function validateSignup(body: any) {
 const LOGIN_LIMIT = Number(process.env.GOVHUB_LOGIN_RATE_LIMIT || 10);
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
-function markVerificationChanged(db: Database.Database, userId: string, currentStatus?: string | null) {
+async function markVerificationChanged(db: DbClient, userId: string, currentStatus?: string | null) {
   if (!['submitted_for_review', 'verified'].includes(currentStatus || '')) return false;
-  db.prepare(`
+  await run(db, `
     UPDATE user_profiles
     SET verification_status = 'needs_more_information',
         review_notes = 'Verification data changed after submission and must be reviewed again.',
         updated_at = CURRENT_TIMESTAMP
-    WHERE user_id = ?
-  `).run(userId);
-  db.prepare(`
+    WHERE user_id = $1
+  `, [userId]);
+  await run(db, `
     UPDATE users
     SET status = 'PENDING_REVIEW', role = NULL, mda_id = NULL, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(userId);
+    WHERE id = $1
+  `, [userId]);
   return true;
 }
 
-function countApprovedAdmins(db: Database.Database) {
-  return (db.prepare("SELECT COUNT(*) as count FROM users WHERE status = 'APPROVED' AND role = 'admin'").get() as { count: number }).count;
+async function countApprovedAdmins(db: DbClient) {
+  return Number((await one<{ count: string }>(db, "SELECT COUNT(*) as count FROM users WHERE status = 'APPROVED' AND role = 'admin'"))?.count || 0);
 }
 
-function canMutateAdminAccount(db: Database.Database, actorId: string, target: any) {
+async function canMutateAdminAccount(db: DbClient, actorId: string, target: any) {
   if (target.id === actorId) {
     return { allowed: false, code: 'CANNOT_CHANGE_SELF', message: 'Administrators cannot change their own account status.' };
   }
-  if (target.status === 'APPROVED' && target.role === 'admin' && countApprovedAdmins(db) <= 1) {
+  if (target.status === 'APPROVED' && target.role === 'admin' && await countApprovedAdmins(db) <= 1) {
     return { allowed: false, code: 'LAST_ADMIN_FORBIDDEN', message: 'At least one approved administrator account must remain active.' };
   }
   return { allowed: true };
 }
 
-export function authRouter(db: Database.Database) {
+export function authRouter(db: Db) {
   const router = Router();
 
-  router.post('/signup', (req, res) => {
+  router.post('/signup', async (req, res) => {
     const error = validateSignup(req.body || {});
     if (error) return res.status(400).json({ error });
 
     const email = normalizeEmail(req.body.email);
-    if (getUserByEmail(db, email)) {
+    if (await getUserByEmail(db, email)) {
       return res.status(409).json({ error: 'An account with this email already exists.' });
     }
 
     const id = `usr_${crypto.randomUUID()}`;
-    db.prepare(`
+    await run(db, `
       INSERT INTO users (
         id, full_name, email, password_hash, account_type, requested_role,
         requested_mda_id, requested_organization, requested_purpose, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_REVIEW')
-    `).run(
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING_REVIEW')
+    `, [
       id,
       req.body.full_name.trim(),
       email,
@@ -174,25 +172,25 @@ export function authRouter(db: Database.Database) {
       req.body.requested_mda_id || null,
       req.body.requested_organization.trim(),
       req.body.requested_purpose.trim()
-    );
-    ensureUserProfile(db, id, req.body.account_type, req.body.requested_organization.trim());
+    ]);
+    await ensureUserProfile(db, id, req.body.account_type, req.body.requested_organization.trim());
 
-    res.status(201).json({ user: sanitizeUser(getUserById(db, id)) });
+    res.status(201).json({ user: sanitizeUser(await getUserById(db, id)) });
   });
 
-  router.post('/login', (req, res) => {
+  router.post('/login', async (req, res) => {
     const { email, password, mfa_code } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
     const normalizedEmail = normalizeEmail(String(email));
     const attemptKey = `${req.ip || 'unknown'}:${normalizedEmail}`;
-    const quota = consumeRateLimit(db, 'login', attemptKey, LOGIN_LIMIT, LOGIN_WINDOW_MS);
+    const quota = await consumeRateLimit(db, 'login', attemptKey, LOGIN_LIMIT, LOGIN_WINDOW_MS);
     if (!quota.allowed) {
       return res.status(429).json({ error: 'Too many login attempts. Try again later.', code: 'LOGIN_RATE_LIMITED' });
     }
 
-    const user = getUserByEmail(db, normalizedEmail);
+    const user = await getUserByEmail(db, normalizedEmail);
     if (!user || !verifyPassword(password, user.password_hash)) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
@@ -209,16 +207,16 @@ export function authRouter(db: Database.Database) {
       }
     }
     // Successful login — clear the rate limit bucket
-    clearRateLimit(db, 'login', attemptKey);
+    await clearRateLimit(db, 'login', attemptKey);
 
-    const token = createSession(db, user.id);
+    const token = await createSession(db, user.id);
     setSessionCookie(res, token);
     res.json({ user: sanitizeUser(user) });
   });
 
-  router.get('/me', (req, res) => {
+  router.get('/me', async (req, res) => {
     const token = getBearerToken(req);
-    const user = token ? getSessionUser(db, token) : null;
+    const user = token ? await getSessionUser(db, token) : null;
     if (!user) {
       return res.status(401).json({ error: 'Authentication is required.' });
     }
@@ -226,15 +224,15 @@ export function authRouter(db: Database.Database) {
     res.json({ user: sanitizeUser(user) });
   });
 
-  router.post('/logout', (req, res) => {
+  router.post('/logout', async (req, res) => {
     const token = getBearerToken(req);
-    if (token) revokeSession(db, token);
+    if (token) await revokeSession(db, token);
     clearSessionCookie(res);
     res.json({ success: true });
   });
 
-  router.post('/mfa/setup', requireAuth(db), (req, res) => {
-    const user = getUserById(db, req.user!.id);
+  router.post('/mfa/setup', requireAuth(db), async (req, res) => {
+    const user = await getUserById(db, req.user!.id);
     if (user.mfa_enabled_at) {
       return res.status(409).json({
         error: 'MFA is already enabled. Disable MFA before starting a new setup.',
@@ -242,7 +240,7 @@ export function authRouter(db: Database.Database) {
       });
     }
     const secret = generateTotpSecret();
-    setUserMfaSecret(db, req.user!.id, secret);
+    await setUserMfaSecret(db, req.user!.id, secret);
     const issuer = encodeURIComponent('Uganda GovHub API');
     const label = encodeURIComponent(`${req.user!.email}`);
     res.json({
@@ -251,8 +249,8 @@ export function authRouter(db: Database.Database) {
     });
   });
 
-  router.post('/mfa/enable', requireAuth(db), (req, res) => {
-    const user = getUserById(db, req.user!.id);
+  router.post('/mfa/enable', requireAuth(db), async (req, res) => {
+    const user = await getUserById(db, req.user!.id);
     const secret = getMfaSecret(user);
     if (!secret) {
       return res.status(400).json({ error: 'Start MFA setup before enabling MFA.', code: 'MFA_SETUP_REQUIRED' });
@@ -260,13 +258,13 @@ export function authRouter(db: Database.Database) {
     if (!verifyTotpCode(secret, String(req.body?.code || ''))) {
       return res.status(400).json({ error: 'Invalid multi-factor authentication code.', code: 'INVALID_MFA_CODE' });
     }
-    enableUserMfa(db, req.user!.id);
-    res.json({ user: sanitizeUser(getUserById(db, req.user!.id)) });
+    await enableUserMfa(db, req.user!.id);
+    res.json({ user: sanitizeUser(await getUserById(db, req.user!.id)) });
   });
 
-  router.post('/mfa/disable', requireAuth(db), (req, res) => {
+  router.post('/mfa/disable', requireAuth(db), async (req, res) => {
     const { password, code } = req.body || {};
-    const user = getUserById(db, req.user!.id);
+    const user = await getUserById(db, req.user!.id);
     const secret = getMfaSecret(user);
     if (!password || !verifyPassword(password, user.password_hash)) {
       return res.status(401).json({ error: 'Password confirmation failed.', code: 'INVALID_PASSWORD' });
@@ -274,17 +272,16 @@ export function authRouter(db: Database.Database) {
     if (user.mfa_enabled_at && (!secret || !verifyTotpCode(secret, String(code || '')))) {
       return res.status(400).json({ error: 'Invalid multi-factor authentication code.', code: 'INVALID_MFA_CODE' });
     }
-    db.prepare('UPDATE users SET mfa_enabled_at = NULL, mfa_secret_encrypted = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .run(req.user!.id);
-    res.json({ user: sanitizeUser(getUserById(db, req.user!.id)) });
+    await run(db, 'UPDATE users SET mfa_enabled_at = NULL, mfa_secret_encrypted = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [req.user!.id]);
+    res.json({ user: sanitizeUser(await getUserById(db, req.user!.id)) });
   });
 
-  router.get('/account', requireAuth(db), (req, res) => {
-    const snapshot = getAccountSnapshot(db, req.user!.id);
+  router.get('/account', requireAuth(db), async (req, res) => {
+    const snapshot = await getAccountSnapshot(db, req.user!.id);
     res.json({ account: snapshot });
   });
 
-  router.patch('/account/profile', requireAuth(db), (req, res) => {
+  router.patch('/account/profile', requireAuth(db), async (req, res) => {
     const allowed = [
       'account_category',
       'nin',
@@ -302,7 +299,7 @@ export function authRouter(db: Database.Database) {
       'supervisor_name',
       'supervisor_email',
     ];
-    const current = getAccountSnapshot(db, req.user!.id);
+    const current = await getAccountSnapshot(db, req.user!.id);
     if (!current) return res.status(404).json({ error: 'Account not found.' });
 
     const next: Record<string, any> = {};
@@ -315,19 +312,19 @@ export function authRouter(db: Database.Database) {
     }
 
     const stored = encryptProfileForStorage(next);
-    const transaction = db.transaction(() => {
-      db.prepare(`
+    await db.transaction(async client => {
+      await run(client, `
         UPDATE user_profiles SET
-          account_category = ?, nin = ?, national_id_number = ?, contact_phone = ?, address = ?,
-          organization_name = ?, organization_type = ?, ursb_number = ?, brn = ?, tin = ?,
-          staff_id = ?, department = ?, job_title = ?, supervisor_name = ?, supervisor_email = ?,
+          account_category = $1, nin = $2, national_id_number = $3, contact_phone = $4, address = $5,
+          organization_name = $6, organization_type = $7, ursb_number = $8, brn = $9, tin = $10,
+          staff_id = $11, department = $12, job_title = $13, supervisor_name = $14, supervisor_email = $15,
           verification_status = CASE
             WHEN verification_status IN ('submitted_for_review', 'verified') THEN verification_status
             ELSE 'draft_profile'
           END,
           updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?
-      `).run(
+        WHERE user_id = $16
+      `, [
         next.account_category,
         stored.nin,
         stored.national_id_number,
@@ -344,83 +341,81 @@ export function authRouter(db: Database.Database) {
         stored.supervisor_name,
         stored.supervisor_email,
         req.user!.id
-      );
-      if (markVerificationChanged(db, req.user!.id, current.profile.verification_status)) {
-        revokeUserApiKeys(db, req.user!.id);
+      ]);
+      if (await markVerificationChanged(client, req.user!.id, current.profile.verification_status)) {
+        await revokeUserApiKeys(client, req.user!.id);
       }
     });
-    transaction();
 
-    res.json({ account: getAccountSnapshot(db, req.user!.id) });
+    res.json({ account: await getAccountSnapshot(db, req.user!.id) });
   });
 
-  router.post('/account/documents', requireAuth(db), (req, res) => {
+  router.post('/account/documents', requireAuth(db), async (req, res) => {
     const { type, label, file_name, mime_type, storage_ref } = req.body || {};
     if (!type || !label || !file_name || !mime_type) {
       return res.status(400).json({ error: 'type, label, file_name, and mime_type are required.' });
     }
-    const current = getAccountSnapshot(db, req.user!.id);
-    const transaction = db.transaction(() => {
-      upsertVerificationDocument(db, req.user!.id, { type, label, file_name, mime_type, storage_ref });
-      if (markVerificationChanged(db, req.user!.id, current?.profile.verification_status)) {
-        revokeUserApiKeys(db, req.user!.id);
+    const current = await getAccountSnapshot(db, req.user!.id);
+    await db.transaction(async client => {
+      await upsertVerificationDocument(client, req.user!.id, { type, label, file_name, mime_type, storage_ref });
+      if (await markVerificationChanged(client, req.user!.id, current?.profile.verification_status)) {
+        await revokeUserApiKeys(client, req.user!.id);
       }
     });
-    transaction();
-    res.status(201).json({ account: getAccountSnapshot(db, req.user!.id) });
+    res.status(201).json({ account: await getAccountSnapshot(db, req.user!.id) });
   });
 
-  router.post('/account/submit-verification', requireAuth(db), (req, res) => {
-    const snapshot = getAccountSnapshot(db, req.user!.id);
+  router.post('/account/submit-verification', requireAuth(db), async (req, res) => {
+    const snapshot = await getAccountSnapshot(db, req.user!.id);
     if (!snapshot) return res.status(404).json({ error: 'Account not found.' });
     const decision = canSubmitVerification(snapshot);
     if (!decision.allowed) {
       return res.status(400).json({ error: decision.message });
     }
-    db.prepare(`
+    await run(db, `
       UPDATE user_profiles
-      SET verification_status = 'submitted_for_review', submitted_at = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = ?
-    `).run(new Date().toISOString(), req.user!.id);
-    res.json({ account: getAccountSnapshot(db, req.user!.id) });
+      SET verification_status = 'submitted_for_review', submitted_at = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = $2
+    `, [new Date().toISOString(), req.user!.id]);
+    res.json({ account: await getAccountSnapshot(db, req.user!.id) });
   });
 
   return router;
 }
 
-export function adminUsersRouter(db: Database.Database) {
+export function adminUsersRouter(db: Db) {
   const router = Router();
 
   router.use(requireAuth(db, ['admin']));
 
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const status = typeof req.query.status === 'string' ? req.query.status : null;
     const users = status
-      ? db.prepare('SELECT * FROM users WHERE status = ? ORDER BY created_at DESC').all(status)
-      : db.prepare('SELECT * FROM users ORDER BY created_at DESC').all();
+      ? await many(db, 'SELECT * FROM users WHERE status = $1 ORDER BY created_at DESC', [status])
+      : await many(db, 'SELECT * FROM users ORDER BY created_at DESC');
     res.json({
-      users: users.map(user => ({
+      users: await Promise.all(users.map(async user => ({
         ...sanitizeUser(user as any),
-        account: getAccountSnapshot(db, (user as any).id),
-      })),
+        account: await getAccountSnapshot(db, (user as any).id),
+      }))),
     });
   });
 
-  router.post('/:id/approve', (req, res) => {
+  router.post('/:id/approve', async (req, res) => {
     const { role, mda_id } = req.body || {};
     if (!isUserRole(role)) {
       return res.status(400).json({ error: 'A valid role is required.' });
     }
 
-    const existing = getUserById(db, req.params.id);
+    const existing = await getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
 
-    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    const mutationDecision = await canMutateAdminAccount(db, req.user!.id, existing);
     if (!mutationDecision.allowed) {
       return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
     }
 
-    const snapshot = getAccountSnapshot(db, req.params.id);
+    const snapshot = await getAccountSnapshot(db, req.params.id);
     if (!snapshot || snapshot.profile.verification_status !== 'submitted_for_review') {
       return res.status(400).json({ error: 'User verification must be submitted for review before approval.', code: 'VERIFICATION_NOT_SUBMITTED' });
     }
@@ -439,33 +434,31 @@ export function adminUsersRouter(db: Database.Database) {
     if (needsMda && (!approvedMdaId || typeof approvedMdaId !== 'string')) {
       return res.status(400).json({ error: 'mda_id is required for this account type and role.' });
     }
-    if (approvedMdaId && !mdaExists(db, approvedMdaId)) {
+    if (approvedMdaId && !(await mdaExists(db, approvedMdaId))) {
       return res.status(400).json({ error: 'mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
     }
 
     // Wrap MDA re-check and user update in a single transaction to prevent race conditions
-    const approveUser = db.transaction(() => {
-      if (approvedMdaId && !mdaExists(db, approvedMdaId)) {
-        throw Object.assign(new Error('mda_id must reference an existing MDA.'), { code: 'MDA_NOT_FOUND' });
-      }
-      db.prepare(`
-        UPDATE users
-        SET status = 'APPROVED', role = ?, mda_id = ?, reviewed_by = ?, reviewed_at = ?,
-            rejection_reason = NULL, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(role, approvedMdaId, req.user!.id, new Date().toISOString(), req.params.id);
-      db.prepare(`
-        UPDATE user_profiles
-        SET verification_status = 'verified',
-            account_category = ?,
-            review_notes = NULL,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?
-      `).run(role === 'admin' ? 'admin' : snapshot.profile.account_category, req.params.id);
-    });
-
     try {
-      approveUser();
+      await db.transaction(async client => {
+        if (approvedMdaId && !(await mdaExists(client, approvedMdaId))) {
+          throw Object.assign(new Error('mda_id must reference an existing MDA.'), { code: 'MDA_NOT_FOUND' });
+        }
+        await run(client, `
+          UPDATE users
+          SET status = 'APPROVED', role = $1, mda_id = $2, reviewed_by = $3, reviewed_at = $4,
+              rejection_reason = NULL, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $5
+        `, [role, approvedMdaId, req.user!.id, new Date().toISOString(), req.params.id]);
+        await run(client, `
+          UPDATE user_profiles
+          SET verification_status = 'verified',
+              account_category = $1,
+              review_notes = NULL,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE user_id = $2
+        `, [role === 'admin' ? 'admin' : snapshot.profile.account_category, req.params.id]);
+      });
     } catch (err: any) {
       if (err?.code === 'MDA_NOT_FOUND') {
         return res.status(400).json({ error: err.message, code: err.code });
@@ -473,90 +466,87 @@ export function adminUsersRouter(db: Database.Database) {
       throw err;
     }
 
-    res.json({ user: sanitizeUser(getUserById(db, req.params.id)) });
+    res.json({ user: sanitizeUser(await getUserById(db, req.params.id)) });
   });
 
-  router.post('/:id/needs-more-information', (req, res) => {
+  router.post('/:id/needs-more-information', async (req, res) => {
     const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
-    const existing = getUserById(db, req.params.id);
+    const existing = await getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
-    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    const mutationDecision = await canMutateAdminAccount(db, req.user!.id, existing);
     if (!mutationDecision.allowed) {
       return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
     }
 
-    db.prepare(`
+    await run(db, `
       UPDATE user_profiles
-      SET verification_status = 'needs_more_information', review_notes = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = ?
-    `).run(notes || 'Additional verification information is required.', req.params.id);
+      SET verification_status = 'needs_more_information', review_notes = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = $2
+    `, [notes || 'Additional verification information is required.', req.params.id]);
 
-    res.json({ account: getAccountSnapshot(db, req.params.id) });
+    res.json({ account: await getAccountSnapshot(db, req.params.id) });
   });
 
-  router.post('/:id/reject', (req, res) => {
+  router.post('/:id/reject', async (req, res) => {
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
-    const existing = getUserById(db, req.params.id);
+    const existing = await getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
-    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    const mutationDecision = await canMutateAdminAccount(db, req.user!.id, existing);
     if (!mutationDecision.allowed) {
       return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
     }
 
-    db.prepare(`
+    await run(db, `
       UPDATE users
-      SET status = 'REJECTED', role = NULL, mda_id = NULL, reviewed_by = ?,
-          reviewed_at = ?, rejection_reason = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(req.user!.id, new Date().toISOString(), reason || 'Application rejected by administrator.', req.params.id);
-    db.prepare("UPDATE user_profiles SET verification_status = 'rejected', review_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?")
-      .run(reason || 'Application rejected by administrator.', req.params.id);
-    revokeUserApiKeys(db, req.params.id);
+      SET status = 'REJECTED', role = NULL, mda_id = NULL, reviewed_by = $1,
+          reviewed_at = $2, rejection_reason = $3, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+    `, [req.user!.id, new Date().toISOString(), reason || 'Application rejected by administrator.', req.params.id]);
+    await run(db, "UPDATE user_profiles SET verification_status = 'rejected', review_notes = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2", [reason || 'Application rejected by administrator.', req.params.id]);
+    await revokeUserApiKeys(db, req.params.id);
 
-    res.json({ user: sanitizeUser(getUserById(db, req.params.id)) });
+    res.json({ user: sanitizeUser(await getUserById(db, req.params.id)) });
   });
 
-  router.post('/:id/suspend', (req, res) => {
-    const existing = getUserById(db, req.params.id);
+  router.post('/:id/suspend', async (req, res) => {
+    const existing = await getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
-    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    const mutationDecision = await canMutateAdminAccount(db, req.user!.id, existing);
     if (!mutationDecision.allowed) {
       return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
     }
 
-    db.prepare(`
+    await run(db, `
       UPDATE users
-      SET status = 'SUSPENDED', reviewed_by = ?, reviewed_at = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(req.user!.id, new Date().toISOString(), req.params.id);
-    db.prepare("UPDATE user_profiles SET verification_status = 'suspended', updated_at = CURRENT_TIMESTAMP WHERE user_id = ?").run(req.params.id);
-    revokeUserApiKeys(db, req.params.id);
+      SET status = 'SUSPENDED', reviewed_by = $1, reviewed_at = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+    `, [req.user!.id, new Date().toISOString(), req.params.id]);
+    await run(db, "UPDATE user_profiles SET verification_status = 'suspended', updated_at = CURRENT_TIMESTAMP WHERE user_id = $1", [req.params.id]);
+    await revokeUserApiKeys(db, req.params.id);
 
-    res.json({ user: sanitizeUser(getUserById(db, req.params.id)) });
+    res.json({ user: sanitizeUser(await getUserById(db, req.params.id)) });
   });
 
-  router.delete('/:id', (req, res) => {
-    const existing = getUserById(db, req.params.id);
+  router.delete('/:id', async (req, res) => {
+    const existing = await getUserById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'User not found.' });
     if (existing.id === req.user!.id) {
       return res.status(400).json({ error: 'Administrators cannot delete their own account.', code: 'CANNOT_DELETE_SELF' });
     }
-    const mutationDecision = canMutateAdminAccount(db, req.user!.id, existing);
+    const mutationDecision = await canMutateAdminAccount(db, req.user!.id, existing);
     if (!mutationDecision.allowed) {
       return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
     }
 
     const deletedUser = sanitizeUser(existing);
-    const deleteAccount = db.transaction(() => {
-      db.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(new Date().toISOString(), existing.id);
-      revokeUserApiKeys(db, existing.id, 'DELETED');
-      db.prepare('DELETE FROM verification_documents WHERE user_id = ?').run(existing.id);
-      db.prepare('DELETE FROM user_profiles WHERE user_id = ?').run(existing.id);
-      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(existing.id);
-      db.prepare('DELETE FROM users WHERE id = ?').run(existing.id);
+    await db.transaction(async client => {
+      await run(client, 'UPDATE sessions SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL', [new Date().toISOString(), existing.id]);
+      await revokeUserApiKeys(client, existing.id, 'DELETED');
+      await run(client, 'DELETE FROM verification_documents WHERE user_id = $1', [existing.id]);
+      await run(client, 'DELETE FROM user_profiles WHERE user_id = $1', [existing.id]);
+      await run(client, 'DELETE FROM sessions WHERE user_id = $1', [existing.id]);
+      await run(client, 'DELETE FROM users WHERE id = $1', [existing.id]);
     });
-
-    deleteAccount();
     res.json({ deleted: true, user: deletedUser });
   });
 

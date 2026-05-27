@@ -1,7 +1,8 @@
-import type Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import type { DbClient } from './db';
+import { exec, hasColumn, many, run } from './db';
 
 export type ApiKeyRecord = {
   status: string;
@@ -111,8 +112,8 @@ export function resolveOpenApiFilePath(openapiRoot: string, specPath: string) {
   return absolutePath;
 }
 
-export function ensureAdminSchema(db: Database.Database) {
-  db.exec(`
+export async function ensureAdminSchema(db: DbClient) {
+  await exec(db, `
     CREATE TABLE IF NOT EXISTS access_requests (
       id TEXT PRIMARY KEY,
       consumer_mda_id TEXT,
@@ -131,7 +132,7 @@ export function ensureAdminSchema(db: Database.Database) {
       volume_tier TEXT,
       legal_basis TEXT,
       environment TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (consumer_mda_id) REFERENCES mdas (id),
       FOREIGN KEY (consumer_user_id) REFERENCES users (id),
       FOREIGN KEY (api_id) REFERENCES apis (id)
@@ -145,91 +146,44 @@ export function ensureAdminSchema(db: Database.Database) {
       api_id TEXT,
       request_id TEXT,
       details TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
-  const accessColumns = db.prepare('PRAGMA table_info(access_requests)').all() as Array<{ name: string }>;
-  const consumerMdaColumn = accessColumns.find(column => column.name === 'consumer_mda_id') as ({ name: string; notnull?: number } | undefined);
-  if (consumerMdaColumn?.notnull) {
-    db.exec(`
-      CREATE TABLE access_requests_next (
-        id TEXT PRIMARY KEY,
-        consumer_mda_id TEXT,
-        consumer_user_id TEXT,
-        consumer_type TEXT DEFAULT 'mda',
-        api_id TEXT NOT NULL,
-        purpose TEXT,
-        status TEXT,
-        api_key TEXT,
-        api_key_hash TEXT,
-        api_key_preview TEXT,
-        api_key_status TEXT DEFAULT 'ACTIVE',
-        api_key_expires_at TEXT,
-        api_key_revoked_at TEXT,
-        requested_fields TEXT,
-        volume_tier TEXT,
-        legal_basis TEXT,
-        environment TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (consumer_mda_id) REFERENCES mdas (id),
-        FOREIGN KEY (consumer_user_id) REFERENCES users (id),
-        FOREIGN KEY (api_id) REFERENCES apis (id)
-      );
-
-      INSERT INTO access_requests_next (
-        id, consumer_mda_id, consumer_user_id, consumer_type, api_id, purpose,
-        status, api_key, api_key_hash, api_key_preview, api_key_status, api_key_expires_at, api_key_revoked_at,
-        requested_fields, volume_tier, legal_basis, environment, created_at
-      )
-      SELECT
-        id, consumer_mda_id, NULL, 'mda', api_id, purpose,
-        status, api_key, NULL, NULL, api_key_status, api_key_expires_at, api_key_revoked_at,
-        requested_fields, volume_tier, legal_basis, environment, created_at
-      FROM access_requests;
-
-      DROP TABLE access_requests;
-      ALTER TABLE access_requests_next RENAME TO access_requests;
-    `);
-  }
-
-  const refreshedAccessColumns = db.prepare('PRAGMA table_info(access_requests)').all() as Array<{ name: string }>;
-  const names = new Set(refreshedAccessColumns.map(column => column.name));
-  const addColumn = (name: string, definition: string) => {
-    if (!names.has(name)) {
-      db.exec(`ALTER TABLE access_requests ADD COLUMN ${name} ${definition}`);
+  const addColumn = async (name: string, definition: string) => {
+    if (!await hasColumn(db, 'access_requests', name)) {
+      await exec(db, `ALTER TABLE access_requests ADD COLUMN ${name} ${definition}`);
     }
   };
 
-  addColumn('api_key_status', "TEXT DEFAULT 'ACTIVE'");
-  addColumn('api_key_hash', 'TEXT');
-  addColumn('api_key_preview', 'TEXT');
-  addColumn('api_key_expires_at', 'TEXT');
-  addColumn('api_key_revoked_at', 'TEXT');
-  addColumn('consumer_user_id', 'TEXT');
-  addColumn('consumer_type', "TEXT DEFAULT 'mda'");
+  await addColumn('api_key_status', "TEXT DEFAULT 'ACTIVE'");
+  await addColumn('api_key_hash', 'TEXT');
+  await addColumn('api_key_preview', 'TEXT');
+  await addColumn('api_key_expires_at', 'TEXT');
+  await addColumn('api_key_revoked_at', 'TEXT');
+  await addColumn('consumer_user_id', 'TEXT');
+  await addColumn('consumer_type', "TEXT DEFAULT 'mda'");
 
-  const plaintextKeys = db.prepare('SELECT id, api_key FROM access_requests WHERE api_key IS NOT NULL AND api_key_hash IS NULL').all() as Array<{ id: string; api_key: string }>;
-  const migrateKey = db.prepare('UPDATE access_requests SET api_key_hash = ?, api_key_preview = ?, api_key = NULL WHERE id = ?');
+  const plaintextKeys = await many<{ id: string; api_key: string }>(db, 'SELECT id, api_key FROM access_requests WHERE api_key IS NOT NULL AND api_key_hash IS NULL');
   for (const row of plaintextKeys) {
-    migrateKey.run(computeApiKeyHash(row.api_key), getApiKeyPreview(row.api_key), row.id);
+    await run(db, 'UPDATE access_requests SET api_key_hash = $1, api_key_preview = $2, api_key = NULL WHERE id = $3', [
+      computeApiKeyHash(row.api_key),
+      getApiKeyPreview(row.api_key),
+      row.id,
+    ]);
   }
 
-  const auditColumns = db.prepare('PRAGMA table_info(audit_logs)').all() as Array<{ name: string }>;
-  if (auditColumns.length > 0) {
-    const auditNames = new Set(auditColumns.map(column => column.name));
-    const addAuditColumn = (name: string, definition: string) => {
-      if (!auditNames.has(name)) {
-        db.exec(`ALTER TABLE audit_logs ADD COLUMN ${name} ${definition}`);
-      }
-    };
-    addAuditColumn('mda_id', 'TEXT');
-    addAuditColumn('api_id', 'TEXT');
-    addAuditColumn('request_id', 'TEXT');
-    addAuditColumn('consumer_user_id', 'TEXT');
-    addAuditColumn('details', 'TEXT');
-    addAuditColumn('created_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
-  }
+  const addAuditColumn = async (name: string, definition: string) => {
+    if (!await hasColumn(db, 'audit_logs', name)) {
+      await exec(db, `ALTER TABLE audit_logs ADD COLUMN ${name} ${definition}`);
+    }
+  };
+  await addAuditColumn('mda_id', 'TEXT');
+  await addAuditColumn('api_id', 'TEXT');
+  await addAuditColumn('request_id', 'TEXT');
+  await addAuditColumn('consumer_user_id', 'TEXT');
+  await addAuditColumn('details', 'TEXT');
+  await addAuditColumn('created_at', 'TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP');
 }
 
 export function removeExistingSpecFiles(specPaths: Array<string | null | undefined>) {

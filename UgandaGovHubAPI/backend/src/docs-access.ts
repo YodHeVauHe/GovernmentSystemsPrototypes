@@ -1,5 +1,6 @@
-import type Database from 'better-sqlite3';
 import type { AuthUser } from './auth';
+import type { DbClient } from './db';
+import { exec, hasColumn, many, one } from './db';
 
 export type DocsVisibility = 'public' | 'authenticated' | 'restricted';
 
@@ -16,11 +17,9 @@ export type DocsDecision =
   | { allowed: true; visibility: DocsVisibility }
   | { allowed: false; code: 'NOT_FOUND' | 'UNAUTHENTICATED' | 'ACCOUNT_NOT_APPROVED' | 'FORBIDDEN'; message: string; visibility?: DocsVisibility };
 
-export function ensureDocsSchema(db: Database.Database) {
-  const columns = db.prepare('PRAGMA table_info(apis)').all() as Array<{ name: string }>;
-  const names = new Set(columns.map(column => column.name));
-  if (!names.has('docs_visibility')) {
-    db.exec("ALTER TABLE apis ADD COLUMN docs_visibility TEXT");
+export async function ensureDocsSchema(db: DbClient) {
+  if (!await hasColumn(db, 'apis', 'docs_visibility')) {
+    await exec(db, 'ALTER TABLE apis ADD COLUMN docs_visibility TEXT');
   }
 }
 
@@ -36,43 +35,43 @@ export function resolveDocsVisibility(api: Pick<ApiVisibilityRow, 'docs_visibili
   return 'authenticated';
 }
 
-function hasApprovedConsumerAccess(db: Database.Database, user: DocsAccessUser, apiId: string) {
+async function hasApprovedConsumerAccess(db: DbClient, user: DocsAccessUser, apiId: string) {
   const now = new Date().toISOString();
   // Use two separate parameterised queries — no dynamic column name interpolation.
   if (user.mda_id) {
     return Boolean(
-      db.prepare(`
+      await one(db, `
         SELECT id FROM access_requests
-        WHERE consumer_mda_id = ?
-          AND api_id = ?
+        WHERE consumer_mda_id = $1
+          AND api_id = $2
           AND status = 'APPROVED'
           AND (api_key_hash IS NOT NULL OR api_key IS NOT NULL)
           AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
-          AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
+          AND (api_key_expires_at IS NULL OR api_key_expires_at > $3)
         LIMIT 1
-      `).get(user.mda_id, apiId, now)
+      `, [user.mda_id, apiId, now])
     );
   }
   return Boolean(
-    db.prepare(`
+    await one(db, `
       SELECT id FROM access_requests
-      WHERE consumer_user_id = ?
-        AND api_id = ?
+      WHERE consumer_user_id = $1
+        AND api_id = $2
         AND status = 'APPROVED'
         AND (api_key_hash IS NOT NULL OR api_key IS NOT NULL)
         AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
-        AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
+        AND (api_key_expires_at IS NULL OR api_key_expires_at > $3)
       LIMIT 1
-    `).get(user.id, apiId, now)
+    `, [user.id, apiId, now])
   );
 }
 
-export function canViewApiDocs(db: Database.Database, user: DocsAccessUser | null | undefined, apiId: string): DocsDecision {
-  const api = db.prepare(`
+export async function canViewApiDocs(db: DbClient, user: DocsAccessUser | null | undefined, apiId: string): Promise<DocsDecision> {
+  const api = await one<ApiVisibilityRow>(db, `
     SELECT id, owning_mda_id, docs_visibility, security_classification
     FROM apis
-    WHERE id = ?
-  `).get(apiId) as ApiVisibilityRow | undefined;
+    WHERE id = $1
+  `, [apiId]);
 
   if (!api) {
     return { allowed: false, code: 'NOT_FOUND', message: 'API documentation was not found.' };
@@ -96,7 +95,7 @@ export function canViewApiDocs(db: Database.Database, user: DocsAccessUser | nul
 
   if (user.role === 'admin' || user.role === 'reviewer') return { allowed: true, visibility };
   if (user.role === 'api_owner' && user.mda_id && user.mda_id === api.owning_mda_id) return { allowed: true, visibility };
-  if (user.role === 'developer' && hasApprovedConsumerAccess(db, user, apiId)) return { allowed: true, visibility };
+  if (user.role === 'developer' && await hasApprovedConsumerAccess(db, user, apiId)) return { allowed: true, visibility };
 
   return {
     allowed: false,
@@ -112,18 +111,18 @@ function normalizedOpenApiPath(assetPath: string) {
   return normalized;
 }
 
-export function canDownloadOpenApiAsset(db: Database.Database, user: DocsAccessUser | null | undefined, assetPath: string): DocsDecision {
+export async function canDownloadOpenApiAsset(db: DbClient, user: DocsAccessUser | null | undefined, assetPath: string): Promise<DocsDecision> {
   const openapiPath = normalizedOpenApiPath(assetPath);
   if (!openapiPath) {
     return { allowed: false, code: 'NOT_FOUND', message: 'API documentation was not found.' };
   }
 
-  let api = db.prepare('SELECT id FROM apis WHERE openapi_spec_path = ?').get(openapiPath) as { id: string } | undefined;
+  let api: { id: string } | undefined = await one<{ id: string }>(db, 'SELECT id FROM apis WHERE openapi_spec_path = $1', [openapiPath]);
   if (!api) {
     try {
-      api = db.prepare('SELECT api_id as id FROM api_versions WHERE openapi_spec_path = ?').get(openapiPath) as { id: string } | undefined;
+      api = await one<{ id: string }>(db, 'SELECT api_id as id FROM api_versions WHERE openapi_spec_path = $1', [openapiPath]);
     } catch {
-      api = undefined;
+      api = undefined as { id: string } | undefined;
     }
   }
   if (!api) {
@@ -134,11 +133,11 @@ export function canDownloadOpenApiAsset(db: Database.Database, user: DocsAccessU
 
 export type DocsApiListItem = ApiVisibilityRow & Record<string, unknown> & { docs_visibility: DocsVisibility };
 
-export function listVisibleDocsApis(db: Database.Database, user: DocsAccessUser | null | undefined): DocsApiListItem[] {
+export async function listVisibleDocsApis(db: DbClient, user: DocsAccessUser | null | undefined): Promise<DocsApiListItem[]> {
   // Resolve effective visibility in SQL to avoid N+1 queries.
   // The rule mirrors resolveDocsVisibility():
   //   explicit docs_visibility wins; else derive from security_classification.
-  const allApis = db.prepare(`
+  const allApis = await many<ApiVisibilityRow & Record<string, unknown> & { effective_visibility: DocsVisibility }>(db, `
     SELECT
       id, name, owning_mda_id, sector, description, lifecycle_status,
       sensitivity_level, sandbox_available, openapi_spec_path, required_approval_level,
@@ -152,31 +151,35 @@ export function listVisibleDocsApis(db: Database.Database, user: DocsAccessUser 
       END AS effective_visibility
     FROM apis
     ORDER BY name ASC
-  `).all() as Array<ApiVisibilityRow & Record<string, unknown> & { effective_visibility: DocsVisibility }>;
+  `);
 
-  return allApis
-    .filter(api => {
+  const visible: DocsApiListItem[] = [];
+  for (const api of allApis) {
       const vis = api.effective_visibility;
+      let allowed = false;
 
       // Public: always visible
-      if (vis === 'public') return true;
+      if (vis === 'public') allowed = true;
 
       // Non-public requires authentication
-      if (!user) return false;
-      if (user.status !== 'APPROVED') return false;
+      if (!allowed && user && user.status === 'APPROVED') {
+        // Authenticated: any approved user
+        if (vis === 'authenticated') allowed = true;
 
-      // Authenticated: any approved user
-      if (vis === 'authenticated') return true;
+        // Restricted: admin, reviewer, owning api_owner, or developer with approved access
+        if (vis === 'restricted') {
+          if (user.role === 'admin' || user.role === 'reviewer') allowed = true;
+          if (user.role === 'api_owner' && user.mda_id && user.mda_id === api.owning_mda_id) allowed = true;
+          if (user.role === 'developer') allowed = await hasApprovedConsumerAccess(db, user, String(api.id));
+        }
+      }
 
-      // Restricted: admin, reviewer, owning api_owner, or developer with approved access
-      if (user.role === 'admin' || user.role === 'reviewer') return true;
-      if (user.role === 'api_owner' && user.mda_id && user.mda_id === api.owning_mda_id) return true;
-      if (user.role === 'developer') return hasApprovedConsumerAccess(db, user, String(api.id));
-
-      return false;
-    })
-    .map(api => ({
-      ...api,
-      docs_visibility: resolveDocsVisibility(api),
-    }));
+      if (allowed) {
+        visible.push({
+          ...api,
+          docs_visibility: resolveDocsVisibility(api),
+        });
+      }
+    }
+  return visible;
 }

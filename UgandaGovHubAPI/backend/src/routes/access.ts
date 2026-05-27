@@ -1,16 +1,17 @@
 import { Router } from 'express';
-import type Database from 'better-sqlite3';
 import { logAuditEvent } from '../audit';
 import { generateApiKey, generatePublicId } from '../ids';
 import { computeApiKeyHash, getApiKeyPreview, normalizeExpiryInput } from '../admin';
 import { requireAuth } from '../auth';
 import { buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
+import type { DbClient } from '../db';
+import { many, one, run } from '../db';
 
-export function accessRouter(db: Database.Database) {
+export function accessRouter(db: DbClient) {
 const router = Router();
 
 // Create an access request (Simulates Developer action)
-router.post('/', requireAuth(db, ['developer', 'admin']), (req, res) => {
+router.post('/', requireAuth(db, ['developer', 'admin']), async (req, res) => {
   const { api_id, consumer_mda_id, purpose, requested_fields, volume_tier, legal_basis, environment } = req.body;
   
   if (!api_id || !purpose) {
@@ -21,7 +22,7 @@ router.post('/', requireAuth(db, ['developer', 'admin']), (req, res) => {
   if (!mdaDecision.allowed) {
     return res.status(403).json({ error: mdaDecision.message, code: mdaDecision.code });
   }
-  const apiDecision = canSubmitAccessRequest(db, api_id);
+  const apiDecision = await canSubmitAccessRequest(db, api_id);
   if (!apiDecision.allowed) {
     return res.status(404).json({ error: apiDecision.message, code: apiDecision.code });
   }
@@ -29,14 +30,13 @@ router.post('/', requireAuth(db, ['developer', 'admin']), (req, res) => {
   const id = generatePublicId('req');
   
   try {
-    const stmt = db.prepare(`
+    await run(db, `
       INSERT INTO access_requests (
         id, consumer_mda_id, consumer_user_id, consumer_type, api_id, purpose,
         status, requested_fields, volume_tier, legal_basis, environment
       ) 
-      VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
-    `);
-    stmt.run(
+      VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, $8, $9, $10)
+    `, [
       id,
       mdaDecision.mdaId || null,
       mdaDecision.userId || null,
@@ -47,10 +47,10 @@ router.post('/', requireAuth(db, ['developer', 'admin']), (req, res) => {
       volume_tier || null,
       legal_basis || null,
       environment || 'sandbox'
-    );
+    ]);
 
     // Log the audit event
-    logAuditEvent(db, 'ACCESS_REQUESTED', mdaDecision.mdaId || mdaDecision.userId!, api_id, id, {
+    await logAuditEvent(db, 'ACCESS_REQUESTED', mdaDecision.mdaId || mdaDecision.userId!, api_id, id, {
       purpose,
       requested_fields,
       volume_tier,
@@ -66,16 +66,16 @@ router.post('/', requireAuth(db, ['developer', 'admin']), (req, res) => {
 });
 
 // List all access requests (Simulates Admin action)
-router.get('/', requireAuth(db, ['admin', 'api_owner', 'reviewer', 'developer']), (req, res) => {
+router.get('/', requireAuth(db, ['admin', 'api_owner', 'reviewer', 'developer']), async (req, res) => {
   try {
-    res.json(buildAccessRequestList(db, req.user!));
+    res.json(await buildAccessRequestList(db, req.user!));
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch requests' });
   }
 });
 
 // Approve an access request (Simulates Admin action)
-router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), (req, res) => {
+router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
   const id = String(req.params.id);
   const { api_key_expires_at } = req.body || {};
   const apiKey = generateApiKey();
@@ -83,27 +83,26 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), (req, res) 
   try {
     const expiresAt = normalizeExpiryInput(api_key_expires_at);
     // Get the request details first for logging
-    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id FROM access_requests WHERE id = ?').get(id) as any;
+    const requestRecord = await one(db, 'SELECT consumer_mda_id, api_id FROM access_requests WHERE id = $1', [id]);
     if (!requestRecord) {
       return res.status(404).json({ error: 'Request not found' });
     }
-    const reviewDecision = canReviewAccessRequest(db, req.user!, id);
+    const reviewDecision = await canReviewAccessRequest(db, req.user!, id);
     if (!reviewDecision.allowed) {
       return res.status(403).json({ error: reviewDecision.message, code: reviewDecision.code });
     }
 
-    const stmt = db.prepare(`
+    await run(db, `
       UPDATE access_requests 
-      SET status = 'APPROVED', api_key = NULL, api_key_hash = ?, api_key_preview = ?, api_key_status = 'ACTIVE', api_key_expires_at = ?, api_key_revoked_at = NULL
-      WHERE id = ?
-    `);
-    stmt.run(computeApiKeyHash(apiKey), getApiKeyPreview(apiKey), expiresAt, id);
+      SET status = 'APPROVED', api_key = NULL, api_key_hash = $1, api_key_preview = $2, api_key_status = 'ACTIVE', api_key_expires_at = $3, api_key_revoked_at = NULL
+      WHERE id = $4
+    `, [computeApiKeyHash(apiKey), getApiKeyPreview(apiKey), expiresAt, id]);
     
     // Log audit events
-    logAuditEvent(db, 'ACCESS_APPROVED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+    await logAuditEvent(db, 'ACCESS_APPROVED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
       request_id: id
     });
-    logAuditEvent(db, 'API_KEY_GENERATED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+    await logAuditEvent(db, 'API_KEY_GENERATED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
       api_key_preview: getApiKeyPreview(apiKey),
       api_key_expires_at: expiresAt
     });
@@ -115,20 +114,19 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), (req, res) 
   }
 });
 
-router.patch('/:id/key-expiry', requireAuth(db, ['admin']), (req, res) => {
+router.patch('/:id/key-expiry', requireAuth(db, ['admin']), async (req, res) => {
   const id = String(req.params.id);
   const { api_key_expires_at } = req.body || {};
 
   try {
-    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key_hash FROM access_requests WHERE id = ?').get(id) as any;
+    const requestRecord = await one(db, 'SELECT consumer_mda_id, api_id, api_key_hash FROM access_requests WHERE id = $1', [id]);
     if (!requestRecord || !requestRecord.api_key_hash) {
       return res.status(404).json({ error: 'API key not found' });
     }
 
     const expiresAt = normalizeExpiryInput(api_key_expires_at);
-    db.prepare('UPDATE access_requests SET api_key_expires_at = ?, api_key_status = ? WHERE id = ?')
-      .run(expiresAt, 'ACTIVE', id);
-    logAuditEvent(db, 'API_KEY_EXPIRY_UPDATED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+    await run(db, 'UPDATE access_requests SET api_key_expires_at = $1, api_key_status = $2 WHERE id = $3', [expiresAt, 'ACTIVE', id]);
+    await logAuditEvent(db, 'API_KEY_EXPIRY_UPDATED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
       api_key_expires_at: expiresAt
     });
 
@@ -139,18 +137,18 @@ router.patch('/:id/key-expiry', requireAuth(db, ['admin']), (req, res) => {
   }
 });
 
-router.post('/:id/revoke-key', requireAuth(db, ['admin']), (req, res) => {
+router.post('/:id/revoke-key', requireAuth(db, ['admin']), async (req, res) => {
   const id = String(req.params.id);
 
   try {
-    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key_hash, api_key_preview FROM access_requests WHERE id = ?').get(id) as any;
+    const requestRecord = await one(db, 'SELECT consumer_mda_id, api_id, api_key_hash, api_key_preview FROM access_requests WHERE id = $1', [id]);
     if (!requestRecord || !requestRecord.api_key_hash) {
       return res.status(404).json({ error: 'API key not found' });
     }
 
     const revokedAt = new Date().toISOString();
-    db.prepare("UPDATE access_requests SET api_key_status = 'REVOKED', api_key_revoked_at = ? WHERE id = ?").run(revokedAt, id);
-    logAuditEvent(db, 'API_KEY_REVOKED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+    await run(db, "UPDATE access_requests SET api_key_status = 'REVOKED', api_key_revoked_at = $1 WHERE id = $2", [revokedAt, id]);
+    await logAuditEvent(db, 'API_KEY_REVOKED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
       api_key_preview: requestRecord.api_key_preview,
       api_key_revoked_at: revokedAt
     });
@@ -162,18 +160,17 @@ router.post('/:id/revoke-key', requireAuth(db, ['admin']), (req, res) => {
   }
 });
 
-router.delete('/:id/key', requireAuth(db, ['admin']), (req, res) => {
+router.delete('/:id/key', requireAuth(db, ['admin']), async (req, res) => {
   const id = String(req.params.id);
 
   try {
-    const requestRecord = db.prepare('SELECT consumer_mda_id, api_id, api_key_hash, api_key_preview FROM access_requests WHERE id = ?').get(id) as any;
+    const requestRecord = await one(db, 'SELECT consumer_mda_id, api_id, api_key_hash, api_key_preview FROM access_requests WHERE id = $1', [id]);
     if (!requestRecord || !requestRecord.api_key_hash) {
       return res.status(404).json({ error: 'API key not found' });
     }
 
-    db.prepare("UPDATE access_requests SET api_key = NULL, api_key_hash = NULL, api_key_status = 'DELETED', api_key_revoked_at = ?, api_key_expires_at = NULL WHERE id = ?")
-      .run(new Date().toISOString(), id);
-    logAuditEvent(db, 'API_KEY_DELETED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+    await run(db, "UPDATE access_requests SET api_key = NULL, api_key_hash = NULL, api_key_status = 'DELETED', api_key_revoked_at = $1, api_key_expires_at = NULL WHERE id = $2", [new Date().toISOString(), id]);
+    await logAuditEvent(db, 'API_KEY_DELETED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
       api_key_preview: requestRecord.api_key_preview
     });
 
@@ -190,11 +187,11 @@ router.post('/audit-logs', requireAuth(db, ['admin']), (req, res) => {
 });
 
 // Get Audit Logs
-router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), (req, res) => {
+router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), async (req, res) => {
   try {
     const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 100;
     const offset = typeof req.query.offset === 'string' ? parseInt(req.query.offset, 10) : 0;
-    res.json(listAuditLogs(db, req.user!, limit, offset));
+    res.json(await listAuditLogs(db, req.user!, limit, offset));
   } catch (err: any) {
     console.error('[audit-logs fetch]', err);
     res.status(500).json({ error: 'Failed to fetch audit logs. Please try again.' });
@@ -202,10 +199,10 @@ router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), (
 });
 
 // Get Access Matrix
-router.get('/matrix', requireAuth(db, ['admin', 'reviewer']), (req, res) => {
+router.get('/matrix', requireAuth(db, ['admin', 'reviewer']), async (req, res) => {
   try {
     // Include both MDA-type and user-type consumers so the full access picture is visible
-    const permissions = db.prepare(`
+    const permissions = await many(db, `
       SELECT
         consumer_mda_id,
         consumer_user_id,
@@ -217,8 +214,8 @@ router.get('/matrix', requireAuth(db, ['admin', 'reviewer']), (req, res) => {
       WHERE status = 'APPROVED'
         AND api_key_hash IS NOT NULL
         AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
-        AND (api_key_expires_at IS NULL OR api_key_expires_at > ?)
-    `).all(new Date().toISOString());
+        AND (api_key_expires_at IS NULL OR api_key_expires_at > $1)
+    `, [new Date().toISOString()]);
     res.json(permissions);
   } catch (err) {
     console.error(err);
