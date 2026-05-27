@@ -1,8 +1,9 @@
-import type Database from 'better-sqlite3';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import type { DbClient } from './db';
+import { exec, many, one, run } from './db';
 
 type VersionStatusInput = {
   currentSha?: string;
@@ -68,8 +69,8 @@ export function computeVersionStatus({ currentSha, versionSha }: VersionStatusIn
   return currentSha && currentSha === versionSha ? 'current' : 'available';
 }
 
-export function ensureApiVersionSchema(db: Database.Database) {
-  db.exec(`
+export async function ensureApiVersionSchema(db: DbClient) {
+  await exec(db, `
     CREATE TABLE IF NOT EXISTS api_versions (
       id TEXT PRIMARY KEY,
       api_id TEXT NOT NULL,
@@ -79,27 +80,20 @@ export function ensureApiVersionSchema(db: Database.Database) {
       endpoints_count INTEGER DEFAULT 0,
       openapi_version TEXT,
       status TEXT DEFAULT 'Published',
-      is_current BOOLEAN DEFAULT 0,
+      is_current BOOLEAN DEFAULT FALSE,
       notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(api_id, version),
       FOREIGN KEY (api_id) REFERENCES apis (id)
     );
   `);
 
-  const apis = db.prepare('SELECT id, openapi_spec_path FROM apis').all() as any[];
+  const apis = await many(db, 'SELECT id, openapi_spec_path FROM apis');
   const openapiDir = path.join(__dirname, '../openapi');
 
-  const insertVersion = db.prepare(`
-    INSERT OR IGNORE INTO api_versions (
-      id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
-      openapi_version, status, is_current, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
   for (const api of apis) {
-    const count = db.prepare('SELECT COUNT(*) as count FROM api_versions WHERE api_id = ?').get(api.id) as any;
-    if (count.count > 0 || !api.openapi_spec_path) continue;
+    const count = await one<{ count: string }>(db, 'SELECT COUNT(*) as count FROM api_versions WHERE api_id = $1', [api.id]);
+    if (Number(count?.count || 0) > 0 || !api.openapi_spec_path) continue;
 
     const specPath = path.join(__dirname, '..', api.openapi_spec_path);
     if (!fs.existsSync(specPath)) continue;
@@ -107,7 +101,13 @@ export function ensureApiVersionSchema(db: Database.Database) {
     const specText = fs.readFileSync(specPath, 'utf8');
     const metadata = parseSpecMetadata(specText);
     const versionId = `${api.id}-${slugifyVersion(metadata.version)}`;
-    insertVersion.run(
+    await run(db, `
+      INSERT INTO api_versions (
+        id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
+        openapi_version, status, is_current, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ON CONFLICT (api_id, version) DO NOTHING
+    `, [
       versionId,
       api.id,
       metadata.version,
@@ -116,9 +116,9 @@ export function ensureApiVersionSchema(db: Database.Database) {
       metadata.endpointsCount,
       metadata.openapiVersion,
       'Published',
-      1,
+      true,
       'Backfilled from current catalog spec'
-    );
+    ]);
   }
 
   if (!fs.existsSync(openapiDir)) {

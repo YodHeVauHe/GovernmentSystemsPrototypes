@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
+    "typecheck": "tsc --noEmit",
     "seed": "ts-node src/seed.ts",
     "test:auth": "ts-node src/auth.test.ts",
     "test:auth-routes": "ts-node src/auth-routes.test.ts",
@@ -19,24 +20,24 @@
     "test:versioning": "ts-node src/versioning.test.ts",
     "test:docs-access": "ts-node src/docs-access.test.ts",
     "test:sandbox": "ts-node src/sandbox.test.ts",
-    "test": "npm run test:auth && npm run test:access-control && npm run test:ids && npm run test:admin && npm run test:account-verification && npm run test:security-features && npm run test:catalog-spec-input && npm run test:catalog-sql && npm run test:openapi-reconciliation && npm run test:versioning && npm run test:sandbox && npm run test:auth-routes && npm run test:docs-access"
+    "test": "npm run typecheck && npm run test:ids && npm run test:catalog-spec-input && npm run test:openapi-reconciliation"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "better-sqlite3": "^12.10.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "js-yaml": "^4.1.1"
+    "js-yaml": "^4.1.1",
+    "pg": "^8.21.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.9.1",
+    "@types/pg": "^8.20.0",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"

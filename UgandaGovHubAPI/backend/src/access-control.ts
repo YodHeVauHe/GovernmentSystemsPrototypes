@@ -1,6 +1,7 @@
-import type Database from 'better-sqlite3';
 import type { NextFunction, Request, Response } from 'express';
 import type { UserRole } from './auth';
+import type { DbClient } from './db';
+import { many, one } from './db';
 
 type AccessUser = {
   id: string;
@@ -40,7 +41,7 @@ export function resolveConsumerMdaForRequest(user: AccessUser, requestedMdaId?: 
   return { allowed: true, mdaId: user.mda_id, userId: user.id, consumerType: 'mda' };
 }
 
-export function buildAccessRequestList(db: Database.Database, user: AccessUser) {
+export async function buildAccessRequestList(db: DbClient, user: AccessUser) {
   const baseSelect = `
     SELECT
       r.id, r.consumer_mda_id, r.consumer_user_id, r.consumer_type, r.api_id, r.purpose,
@@ -57,19 +58,19 @@ export function buildAccessRequestList(db: Database.Database, user: AccessUser) 
   `;
 
   if (user.role === 'admin' || user.role === 'reviewer') {
-    return db.prepare(`${baseSelect} ORDER BY r.created_at DESC`).all();
+    return many(db, `${baseSelect} ORDER BY r.created_at DESC`);
   }
   if (user.role === 'api_owner') {
-    return db.prepare(`${baseSelect} WHERE a.owning_mda_id = ? ORDER BY r.created_at DESC`).all(user.mda_id);
+    return many(db, `${baseSelect} WHERE a.owning_mda_id = $1 ORDER BY r.created_at DESC`, [user.mda_id]);
   }
   if (user.mda_id) {
-    return db.prepare(`${baseSelect} WHERE r.consumer_mda_id = ? ORDER BY r.created_at DESC`).all(user.mda_id);
+    return many(db, `${baseSelect} WHERE r.consumer_mda_id = $1 ORDER BY r.created_at DESC`, [user.mda_id]);
   }
-  return db.prepare(`${baseSelect} WHERE r.consumer_user_id = ? ORDER BY r.created_at DESC`).all(user.id);
+  return many(db, `${baseSelect} WHERE r.consumer_user_id = $1 ORDER BY r.created_at DESC`, [user.id]);
 }
 
-export function canSubmitAccessRequest(db: Database.Database, apiId: string): GuardDecision {
-  const api = db.prepare('SELECT id FROM apis WHERE id = ?').get(apiId);
+export async function canSubmitAccessRequest(db: DbClient, apiId: string): Promise<GuardDecision> {
+  const api = await one(db, 'SELECT id FROM apis WHERE id = $1', [apiId]);
   if (!api) {
     return { allowed: false, code: 'API_NOT_FOUND', message: 'The requested API does not exist.' };
   }
@@ -83,7 +84,7 @@ export interface AuditLogPage {
   offset: number;
 }
 
-export function listAuditLogs(db: Database.Database, user?: AccessUser, limit = 100, offset = 0): AuditLogPage {
+export async function listAuditLogs(db: DbClient, user?: AccessUser, limit = 100, offset = 0): Promise<AuditLogPage> {
   const baseSelect = `
     SELECT
       l.*,
@@ -100,29 +101,29 @@ export function listAuditLogs(db: Database.Database, user?: AccessUser, limit = 
 
   if (user?.role === 'developer') {
     const whereClause = user.mda_id
-      ? 'WHERE l.mda_id = ?'
-      : 'WHERE l.consumer_user_id = ?';
+      ? 'WHERE l.mda_id = $1'
+      : 'WHERE l.consumer_user_id = $1';
     const param = user.mda_id || user.id;
 
-    const total = (db.prepare(`SELECT COUNT(*) as count FROM audit_logs l ${whereClause}`).get(param) as any).count;
-    const data = db.prepare(`${baseSelect} ${whereClause} ORDER BY l.created_at DESC LIMIT ? OFFSET ?`).all(param, safeLimit, safeOffset) as any[];
+    const total = Number((await one<{ count: string }>(db, `SELECT COUNT(*) as count FROM audit_logs l ${whereClause}`, [param]))?.count || 0);
+    const data = await many(db, `${baseSelect} ${whereClause} ORDER BY l.created_at DESC LIMIT $2 OFFSET $3`, [param, safeLimit, safeOffset]);
     return { data, total, limit: safeLimit, offset: safeOffset };
   }
 
-  const total = (db.prepare('SELECT COUNT(*) as count FROM audit_logs').get() as any).count;
-  const data = db.prepare(`${baseSelect} ORDER BY l.created_at DESC LIMIT ? OFFSET ?`).all(safeLimit, safeOffset) as any[];
+  const total = Number((await one<{ count: string }>(db, 'SELECT COUNT(*) as count FROM audit_logs'))?.count || 0);
+  const data = await many(db, `${baseSelect} ORDER BY l.created_at DESC LIMIT $1 OFFSET $2`, [safeLimit, safeOffset]);
   return { data, total, limit: safeLimit, offset: safeOffset };
 }
 
-export function canReviewAccessRequest(db: Database.Database, user: AccessUser, requestId: string): GuardDecision {
+export async function canReviewAccessRequest(db: DbClient, user: AccessUser, requestId: string): Promise<GuardDecision> {
   // Single query: fetch the request and ownership info atomically to avoid
   // a TOCTOU window between the status check and the ownership check.
-  const record = db.prepare(`
+  const record = await one(db, `
     SELECT r.id, r.status, r.api_key, r.api_key_hash, r.api_key_status, a.owning_mda_id
     FROM access_requests r
     JOIN apis a ON a.id = r.api_id
-    WHERE r.id = ?
-  `).get(requestId) as any;
+    WHERE r.id = $1
+  `, [requestId]);
 
   if (!record) {
     return { allowed: false, code: 'NOT_FOUND', message: 'Access request not found.' };
@@ -154,13 +155,13 @@ export function canReviewAccessRequest(db: Database.Database, user: AccessUser, 
   return { allowed: true };
 }
 
-export function canManageApi(db: Database.Database, user: AccessUser, apiId: string): GuardDecision {
+export async function canManageApi(db: DbClient, user: AccessUser, apiId: string): Promise<GuardDecision> {
   if (user.role === 'admin') return { allowed: true };
   if (user.role !== 'api_owner' || !user.mda_id) {
     return { allowed: false, code: 'FORBIDDEN', message: 'Only admins and owning MDA API owners can manage this API.' };
   }
 
-  const api = db.prepare('SELECT id FROM apis WHERE id = ? AND owning_mda_id = ?').get(apiId, user.mda_id);
+  const api = await one(db, 'SELECT id FROM apis WHERE id = $1 AND owning_mda_id = $2', [apiId, user.mda_id]);
   if (!api) {
     return { allowed: false, code: 'FORBIDDEN', message: 'API owners can only manage APIs owned by their MDA.' };
   }
@@ -176,12 +177,12 @@ export function canTransferApiOwnership(user: AccessUser): GuardDecision {
   };
 }
 
-export function requireApiManager(db: Database.Database, getApiId: (req: Request) => string) {
-  return (req: Request, res: Response, next: NextFunction) => {
+export function requireApiManager(db: DbClient, getApiId: (req: Request) => string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication is required.', code: 'UNAUTHENTICATED' });
     }
-    const decision = canManageApi(db, req.user, getApiId(req));
+    const decision = await canManageApi(db, req.user, getApiId(req));
     if (!decision.allowed) {
       return res.status(403).json({ error: decision.message, code: decision.code });
     }

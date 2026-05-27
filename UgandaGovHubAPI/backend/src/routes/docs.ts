@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import type Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
@@ -7,6 +6,8 @@ import { optionalAuth, requireAuth } from '../auth';
 import { canManageApi } from '../access-control';
 import { resolveOpenApiFilePath } from '../admin';
 import { canViewApiDocs, listVisibleDocsApis, resolveDocsVisibility, type DocsVisibility } from '../docs-access';
+import type { DbClient } from '../db';
+import { one, run } from '../db';
 
 const visibilityValues = new Set<DocsVisibility>(['public', 'authenticated', 'restricted']);
 
@@ -16,21 +17,21 @@ function statusForCode(code: string) {
   return 403;
 }
 
-export function docsRouter(db: Database.Database) {
+export function docsRouter(db: DbClient) {
   const router = Router();
 
-  router.get('/', optionalAuth(db), (req, res) => {
+  router.get('/', optionalAuth(db), async (req, res) => {
     try {
-      res.json(listVisibleDocsApis(db, req.user));
+      res.json(await listVisibleDocsApis(db, req.user));
     } catch (err: any) {
       console.error('[docs fetch]', err);
       res.status(500).json({ error: 'Failed to fetch API docs. Please try again.' });
     }
   });
 
-  router.get('/:id', optionalAuth(db), (req, res) => {
+  router.get('/:id', optionalAuth(db), async (req, res) => {
     try {
-      const decision = canViewApiDocs(db, req.user, String(req.params.id));
+      const decision = await canViewApiDocs(db, req.user, String(req.params.id));
       if (!decision.allowed) {
         return res.status(statusForCode(decision.code)).json({
           error: decision.message,
@@ -39,14 +40,14 @@ export function docsRouter(db: Database.Database) {
         });
       }
 
-      const api = db.prepare(`
+      const api = await one(db, `
         SELECT
           id, name, owning_mda_id, sector, description, lifecycle_status,
           sensitivity_level, sandbox_available, openapi_spec_path, required_approval_level,
           contact_office, technical_owner, security_classification, docs_visibility
         FROM apis
-        WHERE id = ?
-      `).get(req.params.id) as any;
+        WHERE id = $1
+      `, [req.params.id]);
 
       if (!api?.openapi_spec_path) {
         return res.status(404).json({ error: 'OpenAPI document is missing for this API.', code: 'SPEC_NOT_FOUND' });
@@ -63,9 +64,9 @@ export function docsRouter(db: Database.Database) {
     }
   });
 
-  router.get('/:id/spec', optionalAuth(db), (req, res) => {
+  router.get('/:id/spec', optionalAuth(db), async (req, res) => {
     try {
-      const decision = canViewApiDocs(db, req.user, String(req.params.id));
+      const decision = await canViewApiDocs(db, req.user, String(req.params.id));
       if (!decision.allowed) {
         return res.status(statusForCode(decision.code)).json({
           error: decision.message,
@@ -74,7 +75,7 @@ export function docsRouter(db: Database.Database) {
         });
       }
 
-      const api = db.prepare('SELECT openapi_spec_path FROM apis WHERE id = ?').get(req.params.id) as any;
+      const api = await one(db, 'SELECT openapi_spec_path FROM apis WHERE id = $1', [req.params.id]);
       if (!api?.openapi_spec_path) {
         return res.status(404).json({ error: 'OpenAPI document is missing for this API.', code: 'SPEC_NOT_FOUND' });
       }
@@ -92,19 +93,19 @@ export function docsRouter(db: Database.Database) {
     }
   });
 
-  router.patch('/:id/visibility', requireAuth(db, ['admin', 'api_owner']), (req, res) => {
+  router.patch('/:id/visibility', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
     const docsVisibility = String(req.body?.docs_visibility || '').toLowerCase() as DocsVisibility;
     if (!visibilityValues.has(docsVisibility)) {
       return res.status(400).json({ error: 'docs_visibility must be public, authenticated, or restricted.' });
     }
 
-    const managerDecision = canManageApi(db, req.user!, String(req.params.id));
+    const managerDecision = await canManageApi(db, req.user!, String(req.params.id));
     if (!managerDecision.allowed) {
       return res.status(403).json({ error: managerDecision.message, code: managerDecision.code });
     }
 
     try {
-      const result = db.prepare('UPDATE apis SET docs_visibility = ? WHERE id = ?').run(docsVisibility, req.params.id);
+      const result = await run(db, 'UPDATE apis SET docs_visibility = $1 WHERE id = $2', [docsVisibility, req.params.id]);
       if (result.changes === 0) {
         return res.status(404).json({ error: 'API not found', code: 'NOT_FOUND' });
       }

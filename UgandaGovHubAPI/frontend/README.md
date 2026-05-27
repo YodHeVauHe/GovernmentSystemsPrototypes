@@ -13,12 +13,16 @@ This is the React/Vite frontend for the Uganda GovHub API prototype.
 
 ## Local Development
 
-From the repository root, install dependencies and start both services:
+From the repository root, install dependencies, start local Postgres, seed the backend database, and start both services:
 
 ```bash
 npm run install:all
+npm run db:up
+npm run seed
 npm run dev
 ```
+
+The backend is Postgres-only. Local development uses the root `db:up` script to run a `postgres:16-alpine` container on `localhost:5432`, matching the `DATABASE_URL` in `backend/.env.example`.
 
 To run only the frontend:
 
@@ -26,6 +30,8 @@ To run only the frontend:
 cd frontend
 npm run dev
 ```
+
+The frontend can run by itself, but authenticated pages, catalog data, docs, and sandbox workflows need the backend running at port `4000`.
 
 The frontend resolves the backend URL from `VITE_API_BASE_URL` when set. If it is not set, it uses the current browser hostname with backend port `4000`, which keeps `localhost` and `127.0.0.1` sessions consistent.
 

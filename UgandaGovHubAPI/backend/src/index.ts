@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
@@ -30,6 +29,7 @@ import { createTransportServer, getTlsConfig } from './tls';
 import { resolveCatalogSpecInput } from './catalog-spec-input';
 import { UPDATE_API_SQL } from './catalog-sql';
 import { shouldRemoveOpenApiFile } from './openapi-reconciliation';
+import { createDb } from './db';
 
 dotenv.config();
 
@@ -56,7 +56,7 @@ app.use(cors({
     'X-RateLimit-Reset',
   ],
 }));
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   const tlsEnabled = getTlsConfig().enabled || process.env.GOVHUB_TRUST_TLS_TERMINATION === 'true';
   if (tlsEnabled) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -65,26 +65,52 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: process.env.GOVHUB_JSON_LIMIT || '1mb' }));
 
-// Initialize SQLite Database
-export const db = new Database(path.join(__dirname, '../data/govhub.db'));
-db.pragma('foreign_keys = ON');
-ensureAdminSchema(db);
-ensureApiVersionSchema(db);
-ensureAuthSchema(db);
-ensureDefaultAdmin(db);
-ensureDemoUsers(db);
-ensureAccountVerificationSchema(db);
-ensureDocsSchema(db);
-initAuditColumnCache(db); // warm the audit column cache after all schema migrations
+// Initialize Postgres Database
+export const db = createDb();
+
+async function ensureCatalogSchema() {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS mdas (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      short_name TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS apis (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      owning_mda_id TEXT NOT NULL,
+      sector TEXT,
+      description TEXT,
+      lifecycle_status TEXT,
+      sensitivity_level TEXT,
+      sandbox_available BOOLEAN,
+      openapi_spec_path TEXT,
+      required_approval_level TEXT,
+      contact_office TEXT,
+      technical_owner TEXT,
+      personal_data_categories TEXT,
+      purpose_limitation TEXT,
+      data_minimization_note TEXT,
+      retention_class TEXT,
+      statutory_basis TEXT,
+      security_classification TEXT,
+      sla_target TEXT,
+      compliance_status TEXT,
+      docs_visibility TEXT,
+      FOREIGN KEY (owning_mda_id) REFERENCES mdas (id)
+    );
+  `);
+}
 
 // Startup reconciliation: remove any spec files on disk that have no matching DB row.
 // This recovers from a crash between the DB transaction commit and the file deletion.
-(function reconcileOrphanedSpecFiles() {
+async function reconcileOrphanedSpecFiles() {
   if (!fs.existsSync(openapiRoot)) return;
   const knownPaths = new Set<string>();
   try {
-    const rows = db.prepare('SELECT openapi_spec_path FROM apis WHERE openapi_spec_path IS NOT NULL').all() as any[];
-    const versionRows = db.prepare('SELECT openapi_spec_path FROM api_versions WHERE openapi_spec_path IS NOT NULL').all() as any[];
+    const rows = await db.prepare('SELECT openapi_spec_path FROM apis WHERE openapi_spec_path IS NOT NULL').all() as any[];
+    const versionRows = await db.prepare('SELECT openapi_spec_path FROM api_versions WHERE openapi_spec_path IS NOT NULL').all() as any[];
     for (const row of [...rows, ...versionRows]) {
       if (typeof row.openapi_spec_path === 'string') {
         knownPaths.add(path.basename(row.openapi_spec_path));
@@ -99,7 +125,7 @@ initAuditColumnCache(db); // warm the audit column cache after all schema migrat
   } catch (err) {
     console.error('[STARTUP] Orphan spec reconciliation failed:', err);
   }
-})();
+}
 
 function statusForDocsDecision(code: string) {
   if (code === 'UNAUTHENTICATED') return 401;
@@ -208,8 +234,8 @@ async function fetchSpecFromUrl(specUrl: string): Promise<string> {
   }
 }
 
-function mdaExists(mdaId: string) {
-  return Boolean(db.prepare('SELECT id FROM mdas WHERE id = ?').get(mdaId));
+async function mdaExists(mdaId: string) {
+  return Boolean(await await db.prepare('SELECT id FROM mdas WHERE id = ?').get(mdaId));
 }
 
 function writeOpenApiSpecFile(filename: string, content: string) {
@@ -234,8 +260,8 @@ function isOpenApiValidationError(err: any) {
 }
 
 // Serve static OpenAPI files through the same visibility policy used by /api/docs.
-app.use('/openapi', optionalAuth(db), (req, res, next) => {
-  const decision = canDownloadOpenApiAsset(db, req.user, `/openapi${req.path}`);
+app.use('/openapi', optionalAuth(db), async (req, res, next) => {
+  const decision = await canDownloadOpenApiAsset(db, req.user, `/openapi${req.path}`);
   if (!decision.allowed) {
     const status = decision.code === 'UNAUTHENTICATED' ? 401 : decision.code === 'NOT_FOUND' ? 404 : 403;
     return res.status(status).json({ error: decision.message, code: decision.code });
@@ -243,7 +269,7 @@ app.use('/openapi', optionalAuth(db), (req, res, next) => {
   next();
 }, express.static(openapiRoot));
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   res.json({ status: 'ok', service: 'Uganda GovHub API Mock Sandbox' });
 });
 
@@ -252,9 +278,9 @@ app.use('/api/admin/users', adminUsersRouter(db));
 app.use('/api/docs', docsRouter(db));
 
 // Seed API Catalog route
-app.get('/api/catalog', optionalAuth(db), (req, res) => {
+app.get('/api/catalog', optionalAuth(db), async (req, res) => {
   try {
-    const apis = listVisibleDocsApis(db, req.user);
+    const apis = await listVisibleDocsApis(db, req.user);
     res.json(apis);
   } catch (err) {
     res.status(500).json({ error: 'Database not initialized' });
@@ -262,14 +288,14 @@ app.get('/api/catalog', optionalAuth(db), (req, res) => {
 });
 
 // Get single API by ID
-app.get('/api/catalog/:id', optionalAuth(db), (req, res) => {
+app.get('/api/catalog/:id', optionalAuth(db), async (req, res) => {
   try {
     const apiId = String(req.params.id);
-    const decision = canViewApiDocs(db, req.user, apiId);
+    const decision = await canViewApiDocs(db, req.user, apiId);
     if (!decision.allowed) {
       return res.status(statusForDocsDecision(decision.code)).json({ error: decision.message, code: decision.code });
     }
-    const api = db.prepare('SELECT * FROM apis WHERE id = ?').get(apiId);
+    const api = await db.prepare('SELECT * FROM apis WHERE id = ?').get(apiId);
     if (!api) {
       return res.status(404).json({ error: 'API not found' });
     }
@@ -279,15 +305,15 @@ app.get('/api/catalog/:id', optionalAuth(db), (req, res) => {
   }
 });
 
-app.get('/api/catalog/:id/versions', optionalAuth(db), (req, res) => {
+app.get('/api/catalog/:id/versions', optionalAuth(db), async (req, res) => {
   try {
     const apiId = String(req.params.id);
-    const decision = canViewApiDocs(db, req.user, apiId);
+    const decision = await canViewApiDocs(db, req.user, apiId);
     if (!decision.allowed) {
       return res.status(statusForDocsDecision(decision.code)).json({ error: decision.message, code: decision.code });
     }
-    const current = db.prepare('SELECT spec_sha FROM api_versions WHERE api_id = ? AND is_current = 1').get(apiId) as any;
-    const versions = db.prepare(`
+    const current = await db.prepare('SELECT spec_sha FROM api_versions WHERE api_id = ? AND is_current = 1').get(apiId) as any;
+    const versions = await db.prepare(`
       SELECT
         id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
         openapi_version, status, is_current, notes, created_at
@@ -312,14 +338,14 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
 
   try {
     const openapiSpec = await resolveCatalogSpecInput(req.body, fetchSpecFromUrl);
-    const api = db.prepare('SELECT id FROM apis WHERE id = ?').get(req.params.id) as any;
+    const api = await db.prepare('SELECT id FROM apis WHERE id = ?').get(req.params.id) as any;
     if (!api) {
       return res.status(404).json({ error: 'API not found' });
     }
 
     const metadata = parseSpecMetadata(openapiSpec);
     const version = metadata.version;
-    const existing = db.prepare('SELECT id FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, version);
+    const existing = await db.prepare('SELECT id FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, version);
     if (existing) {
       return res.status(409).json({ error: `Version ${version} already exists for this API.` });
     }
@@ -329,7 +355,7 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
     const relativeSpecPath = `/openapi/${specFilename}`;
     const specFile = writeOpenApiSpecFile(specFilename, openapiSpec);
 
-    const insertVersion = db.prepare(`
+    const insertVersion = await db.prepare(`
       INSERT INTO api_versions (
         id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
         openapi_version, status, is_current, notes
@@ -338,10 +364,10 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
 
     const shouldMakeCurrent = Boolean(make_current);
     try {
-      const transaction = db.transaction(() => {
+      const transaction = db.transaction(async () => {
         if (shouldMakeCurrent) {
-          db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
-          db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(relativeSpecPath, req.params.id);
+          await db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
+          await db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(relativeSpecPath, req.params.id);
         }
 
         insertVersion.run(
@@ -357,7 +383,7 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
           notes || null
         );
 
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO audit_logs (id, event_type, api_id, details)
           VALUES (?, ?, ?, ?)
         `).run(
@@ -368,7 +394,7 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
         );
       });
 
-      transaction();
+      await transaction;
       specFile.commit();
     } catch (err) {
       specFile.cleanup();
@@ -387,24 +413,24 @@ app.post('/api/catalog/:id/versions', requireAuth(db, ['admin', 'api_owner']), r
   }
 });
 
-app.post('/api/catalog/:id/versions/:version/current', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), (req, res) => {
+app.post('/api/catalog/:id/versions/:version/current', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), async (req, res) => {
   try {
-    const version = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, req.params.version) as any;
+    const version = await db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, req.params.version) as any;
     if (!version) {
       return res.status(404).json({ error: 'Version not found' });
     }
 
-    const transaction = db.transaction(() => {
-      db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
-      db.prepare('UPDATE api_versions SET is_current = 1 WHERE id = ?').run(version.id);
-      db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(version.openapi_spec_path, req.params.id);
-      db.prepare(`
+    const transaction = db.transaction(async () => {
+      await db.prepare('UPDATE api_versions SET is_current = 0 WHERE api_id = ?').run(req.params.id);
+      await db.prepare('UPDATE api_versions SET is_current = 1 WHERE id = ?').run(version.id);
+      await db.prepare('UPDATE apis SET openapi_spec_path = ? WHERE id = ?').run(version.openapi_spec_path, req.params.id);
+      await db.prepare(`
         INSERT INTO audit_logs (id, event_type, api_id, details)
         VALUES (?, ?, ?, ?)
       `).run(generatePublicId('audit'), 'API_VERSION_PROMOTED', req.params.id, JSON.stringify({ version: req.params.version }));
     });
 
-    transaction();
+    await transaction;
     res.json({ success: true, version: req.params.version });
   } catch (err: any) {
     console.error('[version promote]', err);
@@ -412,9 +438,9 @@ app.post('/api/catalog/:id/versions/:version/current', requireAuth(db, ['admin',
   }
 });
 
-app.delete('/api/catalog/:id/versions/:version', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), (req, res) => {
+app.delete('/api/catalog/:id/versions/:version', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), async (req, res) => {
   try {
-    const version = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, req.params.version) as any;
+    const version = await db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, req.params.version) as any;
     if (!version) {
       return res.status(404).json({ error: 'Version not found' });
     }
@@ -422,8 +448,8 @@ app.delete('/api/catalog/:id/versions/:version', requireAuth(db, ['admin', 'api_
       return res.status(409).json({ error: 'Cannot delete the current version. Promote another version first.' });
     }
 
-    db.prepare('DELETE FROM api_versions WHERE id = ?').run(version.id);
-    db.prepare(`
+    await db.prepare('DELETE FROM api_versions WHERE id = ?').run(version.id);
+    await db.prepare(`
       INSERT INTO audit_logs (id, event_type, api_id, details)
       VALUES (?, ?, ?, ?)
     `).run(generatePublicId('audit'), 'API_VERSION_DELETED', req.params.id, JSON.stringify({ version: req.params.version }));
@@ -436,16 +462,16 @@ app.delete('/api/catalog/:id/versions/:version', requireAuth(db, ['admin', 'api_
 });
 
 // Get parsed OpenAPI spec by API ID
-app.get('/api/catalog/:id/spec', optionalAuth(db), (req, res) => {
+app.get('/api/catalog/:id/spec', optionalAuth(db), async (req, res) => {
   try {
     const requestedVersion = typeof req.query.version === 'string' ? req.query.version : null;
     const api = requestedVersion
-      ? db.prepare('SELECT openapi_spec_path FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, requestedVersion) as any
-      : db.prepare('SELECT openapi_spec_path FROM apis WHERE id = ?').get(req.params.id) as any;
+      ? await db.prepare('SELECT openapi_spec_path FROM api_versions WHERE api_id = ? AND version = ?').get(req.params.id, requestedVersion) as any
+      : await db.prepare('SELECT openapi_spec_path FROM apis WHERE id = ?').get(req.params.id) as any;
     if (!api || !api.openapi_spec_path) {
       return res.status(404).json({ error: 'API spec not found' });
     }
-    const decision = canDownloadOpenApiAsset(db, req.user, api.openapi_spec_path);
+    const decision = await canDownloadOpenApiAsset(db, req.user, api.openapi_spec_path);
     if (!decision.allowed) {
       const status = decision.code === 'UNAUTHENTICATED' ? 401 : decision.code === 'NOT_FOUND' ? 404 : 403;
       return res.status(status).json({ error: decision.message, code: decision.code });
@@ -490,7 +516,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
   } = req.body;
 
   try {
-    const existing = db.prepare('SELECT * FROM apis WHERE id = ?').get(req.params.id) as any;
+    const existing = await db.prepare('SELECT * FROM apis WHERE id = ?').get(req.params.id) as any;
     if (!existing) {
       return res.status(404).json({ error: 'API not found' });
     }
@@ -499,7 +525,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
       if (!ownerTransferDecision.allowed) {
         return res.status(403).json({ error: ownerTransferDecision.message, code: ownerTransferDecision.code });
       }
-      if (typeof owning_mda_id !== 'string' || !mdaExists(owning_mda_id)) {
+      if (typeof owning_mda_id !== 'string' || !(await mdaExists(owning_mda_id))) {
         return res.status(400).json({ error: 'owning_mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
       }
     }
@@ -518,7 +544,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
     if (hasSpecPatch) {
       const resolvedSpec = await resolveCatalogSpecInput(req.body, fetchSpecFromUrl);
       const metadata = parseSpecMetadata(resolvedSpec);
-      const currentVersion = db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND is_current = 1').get(req.params.id) as any;
+      const currentVersion = await db.prepare('SELECT * FROM api_versions WHERE api_id = ? AND is_current = 1').get(req.params.id) as any;
       const specFilename = currentVersion?.openapi_spec_path
         ? path.basename(currentVersion.openapi_spec_path)
         : `${req.params.id}-${slugifyVersion(metadata.version)}.yaml`;
@@ -534,7 +560,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
       };
     }
 
-    const transaction = db.transaction(() => {
+    const transaction = db.transaction(async () => {
       // Compute field-level diff for the audit log before writing.
       const trackedFields: Array<[string, unknown, unknown]> = [
         ['name', existing.name, name ?? existing.name],
@@ -555,7 +581,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
         }
       }
 
-      db.prepare(UPDATE_API_SQL).run(
+      await db.prepare(UPDATE_API_SQL).run(
         name ?? existing.name,
         owning_mda_id ?? existing.owning_mda_id,
         sector ?? existing.sector,
@@ -580,9 +606,9 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
       );
 
       if (versionPatch) {
-        const currentVersion = db.prepare('SELECT id FROM api_versions WHERE id = ?').get(versionPatch.versionId);
+        const currentVersion = await db.prepare('SELECT id FROM api_versions WHERE id = ?').get(versionPatch.versionId);
         if (currentVersion) {
-          db.prepare(`
+          await db.prepare(`
             UPDATE api_versions SET
               version = ?, openapi_spec_path = ?, spec_sha = ?, endpoints_count = ?, openapi_version = ?, notes = ?
             WHERE id = ?
@@ -596,7 +622,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
             versionPatch.versionId
           );
         } else {
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO api_versions (
               id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
               openapi_version, status, is_current, notes
@@ -616,7 +642,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
         }
       }
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
         VALUES (?, ?, ?, ?, ?)
       `).run(
@@ -629,7 +655,7 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
     });
 
     try {
-      transaction();
+      await transaction;
       if (pendingSpecFile) pendingSpecFile.commit();
     } catch (err) {
       if (pendingSpecFile) pendingSpecFile.cleanup();
@@ -645,24 +671,24 @@ app.patch('/api/catalog/:id', requireAuth(db, ['admin', 'api_owner']), requireAp
   }
 });
 
-app.delete('/api/catalog/:id', requireAuth(db, ['admin']), (req, res) => {
+app.delete('/api/catalog/:id', requireAuth(db, ['admin']), async (req, res) => {
   try {
-    const api = db.prepare('SELECT * FROM apis WHERE id = ?').get(req.params.id) as any;
+    const api = await db.prepare('SELECT * FROM apis WHERE id = ?').get(req.params.id) as any;
     if (!api) {
       return res.status(404).json({ error: 'API not found' });
     }
 
-    const versionSpecs = db.prepare('SELECT openapi_spec_path FROM api_versions WHERE api_id = ?').all(req.params.id) as any[];
+    const versionSpecs = await db.prepare('SELECT openapi_spec_path FROM api_versions WHERE api_id = ?').all(req.params.id) as any[];
     const specPaths = removeExistingSpecFiles([
       api.openapi_spec_path,
       ...versionSpecs.map(version => version.openapi_spec_path),
     ]);
 
-    const transaction = db.transaction(() => {
-      db.prepare('DELETE FROM access_requests WHERE api_id = ?').run(req.params.id);
-      db.prepare('DELETE FROM api_versions WHERE api_id = ?').run(req.params.id);
-      db.prepare('DELETE FROM apis WHERE id = ?').run(req.params.id);
-      db.prepare(`
+    const transaction = db.transaction(async () => {
+      await db.prepare('DELETE FROM access_requests WHERE api_id = ?').run(req.params.id);
+      await db.prepare('DELETE FROM api_versions WHERE api_id = ?').run(req.params.id);
+      await db.prepare('DELETE FROM apis WHERE id = ?').run(req.params.id);
+      await db.prepare(`
         INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
         VALUES (?, ?, ?, ?, ?)
       `).run(
@@ -674,7 +700,7 @@ app.delete('/api/catalog/:id', requireAuth(db, ['admin']), (req, res) => {
       );
     });
 
-    transaction();
+    await transaction;
     deleteSpecFiles(specPaths, openapiRoot);
     res.json({ success: true, apiId: req.params.id });
   } catch (err: any) {
@@ -747,7 +773,7 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), async (req, re
   if (!name || !owning_mda_id) {
     return res.status(400).json({ error: 'Missing mandatory fields: name and owning_mda_id are required.' });
   }
-  if (!mdaExists(owning_mda_id)) {
+  if (!(await mdaExists(owning_mda_id))) {
     return res.status(400).json({ error: 'owning_mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
   }
   if (req.user?.role === 'api_owner' && req.user.mda_id !== owning_mda_id) {
@@ -763,8 +789,8 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), async (req, re
     const metadata = parseSpecMetadata(openapiSpec);
     const specFile = writeOpenApiSpecFile(specFilename, openapiSpec);
 
-    // Insert into SQLite database
-    const stmt = db.prepare(`
+    // Insert into PostgreSQL catalog tables
+    const stmt = await db.prepare(`
       INSERT INTO apis (
         id, name, owning_mda_id, sector, description, lifecycle_status,
         sensitivity_level, sandbox_available, openapi_spec_path, required_approval_level, contact_office,
@@ -774,7 +800,7 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), async (req, re
     `);
 
     try {
-      const transaction = db.transaction(() => {
+      const transaction = db.transaction(async () => {
         stmt.run(
           id,
           name,
@@ -799,7 +825,7 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), async (req, re
         );
 
         const versionId = `${id}-${slugifyVersion(metadata.version)}`;
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO api_versions (
             id, api_id, version, openapi_spec_path, spec_sha, endpoints_count,
             openapi_version, status, is_current, notes
@@ -817,7 +843,7 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), async (req, re
           'Initial registry version'
         );
 
-        const auditStmt = db.prepare(`
+        const auditStmt = await db.prepare(`
           INSERT INTO audit_logs (id, event_type, mda_id, api_id, details)
           VALUES (?, ?, ?, ?, ?)
         `);
@@ -836,7 +862,7 @@ app.post('/api/catalog', requireAuth(db, ['admin', 'api_owner']), async (req, re
           })
         );
       });
-      transaction();
+      await transaction;
       specFile.commit();
     } catch (err) {
       specFile.cleanup();
@@ -866,7 +892,7 @@ app.use('/api/v1/tax', taxRouter);
 app.use('/api/v1/business', businessRouter);
 app.use('/api/v1/transport/driving-permit', drivingPermitRouter);
 app.use('/api/v1/service-uganda', compositeRouter);
-app.use('/api/v1', (req, res) => {
+app.use('/api/v1', async (req, res) => {
   res.json({
     requestId: res.getHeader('X-Correlation-ID'),
     status: 'ok',
@@ -877,7 +903,28 @@ app.use('/api/v1', (req, res) => {
   });
 });
 
-export const server = createTransportServer(app).listen(port, host, () => {
-  const protocol = getTlsConfig().enabled ? 'https' : 'http';
-  console.log(`Backend running at ${protocol}://${host}:${port}`);
+export let server: ReturnType<typeof createTransportServer>;
+
+async function start() {
+  await ensureCatalogSchema();
+  await ensureAuthSchema(db);
+  await ensureAdminSchema(db);
+  await ensureApiVersionSchema(db);
+  await ensureDefaultAdmin(db);
+  await ensureDemoUsers(db);
+  await ensureAccountVerificationSchema(db);
+  await ensureDocsSchema(db);
+  await initAuditColumnCache(db);
+  await reconcileOrphanedSpecFiles();
+
+  server = createTransportServer(app).listen(port, host, () => {
+    const protocol = getTlsConfig().enabled ? 'https' : 'http';
+    console.log(`Backend running at ${protocol}://${host}:${port}`);
+  });
+}
+
+start().catch(async err => {
+  console.error('[STARTUP] Failed to start backend:', err);
+  await db.close();
+  process.exit(1);
 });

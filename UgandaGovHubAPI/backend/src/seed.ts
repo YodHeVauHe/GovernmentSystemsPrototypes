@@ -1,22 +1,17 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import 'dotenv/config';
+import { createDb } from './db';
 import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers } from './auth';
 import { ensureAccountVerificationSchema } from './account-verification';
 import { ensureApiVersionSchema } from './versioning';
 
-const dataDir = path.join(__dirname, '../data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir);
-}
-
-const db = new Database(path.join(dataDir, 'govhub.db'));
+const db = createDb();
 process.env.GOVHUB_DEMO_MODE = process.env.GOVHUB_DEMO_MODE || 'true';
 
+async function main() {
 console.log('Initializing database schema...');
 
 // Create tables
-db.exec(`
+await db.exec(`
   DROP TABLE IF EXISTS verification_documents;
   DROP TABLE IF EXISTS user_profiles;
   DROP TABLE IF EXISTS sessions;
@@ -57,6 +52,23 @@ db.exec(`
     FOREIGN KEY (owning_mda_id) REFERENCES mdas (id)
   );
 
+  CREATE TABLE audit_logs (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    mda_id TEXT,
+    consumer_user_id TEXT,
+    api_id TEXT,
+    request_id TEXT,
+    details TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+await ensureAuthSchema(db);
+await ensureDefaultAdmin(db);
+await ensureDemoUsers(db);
+
+await db.exec(`
   CREATE TABLE access_requests (
     id TEXT PRIMARY KEY,
     consumer_mda_id TEXT,
@@ -80,23 +92,9 @@ db.exec(`
     FOREIGN KEY (consumer_user_id) REFERENCES users (id),
     FOREIGN KEY (api_id) REFERENCES apis (id)
   );
-
-  CREATE TABLE audit_logs (
-    id TEXT PRIMARY KEY,
-    event_type TEXT NOT NULL,
-    mda_id TEXT,
-    consumer_user_id TEXT,
-    api_id TEXT,
-    request_id TEXT,
-    details TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
 `);
 
-ensureAuthSchema(db);
-ensureDefaultAdmin(db);
-ensureDemoUsers(db);
-ensureAccountVerificationSchema(db);
+await ensureAccountVerificationSchema(db);
 
 console.log('Inserting seed data...');
 
@@ -113,7 +111,7 @@ const mdas = [
   ['mda-09', 'Uganda Police Force', 'UPF'],
   ['mda-10', 'National Information Technology Authority Uganda', 'NITA-U']
 ];
-mdas.forEach(m => insertMda.run(m));
+for (const m of mdas) await insertMda.run(...m);
 
 const insertApi = db.prepare(`
   INSERT INTO apis (
@@ -176,8 +174,15 @@ const apis = [
     'National ICT Policy 2014, Section 5.2', 'Restricted', '99.0% Uptime, <800ms Response Time', 'Draft'
   ]
 ];
-apis.forEach(a => insertApi.run(a));
-ensureApiVersionSchema(db);
+for (const a of apis) await insertApi.run(...a);
+await ensureApiVersionSchema(db);
 
 console.log('Seed data inserted successfully.');
-db.close();
+await db.close();
+}
+
+main().catch(async err => {
+  console.error(err);
+  await db.close();
+  process.exit(1);
+});

@@ -31,7 +31,7 @@ GovHub API models a secure interoperability layer around government APIs:
 The app is implemented as a local full-stack prototype:
 
 - **Frontend:** React, TypeScript, Vite, React Router, and GovHub-specific UI components.
-- **Backend:** Node.js, Express, TypeScript, SQLite via `better-sqlite3`.
+- **Backend:** Node.js, Express, TypeScript, PostgreSQL via `pg`.
 - **API contracts:** OpenAPI files stored in `backend/openapi/`.
 - **Auth:** Cookie-backed sessions with seeded demo accounts.
 - **Security controls:** MFA setup and enforcement, role-based access control, sensitive field encryption at rest, TLS/HSTS support, audit logging, and privacy metadata aligned to Uganda's Data Protection and Privacy Act, 2019.
@@ -45,11 +45,29 @@ Install dependencies:
 npm run install:all
 ```
 
-Seed the local SQLite database:
+Create local env files from the examples if they do not already exist:
 
 ```bash
+cp .env.example .env
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+```
+
+The backend is Postgres-only. For local testing, the example env uses:
+
+```bash
+DATABASE_URL=postgresql://govhub_admin:GovHubAdmin%23PV3ycqEB@localhost:5432/govhub
+DATABASE_SSL=false
+```
+
+Start local Postgres, then seed the database:
+
+```bash
+npm run db:up
 npm run seed
 ```
+
+`npm run db:up` starts a `postgres:16-alpine` container named `uganda-govhub-postgres` on local port `5432`. The script defaults `DOCKER_HOST` to `unix:///run/user/1000/docker.sock`, which matches the user-level Docker socket on this development machine. If your Docker daemon uses a different socket, set `DOCKER_HOST` before running the script.
 
 Start the frontend and backend:
 
@@ -68,12 +86,32 @@ npm run dev:e2e
 Useful scripts:
 
 ```bash
+npm run db:up
+npm run db:down
+npm run db:logs
 npm run lint
 npm run build
 npm test
 npm run test:e2e
 npm run test:a11y
 ```
+
+## Vercel/Postgres Deployment
+
+Use a hosted Postgres database for deployed environments. Set one of these variables in Vercel:
+
+```bash
+DATABASE_URL=postgresql://...
+```
+
+Vercel Postgres-style variables are also supported:
+
+```bash
+POSTGRES_URL=postgresql://...
+POSTGRES_PRISMA_URL=postgresql://...
+```
+
+Do not set `DATABASE_SSL=false` in Vercel. The backend defaults to SSL for hosted Postgres connections.
 
 ## Demo Accounts
 

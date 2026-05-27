@@ -1,7 +1,8 @@
 import crypto from 'crypto';
-import type Database from 'better-sqlite3';
 import { sanitizeUser, type AuthUser, type PublicUser, type UserRole } from './auth';
 import { decryptFields, encryptAtRest, encryptFields } from './crypto-at-rest';
+import type { DbClient } from './db';
+import { exec, many, one, run } from './db';
 
 export type AccountType =
   | 'government_employee'
@@ -265,29 +266,29 @@ function initialVerificationStatus(user: { status?: string | null; role?: string
   return 'draft_profile';
 }
 
-function reconcileUserProfileWithAuthState(db: Database.Database, user: { id: string; status?: string | null; role?: string | null }) {
+async function reconcileUserProfileWithAuthState(db: DbClient, user: { id: string; status?: string | null; role?: string | null }) {
   if (user.status !== 'APPROVED' || !user.role) return;
-  db.prepare(`
+  await run(db, `
     UPDATE user_profiles
     SET verification_status = 'verified',
         review_notes = NULL,
         updated_at = CURRENT_TIMESTAMP
-    WHERE user_id = ?
+    WHERE user_id = $1
       AND verification_status = 'draft_profile'
-  `).run(user.id);
+  `, [user.id]);
   if (user.role === 'admin') {
-    db.prepare(`
+    await run(db, `
       UPDATE user_profiles
       SET account_category = 'admin',
           updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = ?
+      WHERE user_id = $1
         AND account_category <> 'admin'
-    `).run(user.id);
+    `, [user.id]);
   }
 }
 
-export function ensureAccountVerificationSchema(db: Database.Database) {
-  db.exec(`
+export async function ensureAccountVerificationSchema(db: DbClient) {
+  await exec(db, `
     CREATE TABLE IF NOT EXISTS user_profiles (
       user_id TEXT PRIMARY KEY,
       verification_status TEXT NOT NULL DEFAULT 'draft_profile',
@@ -308,8 +309,8 @@ export function ensureAccountVerificationSchema(db: Database.Database) {
       supervisor_email TEXT,
       review_notes TEXT,
       submitted_at TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users (id)
     );
 
@@ -322,56 +323,57 @@ export function ensureAccountVerificationSchema(db: Database.Database) {
       mime_type TEXT NOT NULL,
       storage_ref TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'submitted',
-      uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      uploaded_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id, type),
       FOREIGN KEY (user_id) REFERENCES users (id)
     );
   `);
 
-  const users = db.prepare('SELECT id, account_type, requested_role, role, status, requested_organization FROM users').all() as Array<{
+  const users = await many<{
     id: string;
     account_type: string;
     requested_role: string | null;
     role: string | null;
     status: string;
     requested_organization: string;
-  }>;
-  const insertProfile = db.prepare(`
-    INSERT OR IGNORE INTO user_profiles (user_id, verification_status, account_category, organization_name)
-    VALUES (?, ?, ?, ?)
-  `);
+  }>(db, 'SELECT id, account_type, requested_role, role, status, requested_organization FROM users');
   for (const user of users) {
-    insertProfile.run(
+    await run(db, `
+      INSERT INTO user_profiles (user_id, verification_status, account_category, organization_name)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id) DO NOTHING
+    `, [
       user.id,
       initialVerificationStatus(user),
       initialAccountCategory(user),
       encryptAtRest(user.requested_organization || null)
-    );
-    reconcileUserProfileWithAuthState(db, user);
+    ]);
+    await reconcileUserProfileWithAuthState(db, user);
   }
-  encryptExistingAccountVerificationData(db);
+  await encryptExistingAccountVerificationData(db);
 }
 
-export function ensureUserProfile(db: Database.Database, userId: string, accountType?: string, organizationName?: string) {
-  db.prepare(`
-    INSERT OR IGNORE INTO user_profiles (user_id, account_category, organization_name)
-    VALUES (?, ?, ?)
-  `).run(userId, normalizeAccountType(accountType), encryptAtRest(organizationName || null));
+export async function ensureUserProfile(db: DbClient, userId: string, accountType?: string, organizationName?: string) {
+  await run(db, `
+    INSERT INTO user_profiles (user_id, account_category, organization_name)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (user_id) DO NOTHING
+  `, [userId, normalizeAccountType(accountType), encryptAtRest(organizationName || null)]);
 }
 
-function encryptExistingAccountVerificationData(db: Database.Database) {
-  const profileRows = db.prepare('SELECT * FROM user_profiles').all() as AccountProfile[];
-  const updateProfile = db.prepare(`
+async function encryptExistingAccountVerificationData(db: DbClient) {
+  const profileRows = await many<AccountProfile>(db, 'SELECT * FROM user_profiles');
+  const updateProfile = `
     UPDATE user_profiles SET
-      nin = ?, national_id_number = ?, contact_phone = ?, address = ?,
-      organization_name = ?, organization_type = ?, ursb_number = ?, brn = ?, tin = ?,
-      staff_id = ?, department = ?, job_title = ?, supervisor_name = ?, supervisor_email = ?,
-      review_notes = ?
-    WHERE user_id = ?
-  `);
+      nin = $1, national_id_number = $2, contact_phone = $3, address = $4,
+      organization_name = $5, organization_type = $6, ursb_number = $7, brn = $8, tin = $9,
+      staff_id = $10, department = $11, job_title = $12, supervisor_name = $13, supervisor_email = $14,
+      review_notes = $15
+    WHERE user_id = $16
+  `;
   for (const profile of profileRows) {
     const encrypted = encryptProfileForStorage(profile);
-    updateProfile.run(
+    await run(db, updateProfile, [
       encrypted.nin,
       encrypted.national_id_number,
       encrypted.contact_phone,
@@ -388,24 +390,23 @@ function encryptExistingAccountVerificationData(db: Database.Database) {
       encrypted.supervisor_email,
       encrypted.review_notes,
       profile.user_id
-    );
+    ]);
   }
 
-  const documentRows = db.prepare('SELECT * FROM verification_documents').all() as VerificationDocument[];
-  const updateDocument = db.prepare('UPDATE verification_documents SET file_name = ?, storage_ref = ? WHERE id = ?');
+  const documentRows = await many<VerificationDocument>(db, 'SELECT * FROM verification_documents');
   for (const document of documentRows) {
     const encrypted = encryptFields(document, ENCRYPTED_DOCUMENT_FIELDS as string[]);
-    updateDocument.run(encrypted.file_name, encrypted.storage_ref, document.id);
+    await run(db, 'UPDATE verification_documents SET file_name = $1, storage_ref = $2 WHERE id = $3', [encrypted.file_name, encrypted.storage_ref, document.id]);
   }
 }
 
-export function upsertVerificationDocument(db: Database.Database, userId: string, input: Omit<Partial<VerificationDocument>, 'id' | 'user_id' | 'uploaded_at'> & { type: string; label: string; file_name: string; mime_type: string; storage_ref?: string }) {
+export async function upsertVerificationDocument(db: DbClient, userId: string, input: Omit<Partial<VerificationDocument>, 'id' | 'user_id' | 'uploaded_at'> & { type: string; label: string; file_name: string; mime_type: string; storage_ref?: string }) {
   const id = `doc_${crypto.randomUUID()}`;
   const encryptedFileName = encryptAtRest(input.file_name);
   const encryptedStorageRef = encryptAtRest(input.storage_ref || `metadata://${userId}/${input.file_name}`);
-  db.prepare(`
+  await run(db, `
     INSERT INTO verification_documents (id, user_id, type, label, file_name, mime_type, storage_ref, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'submitted')
+    VALUES ($1, $2, $3, $4, $5, $6, $7, 'submitted')
     ON CONFLICT(user_id, type) DO UPDATE SET
       label = excluded.label,
       file_name = excluded.file_name,
@@ -413,7 +414,7 @@ export function upsertVerificationDocument(db: Database.Database, userId: string
       storage_ref = excluded.storage_ref,
       status = 'submitted',
       uploaded_at = CURRENT_TIMESTAMP
-  `).run(id, userId, input.type, input.label, encryptedFileName, input.mime_type, encryptedStorageRef);
+  `, [id, userId, input.type, input.label, encryptedFileName, input.mime_type, encryptedStorageRef]);
 }
 
 export function getPrivilegeSummary(user: Pick<AuthUser, 'status' | 'role'>): PrivilegeSummary {
@@ -569,13 +570,13 @@ export function getVerificationProgress(
   };
 }
 
-export function getAccountSnapshot(db: Database.Database, userId: string): AccountSnapshot | null {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as AuthUser | undefined;
+export async function getAccountSnapshot(db: DbClient, userId: string): Promise<AccountSnapshot | null> {
+  const user = await one<AuthUser>(db, 'SELECT * FROM users WHERE id = $1', [userId]);
   if (!user) return null;
-  ensureUserProfile(db, user.id, user.account_type, user.requested_organization);
-  reconcileUserProfileWithAuthState(db, user);
-  const profile = decryptProfileFromStorage(db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId) as AccountProfile);
-  const documents = (db.prepare('SELECT * FROM verification_documents WHERE user_id = ? ORDER BY uploaded_at DESC').all(userId) as VerificationDocument[])
+  await ensureUserProfile(db, user.id, user.account_type, user.requested_organization);
+  await reconcileUserProfileWithAuthState(db, user);
+  const profile = decryptProfileFromStorage(await one<AccountProfile>(db, 'SELECT * FROM user_profiles WHERE user_id = $1', [userId]) as AccountProfile);
+  const documents = (await many<VerificationDocument>(db, 'SELECT * FROM verification_documents WHERE user_id = $1 ORDER BY uploaded_at DESC', [userId]))
     .map(decryptDocumentFromStorage);
   const accountType = normalizeAccountType(profile.account_category || user.account_type);
   const requirements = ACCOUNT_TYPE_REQUIREMENTS[accountType];

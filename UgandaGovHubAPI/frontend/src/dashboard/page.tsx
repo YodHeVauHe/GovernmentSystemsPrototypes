@@ -2,6 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
 import { API_BASE } from '@/lib/api-base';
@@ -400,6 +409,24 @@ function canRunAccountApproval(account: any) {
   return accountVerificationStatus(account) === 'submitted_for_review';
 }
 
+function notificationRoleLabel(role: string) {
+  const labels: Record<string, string> = {
+    admin: 'Admin',
+    api_owner: 'API Owner',
+    developer: 'Developer',
+    reviewer: 'Compliance Reviewer',
+  };
+  return labels[role] || role;
+}
+
+function hasActiveApprovedApiKey(request: any) {
+  return (
+    request.status === 'APPROVED' &&
+    Boolean(request.api_key_preview) &&
+    (request.api_key_status || 'ACTIVE') === 'ACTIVE'
+  );
+}
+
 function accountActionLabel(account: any, busy: boolean) {
   if (busy) return 'Saving...';
   const verificationStatus = accountVerificationStatus(account);
@@ -429,6 +456,8 @@ export default function DashboardPage() {
   const [accountViewMode, setAccountViewMode] = useState<'list' | 'grid'>('list');
   const [timeRange, setTimeRange] = useState('7d');
   const [keyExpiryInputs, setKeyExpiryInputs] = useState<Record<string, string>>({});
+  const [keyActionConfirmation, setKeyActionConfirmation] = useState<{ action: 'revoke' | 'delete'; request: any } | null>(null);
+  const [keyActionBusy, setKeyActionBusy] = useState(false);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState('');
   const dashboardSearch = (searchParams.get('q') || '').trim().toLowerCase();
@@ -497,7 +526,8 @@ export default function DashboardPage() {
         addNotification({
           type: 'key',
           title: 'Access approved',
-          message: `${request?.mda_name || 'An agency'} was approved for ${request?.api_name || 'an API'}.`,
+          message: `Your access request to ${request?.api_name || 'the API'} was approved for ${request?.mda_name || 'your organization'}.`,
+          recipientUserId: request?.consumer_user_id,
         });
         fetchDashboardData();
       })
@@ -545,7 +575,8 @@ export default function DashboardPage() {
         addNotification({
           type: 'account',
           title: 'Account approved',
-          message: `${user.full_name} was approved as ${nextRole}${needsMda ? ` for ${mdas.find(mda => mda.id === nextMda)?.shortName || nextMda}` : ''}.`,
+          message: `Your account was approved as ${notificationRoleLabel(nextRole)}${needsMda ? ` for ${mdas.find(mda => mda.id === nextMda)?.shortName || nextMda}` : ''}.`,
+          recipientUserId: user.id,
         });
         fetchDashboardData();
       })
@@ -579,7 +610,8 @@ export default function DashboardPage() {
         addNotification({
           type: 'account',
           title: 'Account rejected',
-          message: `${user.full_name}'s account request was rejected${reason ? `: ${reason}` : '.'}`,
+          message: `Your account request was rejected${reason ? `: ${reason}` : '.'}`,
+          recipientUserId: user.id,
         });
         fetchDashboardData();
       })
@@ -610,6 +642,12 @@ export default function DashboardPage() {
         toast.success('More information requested', {
           description: `${user.full_name}'s verification profile was returned for updates.`,
         });
+        addNotification({
+          type: 'account',
+          title: 'More information requested',
+          message: `Your verification profile needs more information${notes ? `: ${notes}` : '.'}`,
+          recipientUserId: user.id,
+        });
         fetchDashboardData();
       })
       .catch(err => {
@@ -633,6 +671,12 @@ export default function DashboardPage() {
       .then(() => {
         toast.success('Account suspended', {
           description: `${user.full_name} can no longer access protected workflows.`,
+        });
+        addNotification({
+          type: 'account',
+          title: 'Account suspended',
+          message: 'Your GovHub account was suspended. Protected workflows are unavailable until an administrator restores access.',
+          recipientUserId: user.id,
         });
         fetchDashboardData();
       })
@@ -690,7 +734,8 @@ export default function DashboardPage() {
         addNotification({
           type: 'key',
           title: 'API key expiry updated',
-          message: `${request?.api_name || 'API key'} now expires: ${expiryLabel}.`,
+          message: `Your API key for ${request?.api_name || 'the API'} now expires: ${expiryLabel}.`,
+          recipientUserId: request?.consumer_user_id,
         });
         fetchDashboardData();
       })
@@ -701,9 +746,13 @@ export default function DashboardPage() {
       });
   };
 
-  const handleRevokeKey = (id: string) => {
-    if (!confirm('Revoke this API key? Existing clients will be blocked immediately.')) return;
-    fetch(`${API_BASE}/api/access/${id}/revoke-key`, { method: 'POST' })
+  const openKeyActionConfirmation = (action: 'revoke' | 'delete', request: any) => {
+    setKeyActionConfirmation({ action, request });
+  };
+
+  const handleRevokeKey = (request: any) => {
+    setKeyActionBusy(true);
+    fetch(`${API_BASE}/api/access/${request.id}/revoke-key`, { method: 'POST' })
       .then(async res => {
         const result = await res.json();
         if (!res.ok || result.error) throw new Error(result.error || 'Failed to revoke key');
@@ -713,18 +762,28 @@ export default function DashboardPage() {
         toast.success('API key revoked', {
           description: 'Existing clients using this key are blocked immediately.',
         });
+        addNotification({
+          type: 'key',
+          title: 'API key revoked',
+          message: `Your API key for ${request?.api_name || 'the API'} was revoked.`,
+          recipientUserId: request?.consumer_user_id,
+        });
         fetchDashboardData();
       })
       .catch(err => {
         toast.error('Revoke failed', {
           description: err instanceof Error ? err.message : 'Failed to revoke key',
         });
+      })
+      .finally(() => {
+        setKeyActionBusy(false);
+        setKeyActionConfirmation(null);
       });
   };
 
-  const handleDeleteKey = (id: string) => {
-    if (!confirm('Delete this API key? The access request remains for audit, but the token will no longer be visible or usable.')) return;
-    fetch(`${API_BASE}/api/access/${id}/key`, { method: 'DELETE' })
+  const handleDeleteKey = (request: any) => {
+    setKeyActionBusy(true);
+    fetch(`${API_BASE}/api/access/${request.id}/key`, { method: 'DELETE' })
       .then(async res => {
         const result = await res.json();
         if (!res.ok || result.error) throw new Error(result.error || 'Failed to delete key');
@@ -734,13 +793,32 @@ export default function DashboardPage() {
         toast.success('API key deleted', {
           description: 'The access record remains available for audit review.',
         });
+        addNotification({
+          type: 'key',
+          title: 'API key deleted',
+          message: `Your API key for ${request?.api_name || 'the API'} was deleted. The access request remains available for audit review.`,
+          recipientUserId: request?.consumer_user_id,
+        });
         fetchDashboardData();
       })
       .catch(err => {
         toast.error('Delete failed', {
           description: err instanceof Error ? err.message : 'Failed to delete key',
         });
+      })
+      .finally(() => {
+        setKeyActionBusy(false);
+        setKeyActionConfirmation(null);
       });
+  };
+
+  const confirmKeyAction = () => {
+    if (!keyActionConfirmation || keyActionBusy) return;
+    if (keyActionConfirmation.action === 'revoke') {
+      handleRevokeKey(keyActionConfirmation.request);
+    } else {
+      handleDeleteKey(keyActionConfirmation.request);
+    }
   };
 
   // Filter requests depending on role
@@ -751,8 +829,9 @@ export default function DashboardPage() {
   const isCurrentConsumerRequest = (request: any) => (
     mdaId ? request.consumer_mda_id === mdaId : request.consumer_user_id === user?.id
   );
-  const activeCredentialRequests = requests.filter(r => isCurrentConsumerRequest(r) && r.status === 'APPROVED' && r.api_key_preview && (r.api_key_status || 'ACTIVE') === 'ACTIVE');
-  const visibleRequests = requests.filter(req => {
+  const activeDashboardRequests = requests.filter(req => req.status !== 'APPROVED' || hasActiveApprovedApiKey(req));
+  const activeCredentialRequests = requests.filter(r => isCurrentConsumerRequest(r) && hasActiveApprovedApiKey(r));
+  const visibleRequests = activeDashboardRequests.filter(req => {
     if (role === 'developer') {
       return isCurrentConsumerRequest(req);
     }
@@ -827,7 +906,7 @@ export default function DashboardPage() {
   const pendingAccountCount = accountRequests.filter(user => user.status === 'PENDING_REVIEW').length;
 
   // Calculate statistics
-  const totalApproved = requests.filter(r => r.status === 'APPROVED').length;
+  const totalApproved = requests.filter(hasActiveApprovedApiKey).length;
   const pendingApprovals = requests.filter(r => r.status === 'PENDING').length;
   const totalCallsCount = auditLogs.filter(l => l.event_type.startsWith('SANDBOX_CALL')).length;
   const deniedCallsCount = auditLogs.filter(l => l.event_type === 'SANDBOX_CALL_DENIED').length;
@@ -844,6 +923,12 @@ export default function DashboardPage() {
     : 0;
   const maxTrafficCount = Math.max(1, ...analyticsTraffic.map(bucket => bucket.count));
   const distributionColors = ['bg-[#3ecf8e]', 'bg-blue-500', 'bg-orange-400', 'bg-purple-400', 'bg-yellow-400', 'bg-red-400'];
+  const keyActionRequest = keyActionConfirmation?.request;
+  const keyActionIsDelete = keyActionConfirmation?.action === 'delete';
+  const keyActionTitle = keyActionIsDelete ? 'Delete API key?' : 'Revoke API key?';
+  const keyActionButtonLabel = keyActionBusy
+    ? (keyActionIsDelete ? 'Deleting...' : 'Revoking...')
+    : (keyActionIsDelete ? 'Delete key' : 'Revoke key');
 
   return (
     <div className="h-full overflow-hidden">
@@ -1100,14 +1185,14 @@ export default function DashboardPage() {
                                     className="w-44 border-[#2e2e2e] bg-[#1c1c1c] text-[#ededed]"
                                   >
                                     <DropdownMenuItem
-                                      onClick={() => handleRevokeKey(req.id)}
+                                      onClick={() => openKeyActionConfirmation('revoke', req)}
                                       className="flex cursor-pointer items-center gap-2 text-[12px] text-orange-300 focus:bg-orange-400/10 focus:text-orange-200"
                                     >
                                       <IconBan className="h-3.5 w-3.5" />
                                       Revoke key
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
-                                      onClick={() => handleDeleteKey(req.id)}
+                                      onClick={() => openKeyActionConfirmation('delete', req)}
                                       className="flex cursor-pointer items-center gap-2 text-[12px] text-red-300 focus:bg-red-400/10 focus:text-red-200"
                                     >
                                       <IconTrash className="h-3.5 w-3.5" />
@@ -1768,6 +1853,51 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={Boolean(keyActionConfirmation)}
+        onOpenChange={open => {
+          if (!open && !keyActionBusy) setKeyActionConfirmation(null);
+        }}
+      >
+        <AlertDialogContent className="border-[#2e2e2e] bg-[#1c1c1c] text-[#ededed]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{keyActionTitle}</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#b5b5b5]">
+              {keyActionIsDelete
+                ? 'The key will be removed from active channels and cannot be used again. The access request remains available in audit logs.'
+                : 'Existing clients using this key will be blocked immediately. The access request remains available in audit logs.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {keyActionRequest && (
+            <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-3 text-[12px]">
+              <div className="font-semibold text-white">{keyActionRequest.api_name || 'Selected API'}</div>
+              <div className="mt-1 text-[#8b8b8b]">{keyActionRequest.mda_name || keyActionRequest.consumer_name || 'Selected consumer'}</div>
+              <div className="mt-2 font-mono text-[#3ecf8e]">{keyActionRequest.api_key_preview}</div>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={keyActionBusy}
+              className="border-[#2e2e2e] bg-[#141414] text-[#ededed] hover:bg-[#2e2e2e] hover:text-white"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <button
+              type="button"
+              onClick={confirmKeyAction}
+              disabled={keyActionBusy}
+              className={`inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
+                keyActionIsDelete
+                  ? 'bg-red-500 text-white hover:bg-red-400'
+                  : 'bg-orange-400 text-black hover:bg-orange-300'
+              }`}
+            >
+              {keyActionButtonLabel}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Slide-over Detail Panel for Audit Logs Drill-down */}
       {selectedLog && (
