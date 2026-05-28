@@ -332,9 +332,16 @@ function enrichedOperation(route: string, method: string, rawOperation: Record<s
   };
 }
 
-function enrichPaths(paths: Record<string, unknown>) {
+function compactRoute(route: string, serverBasePath: string) {
+  const visibleBasePath = serverBasePath.replace(/^\/api(?=\/|$)/, '') || serverBasePath;
+  if (route === visibleBasePath) return '/';
+  if (route.startsWith(`${visibleBasePath}/`)) return route.slice(visibleBasePath.length);
+  return route;
+}
+
+function enrichPaths(paths: Record<string, unknown>, serverBasePath: string) {
   return Object.fromEntries(Object.entries(paths).map(([route, pathItem]) => [
-    route,
+    compactRoute(route, serverBasePath),
     Object.fromEntries(Object.entries(pathItem as Record<string, Record<string, unknown>>).map(([method, rawOperation]) => [
       method,
       enrichedOperation(route, method.toLowerCase(), rawOperation),
@@ -342,7 +349,7 @@ function enrichPaths(paths: Record<string, unknown>) {
   ]));
 }
 
-function spec(title: string, description: string, paths: Record<string, unknown>) {
+function spec(title: string, description: string, serverBasePath: string, paths: Record<string, unknown>) {
   return {
     openapi: '3.0.3',
     info: {
@@ -356,7 +363,7 @@ function spec(title: string, description: string, paths: Record<string, unknown>
     },
     servers: [
       {
-        url: 'https://ugandagovhubapi.vercel.app/api',
+        url: `https://ugandagovhubapi.vercel.app${serverBasePath}`,
         description: 'Production demo sandbox endpoint',
       },
     ],
@@ -382,7 +389,7 @@ function spec(title: string, description: string, paths: Record<string, unknown>
         },
       },
     },
-    paths: enrichPaths(paths),
+    paths: enrichPaths(paths, serverBasePath),
   };
 }
 
@@ -407,7 +414,7 @@ export const productionDemoApis: DemoApi[] = [
     sla_target: '99.9% Uptime, <150ms Response Time',
     compliance_status: 'Approved for Production',
     docs_visibility: 'restricted',
-    spec: spec('NIRA Identity Verification API', 'Sandbox NIRA-style identity verification endpoints for NIN checks and consented identity assurance.', {
+    spec: spec('NIRA Identity Verification API', 'Sandbox NIRA-style identity verification endpoints for NIN checks and consented identity assurance.', '/api/v1/identity', {
       '/v1/identity/verify-nin': { post: operation('Verify NIN', 'Checks whether a NIN and biographic fields match a registry record.', ['Identity']) },
       '/v1/identity/biographic-match': { post: operation('Run biographic match', 'Returns a match confidence score for supplied biographic attributes.', ['Identity']) },
       '/v1/identity/card-status/{nin}': { get: operation('Check national ID card status', 'Returns active, expired, replaced, or lost-card sandbox status.', ['Identity']) },
@@ -436,7 +443,7 @@ export const productionDemoApis: DemoApi[] = [
     sla_target: '99.5% Uptime, <200ms Response Time',
     compliance_status: 'Approved for Production',
     docs_visibility: 'authenticated',
-    spec: spec('URA Tax Compliance Status API', 'Sandbox URA-style tax verification endpoints for TIN and compliance checks.', {
+    spec: spec('URA Tax Compliance Status API', 'Sandbox URA-style tax verification endpoints for TIN and compliance checks.', '/api/v1/tax', {
       '/v1/tax/tin-status/{tin}': { get: operation('Check TIN status', 'Returns active, inactive, suspended, or unknown sandbox TIN status.', ['Tax']) },
       '/v1/tax/clearance/{tin}': { get: operation('Check tax clearance', 'Returns whether a taxpayer has a valid clearance indicator.', ['Tax']) },
       '/v1/tax/vat-status/{tin}': { get: operation('Check VAT registration', 'Returns VAT registration and effective date indicators.', ['Tax']) },
@@ -465,7 +472,7 @@ export const productionDemoApis: DemoApi[] = [
     sla_target: '99.0% Uptime, <300ms Response Time',
     compliance_status: 'Approved for Sandbox',
     docs_visibility: 'public',
-    spec: spec('URSB Business Registration Lookup', 'Sandbox URSB-style business registry endpoints for registration and company status checks.', {
+    spec: spec('URSB Business Registration Lookup', 'Sandbox URSB-style business registry endpoints for registration and company status checks.', '/api/v1/business', {
       '/v1/business/registration/{brn}': { get: operation('Get registration record', 'Returns public business registration facts for a BRN.', ['Business Registry']) },
       '/v1/business/name-search': { get: operation('Search registered names', 'Searches sandbox company and business names.', ['Business Registry']) },
       '/v1/business/company-status/{companyNumber}': { get: operation('Check company status', 'Returns active, dormant, dissolved, or under-review status.', ['Business Registry']) },
@@ -494,7 +501,7 @@ export const productionDemoApis: DemoApi[] = [
     sla_target: '99.5% Uptime, <200ms Response Time',
     compliance_status: 'Under Review',
     docs_visibility: 'authenticated',
-    spec: spec('Driving Permit Verification API', 'Sandbox Ministry of Works and Transport-style driving permit verification endpoints.', {
+    spec: spec('Driving Permit Verification API', 'Sandbox Ministry of Works and Transport-style driving permit verification endpoints.', '/api/v1/transport', {
       '/v1/transport/driving-permit/{permitNumber}/status': { get: operation('Check permit status', 'Returns active, expired, suspended, or revoked sandbox permit status.', ['Transport']) },
       '/v1/transport/driving-permit/{permitNumber}/classes': { get: operation('List permit classes', 'Returns authorized driving classes and expiry indicators.', ['Transport']) },
       '/v1/transport/driving-permit/{permitNumber}/renewal-eligibility': { get: operation('Check renewal eligibility', 'Returns renewal eligibility and blocking reason indicators.', ['Transport']) },
@@ -523,7 +530,7 @@ export const productionDemoApis: DemoApi[] = [
     sla_target: '99.0% Uptime, <800ms Response Time',
     compliance_status: 'Draft',
     docs_visibility: 'restricted',
-    spec: spec('Service Uganda Composite Eligibility', 'Sandbox composite service endpoints for cross-MDA eligibility and service orchestration demos.', {
+    spec: spec('Service Uganda Composite Eligibility', 'Sandbox composite service endpoints for cross-MDA eligibility and service orchestration demos.', '/api/v1/service-uganda', {
       '/v1/service-uganda/eligibility/check': { post: operation('Run composite eligibility check', 'Checks identity, tax, business, and permit signals in one workflow.', ['Composite Services']) },
       '/v1/service-uganda/case-status/{caseId}': { get: operation('Get case status', 'Returns current status for a composite service request.', ['Composite Services']) },
       '/v1/service-uganda/service-bundle/{bundleId}': { get: operation('Get service bundle requirements', 'Returns agencies, checks, and required documents for a bundled service.', ['Composite Services']) },

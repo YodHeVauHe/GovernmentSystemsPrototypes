@@ -29,8 +29,8 @@ export function CodeSamples({ input }: { input: CodeSampleInput }) {
           ))}
         </div>
       </div>
-      <pre className="max-h-[320px] overflow-auto bg-[#0a0a0a] p-4 text-left font-mono text-[12px] leading-relaxed text-[#e0e0e0]">
-        <code>{activeSample.value}</code>
+      <pre className="max-h-[320px] min-w-0 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words bg-[#0a0a0a] p-4 text-left font-mono text-[12px] leading-relaxed text-[#e0e0e0]">
+        <code className="block min-w-0 whitespace-pre-wrap break-words">{activeSample.value}</code>
       </pre>
     </div>
   );

@@ -80,20 +80,13 @@ DATABASE_URL=postgresql://govhub_admin:GovHubAdmin%23PV3ycqEB@localhost:5432/gov
 DATABASE_SSL=false
 ```
 
-Start local Postgres, then seed the database:
-
-```bash
-npm run db:up
-npm run seed
-```
-
-`npm run db:up` starts a `postgres:16-alpine` container named `uganda-govhub-postgres` on local port `5432`. The script defaults `DOCKER_HOST` to `unix:///run/user/1000/docker.sock`, which matches the user-level Docker socket on this development machine. If your Docker daemon uses a different socket, set `DOCKER_HOST` before running the script.
-
-Start the frontend and backend:
+Start the local demo:
 
 ```bash
 npm run dev
 ```
+
+For local development, `npm run dev` tries to start Docker if it is not already running, starts the Postgres container, waits for Postgres to accept connections, seeds the database, and then starts the frontend and backend. This is local demo behavior only; production startup remains covered in the deployment section below. `npm run db:up` starts a `postgres:16-alpine` container named `uganda-govhub-postgres` on local port `5432`. The script uses Docker's default connection first, then common user/rootless Docker startup paths; if your Docker daemon uses a non-standard socket, set `DOCKER_HOST` before running the script.
 
 The frontend runs on the Vite dev-server URL shown in the terminal. The backend defaults to `http://127.0.0.1:4000`.
 

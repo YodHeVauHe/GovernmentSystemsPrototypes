@@ -1090,7 +1090,7 @@ function getSchemaDefault(schema: any, name: string): any {
   return '';
 }
 
-function buildBodyExample(requestBody: any) {
+function buildBodyExample(requestBody: any, spec?: any) {
   const content = requestBody?.content || {};
   const contentType = Object.keys(content)[0] || 'application/json';
   const media = content[contentType];
@@ -1104,18 +1104,96 @@ function buildBodyExample(requestBody: any) {
     return { contentType, value: firstExample.value };
   }
 
-  const schema = media?.schema;
+  const schema = spec ? resolveSchema(media?.schema, spec) : media?.schema;
   if (schema?.type === 'object' || schema?.properties) {
     const value = Object.fromEntries(
       Object.entries(schema.properties || {}).map(([name, propertySchema]) => [
         name,
-        getSchemaDefault(propertySchema, name),
+        spec ? schemaExample(propertySchema, spec, name) : getSchemaDefault(propertySchema, name),
       ])
     );
     return { contentType, value };
   }
 
   return { contentType, value: '' };
+}
+
+function resolveOpenApiRef(spec: any, ref?: string) {
+  if (!ref?.startsWith('#/')) return null;
+  return ref
+    .slice(2)
+    .split('/')
+    .reduce((current: any, segment: string) => current?.[segment], spec);
+}
+
+function resolveSchema(schema: any, spec: any): any {
+  if (!schema?.$ref) return schema;
+  return resolveOpenApiRef(spec, schema.$ref) || schema;
+}
+
+function schemaExample(schema: any, spec: any, name = 'value'): any {
+  const resolved = resolveSchema(schema, spec);
+  if (!resolved) return sampleValues[name] || '';
+  if (resolved.example !== undefined) return resolved.example;
+  if (resolved.default !== undefined) return resolved.default;
+  if (resolved.enum?.length) return resolved.enum[0];
+  if (sampleValues[name] !== undefined) return sampleValues[name];
+  if (resolved.type === 'array') return [schemaExample(resolved.items, spec, name)];
+  if (resolved.type === 'object' || resolved.properties) {
+    return Object.fromEntries(
+      Object.entries(resolved.properties || {}).map(([propertyName, propertySchema]) => [
+        propertyName,
+        schemaExample(propertySchema, spec, propertyName),
+      ])
+    );
+  }
+  if (resolved.type === 'boolean') return false;
+  if (resolved.type === 'integer' || resolved.type === 'number') return 0;
+  return sampleValues[name] || '';
+}
+
+function bodyFields(requestBody: any, spec: any) {
+  const content = requestBody?.content || {};
+  const media = content['application/json'] || content[Object.keys(content)[0]];
+  const schema = resolveSchema(media?.schema, spec);
+  return Object.entries(schema?.properties || {}).map(([name, fieldSchema]: [string, any]) => {
+    const resolvedField = resolveSchema(fieldSchema, spec);
+    return {
+      name,
+      required: schema?.required?.includes(name),
+      description: resolvedField?.description,
+      type: resolvedField?.type || (resolvedField?.properties ? 'object' : 'string'),
+    };
+  });
+}
+
+function responseExample(response: any, spec: any) {
+  const content = response?.content || {};
+  const media = content['application/json'] || content[Object.keys(content)[0]];
+  if (!media) return null;
+  if (media.example !== undefined) return media.example;
+  const firstExample = media.examples ? Object.values(media.examples)[0] as any : null;
+  if (firstExample?.value !== undefined) return firstExample.value;
+  if (firstExample !== undefined) return firstExample;
+  return schemaExample(media.schema, spec);
+}
+
+function pathParametersFromRoute(route: string) {
+  return [...route.matchAll(/\{([^}]+)\}/g)].map(match => ({
+    name: match[1],
+    in: 'path',
+    required: true,
+    description: `${match[1]} path value required by this endpoint.`,
+    schema: { type: 'string', example: sampleValues[match[1]] || `sample-${match[1]}` },
+  }));
+}
+
+function endpointParameters(ep: any) {
+  const explicit = ep.data.parameters || [];
+  const missingPathParameters = pathParametersFromRoute(ep.path).filter(pathParam =>
+    !explicit.some((param: any) => param.in === 'path' && param.name === pathParam.name)
+  );
+  return [...explicit, ...missingPathParameters];
 }
 
 function coerceParameterValue(value: string, schema: any) {
@@ -1205,7 +1283,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
         } satisfies SandboxParameterRow;
       });
 
-    const bodyExample = buildBodyExample(activeEp.data.requestBody);
+    const bodyExample = buildBodyExample(activeEp.data.requestBody, spec);
     setParameters(rows);
     setBodyContentType(bodyExample.contentType);
     setBodyText(
@@ -1810,15 +1888,11 @@ function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: string 
   const [activeTab, setActiveTab] = useState<string>(responseCodes[0] || '');
 
   const activeResponse = ep.data.responses?.[activeTab];
-  const activeExample = activeResponse?.content?.['application/json']?.example 
-    || activeResponse?.content?.['application/json']?.examples?.['Exact Match']?.value 
-    || activeResponse?.content?.['application/json']?.examples?.['Partial Match']?.value 
-    || activeResponse?.content?.['application/json']?.examples?.['Valid Permit']?.value
-    || activeResponse?.content?.['application/json']?.examples?.['Compliant']?.value
-    || activeResponse?.content?.['application/json']?.examples?.['Active Company']?.value
-    || {};
-  const requestBodyExample = buildBodyExample(ep.data.requestBody).value;
+  const activeExample = responseExample(activeResponse, spec);
+  const requestBodyExample = buildBodyExample(ep.data.requestBody, spec).value;
   const sampleUrl = buildSampleUrl(spec, apiId, ep.path);
+  const parameters = endpointParameters(ep);
+  const requestFields = bodyFields(ep.data.requestBody, spec);
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 items-start">
@@ -1839,7 +1913,7 @@ function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: string 
         </p>
         
         {/* Parameters */}
-        {ep.data.parameters && ep.data.parameters.length > 0 && (
+        {parameters.length > 0 && (
           <div className="mb-8">
             <h3 className="text-[13px] font-medium text-[#ededed] mb-3 flex items-center gap-2">
               Parameters
@@ -1854,7 +1928,7 @@ function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: string 
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {ep.data.parameters.map((param: any, pIdx: number) => (
+                  {parameters.map((param: any, pIdx: number) => (
                     <TableRow key={pIdx} className="border-b border-[#2e2e2e] hover:bg-transparent">
                       <TableCell className="py-3 px-4 align-top">
                         <div className="flex items-center gap-2">
@@ -1867,6 +1941,40 @@ function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: string 
                       </TableCell>
                       <TableCell className="py-3 px-4 align-top text-[13px] text-[#8b8b8b]">{param.in}</TableCell>
                       <TableCell className="py-3 px-4 align-top text-[13px] text-[#8b8b8b] font-mono">{param.schema?.type || 'string'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
+
+        {requestFields.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-[13px] font-medium text-[#ededed] mb-3 flex items-center gap-2">
+              Request Body Fields
+            </h3>
+            <div className="rounded-[6px] border border-[#2e2e2e] bg-[#1c1c1c] overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
+                    <TableHead className="text-[11px] text-[#8b8b8b] h-8 px-4 font-medium uppercase tracking-wider">Name</TableHead>
+                    <TableHead className="text-[11px] text-[#8b8b8b] h-8 px-4 font-medium uppercase tracking-wider">Type</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {requestFields.map((field: any) => (
+                    <TableRow key={field.name} className="border-b border-[#2e2e2e] hover:bg-transparent">
+                      <TableCell className="py-3 px-4 align-top">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[13px] text-[#ededed]">{field.name}</span>
+                          {field.required && <span className="text-[10px] text-red-400 font-medium">Required</span>}
+                        </div>
+                        {field.description && (
+                          <p className="text-[12px] text-[#8b8b8b] mt-1">{field.description}</p>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-3 px-4 align-top text-[13px] text-[#8b8b8b] font-mono">{field.type}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -1915,8 +2023,8 @@ function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: string 
               <div className="flex flex-col text-left">
                 <div className="px-4 py-3 bg-[#0a0a0a]">
                   <p className="text-[12.5px] text-[#8b8b8b] mb-3">{activeResponse.description}</p>
-                  {activeResponse.content ? (
-                    <pre className="font-mono text-[12.5px] leading-relaxed text-[#3ecf8e] overflow-x-auto">
+                  {activeResponse.content && activeExample !== null ? (
+                    <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed text-[#3ecf8e] overflow-x-hidden">
                       {JSON.stringify(activeExample, null, 2)}
                     </pre>
                   ) : (
