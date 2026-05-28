@@ -2253,33 +2253,35 @@ function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: string 
             <h3 className="text-[13px] font-medium text-[#ededed] mb-3 flex items-center gap-2">
               Parameters
             </h3>
-            <div className="rounded-[6px] border border-[#2e2e2e] bg-[#1c1c1c] overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
-                    <TableHead className="text-[11px] text-[#8b8b8b] h-8 px-4 font-medium uppercase tracking-wider">Name</TableHead>
-                    <TableHead className="text-[11px] text-[#8b8b8b] h-8 px-4 font-medium uppercase tracking-wider">In</TableHead>
-                    <TableHead className="text-[11px] text-[#8b8b8b] h-8 px-4 font-medium uppercase tracking-wider">Type</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {parameters.map((param: any, pIdx: number) => (
-                    <TableRow key={pIdx} className="border-b border-[#2e2e2e] hover:bg-transparent">
-                      <TableCell className="py-3 px-4 align-top">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[13px] text-[#ededed]">{param.name}</span>
-                          {param.required && <span className="text-[10px] text-red-400 font-medium">Required</span>}
-                        </div>
-                        {param.description && (
-                          <p className="text-[12px] text-[#8b8b8b] mt-1">{param.description}</p>
-                        )}
-                      </TableCell>
-                      <TableCell className="py-3 px-4 align-top text-[13px] text-[#8b8b8b]">{param.in}</TableCell>
-                      <TableCell className="py-3 px-4 align-top text-[13px] text-[#8b8b8b] font-mono">{param.schema?.type || 'string'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            <div className="min-w-0 overflow-hidden rounded-[6px] border border-[#2e2e2e] bg-[#1c1c1c]">
+              <div className="grid grid-cols-[minmax(0,1fr)_72px_96px] gap-3 border-b border-[#2e2e2e] bg-[#141414] px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-[#8b8b8b] max-sm:grid-cols-1 max-sm:gap-1">
+                <span className="min-w-0 break-words">Name</span>
+                <span className="min-w-0 break-words">In</span>
+                <span className="min-w-0 break-words">Type</span>
+              </div>
+              {parameters.map((param: any, pIdx: number) => (
+                <div key={pIdx} className="grid min-w-0 grid-cols-[minmax(0,1fr)_72px_96px] gap-3 border-b border-[#2e2e2e] px-4 py-3 last:border-b-0 max-sm:grid-cols-1 max-sm:gap-2">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="min-w-0 break-all font-mono text-[13px] text-[#ededed]">{param.name}</span>
+                      {param.required && <span className="shrink-0 text-[10px] font-medium text-red-400">Required</span>}
+                    </div>
+                    {param.description && (
+                      <p className="mt-1 max-w-full whitespace-normal break-words text-[12px] leading-relaxed text-[#8b8b8b]">
+                        {param.description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="min-w-0 break-words text-[13px] text-[#8b8b8b] max-sm:flex max-sm:gap-2">
+                    <span className="hidden text-[11px] uppercase tracking-wider text-[#666] max-sm:inline">In</span>
+                    {param.in}
+                  </div>
+                  <div className="min-w-0 break-all font-mono text-[13px] text-[#8b8b8b] max-sm:flex max-sm:gap-2">
+                    <span className="hidden font-sans text-[11px] uppercase tracking-wider text-[#666] max-sm:inline">Type</span>
+                    {param.schema?.type || 'string'}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -2289,31 +2291,30 @@ function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: string 
             <h3 className="text-[13px] font-medium text-[#ededed] mb-3 flex items-center gap-2">
               Request Body Fields
             </h3>
-            <div className="rounded-[6px] border border-[#2e2e2e] bg-[#1c1c1c] overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
-                    <TableHead className="text-[11px] text-[#8b8b8b] h-8 px-4 font-medium uppercase tracking-wider">Name</TableHead>
-                    <TableHead className="text-[11px] text-[#8b8b8b] h-8 px-4 font-medium uppercase tracking-wider">Type</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {requestFields.map((field: any) => (
-                    <TableRow key={field.name} className="border-b border-[#2e2e2e] hover:bg-transparent">
-                      <TableCell className="py-3 px-4 align-top">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[13px] text-[#ededed]">{field.name}</span>
-                          {field.required && <span className="text-[10px] text-red-400 font-medium">Required</span>}
-                        </div>
-                        {field.description && (
-                          <p className="text-[12px] text-[#8b8b8b] mt-1">{field.description}</p>
-                        )}
-                      </TableCell>
-                      <TableCell className="py-3 px-4 align-top text-[13px] text-[#8b8b8b] font-mono">{field.type}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            <div className="min-w-0 overflow-hidden rounded-[6px] border border-[#2e2e2e] bg-[#1c1c1c]">
+              <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3 border-b border-[#2e2e2e] bg-[#141414] px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-[#8b8b8b] max-sm:grid-cols-1 max-sm:gap-1">
+                <span className="min-w-0 break-words">Name</span>
+                <span className="min-w-0 break-words">Type</span>
+              </div>
+              {requestFields.map((field: any) => (
+                <div key={field.name} className="grid min-w-0 grid-cols-[minmax(0,1fr)_120px] gap-3 border-b border-[#2e2e2e] px-4 py-3 last:border-b-0 max-sm:grid-cols-1 max-sm:gap-2">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="min-w-0 break-all font-mono text-[13px] text-[#ededed]">{field.name}</span>
+                      {field.required && <span className="shrink-0 text-[10px] font-medium text-red-400">Required</span>}
+                    </div>
+                    {field.description && (
+                      <p className="mt-1 max-w-full whitespace-normal break-words text-[12px] leading-relaxed text-[#8b8b8b]">
+                        {field.description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="min-w-0 break-all font-mono text-[13px] text-[#8b8b8b] max-sm:flex max-sm:gap-2">
+                    <span className="hidden font-sans text-[11px] uppercase tracking-wider text-[#666] max-sm:inline">Type</span>
+                    {field.type}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
