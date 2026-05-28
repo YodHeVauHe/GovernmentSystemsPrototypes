@@ -1,18 +1,13 @@
 import 'dotenv/config';
-import fs from 'fs';
-import path from 'path';
+import yaml from 'js-yaml';
 import { createDb } from './db';
 import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers } from './auth';
 import { ensureAccountVerificationSchema } from './account-verification';
-import { ensureApiVersionSchema } from './versioning';
+import { ensureApiVersionSchema, parseSpecMetadata, slugifyVersion } from './versioning';
+import { productionDemoApis } from './seed-production-demo-catalog';
 
 const db = createDb();
 process.env.GOVHUB_DEMO_MODE = process.env.GOVHUB_DEMO_MODE || 'true';
-
-function readSeedSpec(openapiPath: string) {
-  const filePath = path.join(__dirname, '..', openapiPath);
-  return fs.readFileSync(filePath, 'utf8');
-}
 
 async function main() {
 console.log('Initializing database schema...');
@@ -130,58 +125,33 @@ const insertApi = db.prepare(`
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-const apis = [
-  [
-    'api-nira-01', 'NIRA Identity Verification API', 'mda-01', 'Identity',
-    'Verify citizen identity using NIN. Returns match confidence and basic verification status.',
-    'Production', 'High', 1, '/openapi/nira-identity.yaml', readSeedSpec('/openapi/nira-identity.yaml'), 'Director General', 'data.protection@nira.go.ug',
-    'Identity Systems Team', 'NIN, Surname, Given Name, Date of Birth',
-    'Verification of identity for lawful public service delivery',
-    'Returns boolean flags and match confidence; never returns full registry records',
-    'Access log retained for 1 year; citizen query parameters are not stored',
-    'Registration of Persons Act 2015, Section 65', 'Restricted', '99.9% Uptime, <150ms Response Time', 'Approved for Production'
-  ],
-  [
-    'api-ura-01', 'URA Tax Compliance Status API', 'mda-02', 'Finance',
-    'Check tax clearance status for businesses and individuals.',
-    'Production', 'Medium', 1, '/openapi/ura-tax.yaml', readSeedSpec('/openapi/ura-tax.yaml'), 'Commissioner General', 'api.support@ura.go.ug',
-    'URA IT Department', 'TIN, Compliance Status',
-    'Supplier verification, business registration, and compliance tracking',
-    'Only outputs binary compliance status; no detailed tax returns exposed',
-    'Logs kept for 6 months',
-    'Tax Procedures Code Act 2014, Section 43', 'Official', '99.5% Uptime, <200ms Response Time', 'Approved for Production'
-  ],
-  [
-    'api-ursb-01', 'URSB Business Registration Lookup', 'mda-03', 'Commerce',
-    'Look up business registration details and verify company status.',
-    'Beta', 'Low', 1, '/openapi/ursb-business.yaml', readSeedSpec('/openapi/ursb-business.yaml'), 'Registrar General', 'services@ursb.go.ug',
-    'URSB Systems Division', 'BRN, Company Name, Director Names',
-    'KYC verification for government registration and private service onboarding',
-    'Differentiates between public registry facts and restricted beneficial ownership details',
-    'Logs kept for 1 year',
-    'Companies Act 2012, Section 396', 'Public', '99.0% Uptime, <300ms Response Time', 'Approved for Sandbox'
-  ],
-  [
-    'api-mowt-01', 'Driving Permit Verification API', 'mda-04', 'Transport',
-    'Verify driving permit status and validity class.',
-    'Beta', 'Medium', 1, '/openapi/driving-permit.yaml', readSeedSpec('/openapi/driving-permit.yaml'), 'Director of Transport', 'permits.support@works.go.ug',
-    'MoWT IT Team', 'Permit Number, Class, Expiry, Status',
-    'Verification of driver eligibility for recruitment, licensing, and enforcement',
-    'Returns class authorization and validity; does not return driving record history',
-    'Logs kept for 6 months',
-    'Traffic and Road Safety Act 1998, Section 42', 'Official', '99.5% Uptime, <200ms Response Time', 'Under Review'
-  ],
-  [
-    'api-moict-01', 'Service Uganda Composite Eligibility', 'mda-05', 'Integration',
-    'Composite workflow checking citizen identity, tax status, and driving permit in a single call.',
-    'Draft', 'High', 1, '/openapi/service-uganda.yaml', readSeedSpec('/openapi/service-uganda.yaml'), 'Permanent Secretary', 'support@ict.go.ug',
-    'GovHub Integration Team', 'NIN, TIN, Permit Number',
-    'Single-window citizen eligibility assessment for bundled public services',
-    'Aggregates source system status without consolidating or storing citizen data',
-    'Correlation log kept for 30 days',
-    'National ICT Policy 2014, Section 5.2', 'Restricted', '99.0% Uptime, <800ms Response Time', 'Draft'
-  ]
-];
+const apis = productionDemoApis.map(api => {
+  const specText = yaml.dump(api.spec, { lineWidth: 120, noRefs: true });
+  const metadata = parseSpecMetadata(specText);
+  return [
+    api.id,
+    api.name,
+    api.owning_mda_id,
+    api.sector,
+    api.description,
+    api.lifecycle_status,
+    api.sensitivity_level,
+    1,
+    `/openapi/${api.id}-${slugifyVersion(metadata.version)}.yaml`,
+    specText,
+    api.required_approval_level,
+    api.contact_office,
+    api.technical_owner,
+    api.personal_data_categories,
+    api.purpose_limitation,
+    api.data_minimization_note,
+    api.retention_class,
+    api.statutory_basis,
+    api.security_classification,
+    api.sla_target,
+    api.compliance_status
+  ];
+});
 for (const a of apis) await insertApi.run(...a);
 await ensureApiVersionSchema(db);
 

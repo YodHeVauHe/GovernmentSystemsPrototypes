@@ -7,10 +7,13 @@ for (const api of productionDemoApis) {
   const spec = api.spec as any;
   assert.equal(spec.openapi, '3.0.3', `${api.id} should seed an OpenAPI 3.0.3 spec`);
   assert.ok(spec.info?.contact?.email, `${api.id} should include contact metadata`);
+  assert.ok(spec.servers?.[0]?.url?.includes('/api/v1/'), `${api.id} should put the API base path in servers`);
   assert.ok(spec.components?.schemas?.SandboxError, `${api.id} should include reusable error schema`);
   assert.ok(Object.keys(spec.paths).length >= 6, `${api.id} should preserve the expanded production endpoint set`);
 
   for (const [route, pathItem] of Object.entries(spec.paths) as Array<[string, Record<string, any>]>) {
+    assert.ok(!route.startsWith('/v1/'), `${api.id} ${route} should not repeat the server base path`);
+
     for (const [method, operation] of Object.entries(pathItem)) {
       if (!allowedMethods.has(method)) continue;
 
