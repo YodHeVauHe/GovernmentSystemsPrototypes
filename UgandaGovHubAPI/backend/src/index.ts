@@ -28,6 +28,7 @@ import { resolveCatalogSpecInput } from './catalog-spec-input';
 import { UPDATE_API_SQL } from './catalog-sql';
 import { createDb, hasColumn } from './db';
 import { getCurrentSpecForApi, getSpecByPath, getVersionSpecForApi, normalizeOpenApiPath } from './openapi-store';
+import { syncProductionDemoCatalog } from './seed-production-demo-catalog';
 
 dotenv.config();
 
@@ -862,6 +863,9 @@ export function initializeApp() {
       await ensureDemoUsers(db);
       await ensureAccountVerificationSchema(db);
       await ensureDocsSchema(db);
+      if (process.env.GOVHUB_SYNC_DEMO_CATALOG !== 'false') {
+        await syncProductionDemoCatalog(db);
+      }
       await initAuditColumnCache(db);
     })();
   }
