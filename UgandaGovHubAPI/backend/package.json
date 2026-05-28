@@ -19,10 +19,11 @@
     "test:catalog-sql": "ts-node src/catalog-sql.test.ts",
     "test:openapi-store": "ts-node src/openapi-store.test.ts",
     "test:openapi-reconciliation": "ts-node src/openapi-reconciliation.test.ts",
+    "test:production-demo-seed": "ts-node src/seed-production-demo-catalog.test.ts",
     "test:versioning": "ts-node src/versioning.test.ts",
     "test:docs-access": "ts-node src/docs-access.test.ts",
     "test:sandbox": "ts-node src/sandbox.test.ts",
-    "test": "npm run typecheck && npm run test:db && npm run test:ids && npm run test:catalog-spec-input && npm run test:openapi-store && npm run test:openapi-reconciliation"
+    "test": "npm run typecheck && npm run test:db && npm run test:ids && npm run test:catalog-spec-input && npm run test:openapi-store && npm run test:openapi-reconciliation && npm run test:production-demo-seed"
   },
   "keywords": [],
   "author": "",
