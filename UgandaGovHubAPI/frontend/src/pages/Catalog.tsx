@@ -1674,11 +1674,11 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
                 {response.requestHeaders && Object.keys(response.requestHeaders).length > 0 ? (
                   <div>
                     <div className="text-[10px] text-[#8b8b8b] uppercase tracking-wider font-semibold mb-1.5">Request Headers</div>
-                    <div className="border border-[#2e2e2e] rounded-md overflow-hidden">
+                    <div className="w-full border border-[#2e2e2e] rounded-md overflow-hidden">
                       {Object.entries(response.requestHeaders).map(([key, val], idx) => (
-                        <div key={key} className={`grid grid-cols-[1fr_2fr] ${idx > 0 ? 'border-t border-[#2e2e2e]' : ''}`}>
-                          <div className="px-3 py-1.5 text-[11px] font-mono text-[#3ecf8e] bg-[#1c1c1c] border-r border-[#2e2e2e]">{key}</div>
-                          <div className="px-3 py-1.5 text-[11px] font-mono text-gray-300 bg-[#0a0a0a] break-all">{val as string}</div>
+                        <div key={key} className={`grid grid-cols-[minmax(180px,0.9fr)_minmax(0,2fr)] ${idx > 0 ? 'border-t border-[#2e2e2e]' : ''}`}>
+                          <div className="min-w-0 px-3 py-1.5 text-[11px] font-mono text-[#3ecf8e] bg-[#1c1c1c] border-r border-[#2e2e2e] break-words">{key}</div>
+                          <div className="min-w-0 px-3 py-1.5 text-[11px] font-mono text-gray-300 bg-[#0a0a0a] break-words">{val as string}</div>
                         </div>
                       ))}
                     </div>
@@ -1693,11 +1693,11 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
                 {Object.keys(response.headers || {}).length > 0 ? (
                   <div>
                     <div className="text-[10px] text-[#8b8b8b] uppercase tracking-wider font-semibold mb-1.5">Response Headers</div>
-                    <div className="border border-[#2e2e2e] rounded-md overflow-hidden max-h-[240px] overflow-y-auto">
+                    <div className="w-full border border-[#2e2e2e] rounded-md overflow-hidden max-h-[240px] overflow-y-auto overflow-x-hidden">
                       {Object.entries(response.headers).map(([key, val], idx) => (
-                        <div key={key} className={`grid grid-cols-[1fr_2fr] ${idx > 0 ? 'border-t border-[#2e2e2e]' : ''}`}>
-                          <div className="px-3 py-1.5 text-[11px] font-mono text-[#3ecf8e] bg-[#1c1c1c] border-r border-[#2e2e2e] whitespace-nowrap">{key}</div>
-                          <div className="px-3 py-1.5 text-[11px] font-mono text-gray-300 bg-[#0a0a0a] break-all">{val as string}</div>
+                        <div key={key} className={`grid grid-cols-[minmax(180px,0.9fr)_minmax(0,2fr)] ${idx > 0 ? 'border-t border-[#2e2e2e]' : ''}`}>
+                          <div className="min-w-0 px-3 py-1.5 text-[11px] font-mono text-[#3ecf8e] bg-[#1c1c1c] border-r border-[#2e2e2e] break-words">{key}</div>
+                          <div className="min-w-0 px-3 py-1.5 text-[11px] font-mono text-gray-300 bg-[#0a0a0a] break-words">{val as string}</div>
                         </div>
                       ))}
                     </div>
