@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import yaml from 'js-yaml';
+import type { Db } from './db';
 import { getSpecSha, parseSpecMetadata, slugifyVersion } from './versioning';
 
 type DemoApi = {
@@ -542,10 +543,11 @@ export const productionDemoApis: DemoApi[] = [
   },
 ];
 
-async function upsertDemoCatalog() {
-  const { db, initializeApp } = await import('./app');
-  await initializeApp();
+type SyncProductionDemoCatalogOptions = {
+  log?: boolean;
+};
 
+export async function syncProductionDemoCatalog(db: Db, options: SyncProductionDemoCatalogOptions = {}) {
   const insertMda = db.prepare(`
     INSERT INTO mdas (id, name, short_name)
     VALUES (?, ?, ?)
@@ -658,7 +660,14 @@ async function upsertDemoCatalog() {
     ORDER BY a.name
   `).all(productionDemoApis.map(api => api.id));
 
-  console.table(rows);
+  if (options.log) console.table(rows);
+}
+
+async function upsertDemoCatalog() {
+  process.env.GOVHUB_SYNC_DEMO_CATALOG = 'false';
+  const { db, initializeApp } = await import('./app');
+  await initializeApp();
+  await syncProductionDemoCatalog(db, { log: true });
   await db.close();
 }
 

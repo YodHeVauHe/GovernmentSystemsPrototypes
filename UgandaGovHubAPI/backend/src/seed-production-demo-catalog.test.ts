@@ -1,7 +1,9 @@
 import assert from 'assert/strict';
-import { productionDemoApis } from './seed-production-demo-catalog';
+import { productionDemoApis, syncProductionDemoCatalog } from './seed-production-demo-catalog';
 
 const allowedMethods = new Set(['get', 'post', 'put', 'delete', 'patch', 'options', 'head']);
+
+assert.equal(typeof syncProductionDemoCatalog, 'function', 'production app startup should be able to sync the rich demo catalog');
 
 for (const api of productionDemoApis) {
   const spec = api.spec as any;
