@@ -1,4 +1,5 @@
-import { IconCheck, IconCode, IconLink, IconLoader, IconUpload } from '@tabler/icons-react';
+import { IconCheck, IconCode, IconLink, IconUpload } from '@tabler/icons-react';
+import { Spinner } from '@/components/ui/spinner';
 
 type SourceTab = 'url' | 'file' | 'text';
 
@@ -98,7 +99,7 @@ export function OpenApiImportStep({
           disabled={loading || (activeSourceTab === 'url' ? !specUrl : !specText)}
           className="flex h-[38px] w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-[#3ecf8e] text-[13px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading ? <IconLoader className="h-4 w-4 animate-spin text-black" /> : <IconCheck className="h-4 w-4" />}
+          {loading ? <Spinner className="h-4 w-4 text-black" /> : <IconCheck className="h-4 w-4" />}
           Validate OpenAPI Specification
         </button>
       </div>

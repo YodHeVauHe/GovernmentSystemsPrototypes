@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { IconCheck, IconCode, IconGitBranch, IconLink, IconLoader, IconUpload, IconX } from '@tabler/icons-react';
+import { IconCheck, IconCode, IconGitBranch, IconLink, IconUpload, IconX } from '@tabler/icons-react';
+import { Spinner } from '@/components/ui/spinner';
 import { API_BASE } from '@/lib/api-base';
 
 export function PublishVersionModal({
@@ -203,8 +204,8 @@ export function PublishVersionModal({
             disabled={!canPublish || publishing}
             className="h-9 px-4 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[13px] flex items-center gap-2 disabled:opacity-50"
           >
-            {publishing ? <IconLoader className="h-4 w-4 animate-spin" /> : <IconGitBranch className="h-4 w-4" />}
-            {publishing ? 'Publishing...' : 'Validate & Publish'}
+            {publishing ? <Spinner className="h-4 w-4" /> : <IconGitBranch className="h-4 w-4" />}
+            Validate & Publish
           </button>
         </div>
       </div>

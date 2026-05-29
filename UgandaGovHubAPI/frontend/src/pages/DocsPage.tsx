@@ -18,6 +18,7 @@ import {
   IconWorld,
 } from '@tabler/icons-react';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { API_BASE } from '@/lib/api-base';
 
@@ -113,6 +114,54 @@ function LifecycleBadge({ value }: { value: string | null }) {
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-mono uppercase ${toneClass}`}>
       {lifecycle}
     </span>
+  );
+}
+
+function DocsLoadingState({ viewMode }: { viewMode: 'grid' | 'list' }) {
+  if (viewMode === 'list') {
+    return (
+      <div className="overflow-hidden rounded-lg border border-[#2e2e2e] bg-[#1c1c1c]">
+        <div className="grid grid-cols-[minmax(280px,1.5fr)_repeat(5,minmax(130px,1fr))] border-b border-[#2e2e2e] bg-[#141414] px-4 py-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-3 w-24 bg-[#242424]" />
+          ))}
+        </div>
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="grid grid-cols-[minmax(280px,1.5fr)_repeat(5,minmax(130px,1fr))] items-center gap-4 border-b border-[#2e2e2e] px-4 py-4 last:border-b-0">
+            <div>
+              <Skeleton className="h-4 w-56 bg-[#2e2e2e]" />
+              <Skeleton className="mt-2 h-3 w-72 max-w-full bg-[#242424]" />
+            </div>
+            <Skeleton className="h-7 w-28 bg-[#242424]" />
+            <Skeleton className="h-7 w-24 bg-[#242424]" />
+            <Skeleton className="h-7 w-32 bg-[#242424]" />
+            <Skeleton className="h-7 w-28 bg-[#242424]" />
+            <Skeleton className="h-5 w-20 rounded-full bg-[#242424]" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="min-h-[210px] rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <Skeleton className="h-7 w-28 bg-[#242424]" />
+            <Skeleton className="h-5 w-20 rounded-full bg-[#242424]" />
+          </div>
+          <Skeleton className="h-5 w-64 max-w-full bg-[#2e2e2e]" />
+          <Skeleton className="mt-3 h-4 w-full bg-[#242424]" />
+          <Skeleton className="mt-2 h-4 w-4/5 bg-[#242424]" />
+          <div className="mt-10 flex flex-wrap gap-2 border-t border-[#2e2e2e] pt-4">
+            <Skeleton className="h-7 w-24 bg-[#242424]" />
+            <Skeleton className="h-7 w-28 bg-[#242424]" />
+            <Skeleton className="h-7 w-32 bg-[#242424]" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -231,7 +280,7 @@ export function DocsPage() {
           })}
         </div>
 
-        {loading && <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-5 text-sm text-[#8b8b8b]">Loading API docs...</div>}
+        {loading && <DocsLoadingState viewMode={viewMode} />}
         {error && <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-5 text-sm text-red-200">{error}</div>}
         {!loading && !error && filteredApis.length === 0 && (
           <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-8 text-sm text-[#8b8b8b]">

@@ -8,6 +8,7 @@ import {
   IconShieldCheck,
   IconWorld,
 } from '@tabler/icons-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useUser } from '@/context/UserContext';
 import { API_BASE } from '@/lib/api-base';
 import {
@@ -24,6 +25,50 @@ import {
   type OpenApiSpec,
   type Operation,
 } from './api-docs/api-docs-openapi';
+
+function ApiDocsLoadingState() {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-[#181818] text-[#ededed]">
+      <div className="shrink-0 border-b border-[#2e2e2e] bg-[#1c1c1c] px-3 py-3 lg:px-5">
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <Skeleton className="h-5 w-36 bg-[#242424]" />
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-28 bg-[#242424]" />
+            <Skeleton className="h-10 w-36 bg-[#242424]" />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Skeleton className="h-8 w-80 max-w-full bg-[#2e2e2e]" />
+          <Skeleton className="h-7 w-28 bg-[#242424]" />
+          <Skeleton className="h-7 w-32 bg-[#242424]" />
+          <Skeleton className="h-7 w-16 bg-[#242424]" />
+        </div>
+        <Skeleton className="mt-3 h-4 w-[720px] max-w-full bg-[#242424]" />
+        <Skeleton className="mt-2 h-4 w-[560px] max-w-full bg-[#242424]" />
+      </div>
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[280px_1fr]">
+        <aside className="hidden min-h-0 overflow-auto border-r border-[#2e2e2e] bg-[#141414] p-4 lg:block">
+          <Skeleton className="mb-5 h-3 w-24 bg-[#242424]" />
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="mb-5 space-y-2">
+              <Skeleton className="h-4 w-32 bg-[#2e2e2e]" />
+              <Skeleton className="h-8 w-full bg-[#242424]" />
+              <Skeleton className="h-8 w-5/6 bg-[#242424]" />
+            </div>
+          ))}
+        </aside>
+        <main className="min-h-0 overflow-auto p-3 lg:p-5">
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <Skeleton key={index} className="h-40 rounded-lg border border-[#2e2e2e] bg-[#1c1c1c]" />
+            ))}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
 
 export function ApiDocsPage() {
   const { apiId } = useParams();
@@ -66,7 +111,7 @@ export function ApiDocsPage() {
   const canEditDocs = role === 'admin' || role === 'api_owner';
 
   if (loading) {
-    return <div className="h-full bg-[#181818] p-5 text-sm text-[#8b8b8b]">Loading API documentation...</div>;
+    return <ApiDocsLoadingState />;
   }
 
   if (error) {

@@ -2,6 +2,7 @@ import { IconLock } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import type { AuthUser } from '@/context/UserContext';
 import { SettingsTabFrame } from './SettingsTabFrame';
 
@@ -50,6 +51,7 @@ export function SecuritySettingsTab({
 
           {!user?.mfa_enabled && !mfaSetup && (
             <Button onClick={onStartMfaSetup} disabled={mfaBusy} className="bg-[#3ecf8e] text-black hover:bg-[#3ecf8e]/95">
+              {mfaBusy && <Spinner className="size-4" />}
               Start MFA Setup
             </Button>
           )}
@@ -67,6 +69,7 @@ export function SecuritySettingsTab({
               <Input id="mfa_enable_code" inputMode="numeric" value={mfaCode} onChange={event => onSetMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))} />
             </div>
             <Button onClick={onEnableMfa} disabled={mfaBusy || mfaCode.length !== 6} className="bg-[#3ecf8e] text-black hover:bg-[#3ecf8e]/95">
+              {mfaBusy && <Spinner className="size-4" />}
               Enable MFA
             </Button>
           </div>
@@ -84,6 +87,7 @@ export function SecuritySettingsTab({
             </div>
             <div className="md:col-span-2">
               <Button variant="destructive" onClick={onDisableMfa} disabled={mfaBusy || !mfaPassword || mfaCode.length !== 6}>
+                {mfaBusy && <Spinner className="size-4" />}
                 Disable MFA
               </Button>
             </div>

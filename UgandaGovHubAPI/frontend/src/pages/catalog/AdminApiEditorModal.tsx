@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { IconDeviceFloppy, IconX } from '@tabler/icons-react';
 import { toast } from 'sonner';
+import { Spinner } from '@/components/ui/spinner';
 import { API_BASE } from '@/lib/api-base';
 import { useNotifications } from '../../context/NotificationContext';
 
@@ -175,8 +176,8 @@ export function AdminApiEditorModal({
               Cancel
             </button>
             <button disabled={saving} type="submit" className="h-9 px-4 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-md text-[13px] flex items-center gap-2 disabled:opacity-50">
-              <IconDeviceFloppy className="h-4 w-4" />
-              {saving ? 'Saving...' : 'Save Changes'}
+              {saving ? <Spinner className="h-4 w-4 text-black" /> : <IconDeviceFloppy className="h-4 w-4" />}
+              Save Changes
             </button>
           </div>
         </div>
