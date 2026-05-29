@@ -3,7 +3,7 @@ import { logAuditEvent } from '../audit';
 import { generateApiKey, generatePublicId } from '../ids';
 import { computeApiKeyHash, getApiKeyPreview, normalizeExpiryInput } from '../admin';
 import { requireAuth } from '../auth';
-import { buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
+import { buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, findBlockingAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
 import type { DbClient } from '../db';
 import { many, one, run } from '../db';
 
@@ -27,9 +27,24 @@ router.post('/', requireAuth(db, ['developer', 'admin']), async (req, res) => {
     return res.status(404).json({ error: apiDecision.message, code: apiDecision.code });
   }
 
-  const id = generatePublicId('req');
-  
   try {
+    const blockingRequest = await findBlockingAccessRequest(db, {
+      apiId: api_id,
+      consumerMdaId: mdaDecision.mdaId || null,
+      consumerUserId: mdaDecision.userId || null,
+    });
+    if (blockingRequest) {
+      return res.status(409).json({
+        error: 'An access request for this API is already pending or active. You can appeal only after an administrator revokes or deletes access.',
+        code: 'ACCESS_REQUEST_ALREADY_EXISTS',
+        existing_request_id: blockingRequest.id,
+        status: blockingRequest.status,
+        api_key_status: blockingRequest.api_key_status,
+      });
+    }
+
+    const id = generatePublicId('req');
+
     await run(db, `
       INSERT INTO access_requests (
         id, consumer_mda_id, consumer_user_id, consumer_type, api_id, purpose,

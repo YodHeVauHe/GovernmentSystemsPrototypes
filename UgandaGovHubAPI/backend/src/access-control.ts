@@ -77,6 +77,41 @@ export async function canSubmitAccessRequest(db: DbClient, apiId: string): Promi
   return { allowed: true };
 }
 
+export type BlockingAccessRequest = {
+  id: string;
+  status: string;
+  api_key_status: string | null;
+};
+
+export async function findBlockingAccessRequest(
+  db: DbClient,
+  input: {
+    apiId: string;
+    consumerMdaId?: string | null;
+    consumerUserId?: string | null;
+  }
+): Promise<BlockingAccessRequest | undefined> {
+  const identityValue = input.consumerMdaId || input.consumerUserId;
+  if (!identityValue) return undefined;
+
+  const identityColumn = input.consumerMdaId ? 'consumer_mda_id' : 'consumer_user_id';
+  return one<BlockingAccessRequest>(db, `
+    SELECT id, status, api_key_status
+    FROM access_requests
+    WHERE api_id = $1
+      AND ${identityColumn} = $2
+      AND (
+        status = 'PENDING'
+        OR (
+          status = 'APPROVED'
+          AND COALESCE(api_key_status, 'ACTIVE') NOT IN ('REVOKED', 'DELETED')
+        )
+      )
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [input.apiId, identityValue]);
+}
+
 export interface AuditLogPage {
   data: any[];
   total: number;
