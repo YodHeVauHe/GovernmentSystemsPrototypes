@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useNotifications } from '@/context/NotificationContext';
 import { useUser } from '@/context/UserContext';
+import { Skeleton } from '@/components/ui/skeleton';
 import { accountRequest } from './account-settings/api';
 import { AccountSettingsShell } from './account-settings/AccountSettingsShell';
 import { DocumentsSettingsTab } from './account-settings/DocumentsSettingsTab';
@@ -21,6 +22,48 @@ import {
 
 type AccountResponse = { account: AccountSnapshot };
 type MfaSetupResponse = { secret: string; otpauth_url: string };
+
+function AccountSettingsLoadingState() {
+  return (
+    <div className="h-full min-h-0 overflow-hidden bg-canvas text-foreground">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[1200px] flex-col p-3 lg:p-5">
+        <div className="mb-6 flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-64 bg-surface-200" />
+            <Skeleton className="h-4 w-[420px] max-w-full bg-surface-200" />
+          </div>
+          <Skeleton className="h-12 w-56 bg-surface-200" />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:overflow-hidden">
+          <aside className="space-y-6 lg:col-span-3">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <Skeleton className="mx-auto h-16 w-16 rounded-full bg-surface-200" />
+              <Skeleton className="mx-auto mt-4 h-4 w-36 bg-surface-200" />
+              <Skeleton className="mx-auto mt-2 h-3 w-44 bg-surface-200" />
+              <Skeleton className="mx-auto mt-5 h-7 w-32 rounded-full bg-surface-200" />
+            </div>
+            <div className="space-y-2 rounded-xl border border-border bg-card p-2">
+              {Array.from({ length: 7 }).map((_, index) => (
+                <Skeleton key={index} className="h-10 w-full bg-surface-200" />
+              ))}
+            </div>
+          </aside>
+          <main className="lg:col-span-9 lg:min-h-0">
+            <div className="min-h-[500px] space-y-5 rounded-xl border border-border bg-card p-4">
+              <Skeleton className="h-10 w-72 max-w-full bg-surface-200" />
+              <div className="grid gap-4 md:grid-cols-2">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <Skeleton key={index} className="h-16 bg-surface-200" />
+                ))}
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function AccountSettingsPage() {
   const { user, refreshUser } = useUser();
@@ -154,7 +197,7 @@ export function AccountSettingsPage() {
   };
 
   if (loading) {
-    return <div className="p-6 text-sm text-[#8b8b8b]">Loading account settings...</div>;
+    return <AccountSettingsLoadingState />;
   }
 
   if (!account) {

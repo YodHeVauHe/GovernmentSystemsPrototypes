@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IconLock, IconPlayerPlay, IconRefresh, IconTerminal2 } from '@tabler/icons-react';
+import { IconLock, IconPlayerPlay, IconTerminal2 } from '@tabler/icons-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { API_BASE } from '@/lib/api-base';
 import { generatePublicId } from '@/lib/utils';
 import { useUser } from '../../context/UserContext';
@@ -404,8 +406,8 @@ export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoi
             disabled={loading || !activeEp}
             className="h-[32px] w-full shrink-0 sm:w-auto sm:min-w-[128px] px-3 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-md disabled:opacity-50"
           >
-            <IconPlayerPlay className="w-3.5 h-3.5 fill-black" />
-            {loading ? 'Sending...' : 'Send Request'}
+            {loading ? <Spinner className="h-3.5 w-3.5 text-black" /> : <IconPlayerPlay className="w-3.5 h-3.5 fill-black" />}
+            Send Request
           </button>
         </div>
 
@@ -534,9 +536,19 @@ export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoi
 
           <div className="p-4 bg-[#0a0a0a] flex-1 font-mono text-[13px] overflow-auto max-h-[calc(100dvh-210px)] flex flex-col">
             {loading ? (
-              <div className="flex flex-col items-center justify-center m-auto gap-3 text-[#8b8b8b]">
-                <IconRefresh className="w-8 h-8 animate-spin text-[#3ecf8e]" />
-                <span>Interrogating mock registry sandbox...</span>
+              <div className="m-auto flex w-full max-w-md flex-col gap-4">
+                <div className="flex items-center justify-center">
+                  <Spinner className="size-8 text-[#3ecf8e]" />
+                </div>
+                <div className="space-y-2 rounded-md border border-[#2e2e2e] p-3">
+                  <Skeleton className="h-3 w-32 bg-[#242424]" />
+                  <Skeleton className="h-8 w-full bg-[#141414]" />
+                  <Skeleton className="h-8 w-5/6 bg-[#141414]" />
+                </div>
+                <div className="space-y-2 rounded-md border border-[#2e2e2e] p-3">
+                  <Skeleton className="h-3 w-36 bg-[#242424]" />
+                  <Skeleton className="h-24 w-full bg-[#141414]" />
+                </div>
               </div>
             ) : response ? (
               <div className="flex flex-col gap-4 text-left">

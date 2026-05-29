@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconArrowLeft, IconCircleCheck, IconLoader } from '@tabler/icons-react';
+import { IconArrowLeft, IconCircleCheck } from '@tabler/icons-react';
 import { toast } from 'sonner';
+import { Spinner } from '@/components/ui/spinner';
 import { useNotifications } from '../context/NotificationContext';
 import { API_BASE } from '@/lib/api-base';
 import { OpenApiImportStep } from './add-api/OpenApiImportStep';
@@ -519,7 +520,7 @@ export function AddApiPage() {
                   disabled={loading}
                   className="flex-1 h-[38px] bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[13px] transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading && <IconLoader className="w-4 h-4 animate-spin text-black" />}
+                  {loading && <Spinner className="h-4 w-4 text-black" />}
                   Register & Activate API
                 </button>
               </div>

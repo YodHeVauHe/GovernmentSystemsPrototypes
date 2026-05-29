@@ -8,6 +8,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { IconCopy } from '@tabler/icons-react';
+import { Spinner } from '@/components/ui/spinner';
 import { canCopyOneTimeApiKey } from '../view-helpers';
 
 export function DashboardDialogs({
@@ -108,12 +109,13 @@ export function DashboardDialogs({
                     type="button"
                     onClick={confirmKeyAction}
                     disabled={keyActionBusy}
-                    className={`inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
+                    className={`inline-flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
                       keyActionIsDelete
                         ? 'bg-red-500 text-white hover:bg-red-400'
                         : 'bg-orange-400 text-black hover:bg-orange-300'
                     }`}
                   >
+                    {keyActionBusy && <Spinner className="size-4" />}
                     {keyActionButtonLabel}
                   </button>
                 </AlertDialogFooter>

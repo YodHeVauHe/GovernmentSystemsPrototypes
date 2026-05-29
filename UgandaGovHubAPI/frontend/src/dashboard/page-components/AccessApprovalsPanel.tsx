@@ -1,4 +1,5 @@
 import { IconBan, IconDotsVertical, IconTrash } from '@tabler/icons-react';
+import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { AccessRequestStatusBadge, ExpiryDatePicker, ViewModeToggle, toDateTimeLocalValue } from './dashboard-page-helpers';
@@ -46,9 +47,10 @@ export function AccessApprovalsPanel({
             <button
               onClick={() => handleApprove(req.id)}
               disabled={approving === req.id}
-              className="h-[28px] rounded-md bg-[#3ecf8e] px-3 text-[12px] font-semibold text-black transition-all hover:bg-[#3ecf8e]/95 disabled:opacity-50"
+              className="inline-flex h-[28px] items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-3 text-[12px] font-semibold text-black transition-all hover:bg-[#3ecf8e]/95 disabled:opacity-50"
             >
-              {approving === req.id ? 'Approving...' : 'Approve key'}
+              {approving === req.id && <Spinner className="size-3.5 text-black" />}
+              Approve key
             </button>
           </div>
         );

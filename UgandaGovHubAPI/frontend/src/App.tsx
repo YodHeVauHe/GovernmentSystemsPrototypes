@@ -11,6 +11,7 @@ import { AddApiPage } from './pages/AddApiPage';
 import { UserProvider, useUser } from './context/UserContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { Toaster } from '@/components/ui/sonner';
+import { Spinner } from '@/components/ui/spinner';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { AccountStatusPage } from './pages/AccountStatusPage';
@@ -51,12 +52,21 @@ function RouteLoadingBar() {
   );
 }
 
+function SessionLoadingState({ fullScreen = false }: { fullScreen?: boolean }) {
+  return (
+    <div className={`flex items-center justify-center bg-[#181818] ${fullScreen ? 'min-h-dvh' : 'h-full p-6'}`}>
+      <Spinner className="size-5 text-[#3ecf8e]" />
+      <span className="sr-only">Loading session</span>
+    </div>
+  );
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { loading, isAuthenticated, isApproved } = useUser();
   const location = useLocation();
 
   if (loading) {
-    return <div className="p-6 text-sm text-[#8b8b8b]">Loading...</div>;
+    return <SessionLoadingState />;
   }
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
@@ -72,7 +82,7 @@ function AuthenticatedRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   if (loading) {
-    return <div className="p-6 text-sm text-[#8b8b8b]">Loading...</div>;
+    return <SessionLoadingState />;
   }
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
@@ -106,7 +116,7 @@ function AppShell() {
   }
 
   if (loading) {
-    return <div className="flex min-h-dvh items-center justify-center bg-[#181818] text-sm text-[#8b8b8b]">Loading...</div>;
+    return <SessionLoadingState fullScreen />;
   }
 
   if (!isAuthenticated && knownAppRoute && !publicDocsPage) {

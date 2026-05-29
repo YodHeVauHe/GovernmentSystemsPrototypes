@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { IconTrash, IconX } from '@tabler/icons-react';
 import { toast } from 'sonner';
+import { Spinner } from '@/components/ui/spinner';
 import { API_BASE } from '@/lib/api-base';
 import { useNotifications } from '../../context/NotificationContext';
 
@@ -99,9 +100,10 @@ export function DeleteApiModal({ api, onClose }: { api: any; onClose: () => void
                 type="button"
                 disabled={status === 'deleting'}
                 onClick={deleteApi}
-                className="flex-1 h-[36px] bg-red-500/15 border border-red-500/30 hover:bg-red-500/25 text-red-200 font-medium rounded-md text-[13px] transition-colors disabled:opacity-50"
+                className="flex-1 h-[36px] bg-red-500/15 border border-red-500/30 hover:bg-red-500/25 text-red-200 font-medium rounded-md text-[13px] transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-2"
               >
-                {status === 'deleting' ? 'Deleting...' : 'Delete API'}
+                {status === 'deleting' && <Spinner className="size-4" />}
+                Delete API
               </button>
             </div>
           </div>

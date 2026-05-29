@@ -460,9 +460,7 @@ export default function DashboardPage() {
   const keyActionRequest = keyActionConfirmation?.request;
   const keyActionIsDelete = keyActionConfirmation?.action === 'delete';
   const keyActionTitle = keyActionIsDelete ? 'Delete API key?' : 'Revoke API key?';
-  const keyActionButtonLabel = keyActionBusy
-    ? (keyActionIsDelete ? 'Deleting...' : 'Revoking...')
-    : (keyActionIsDelete ? 'Delete key' : 'Revoke key');
+  const keyActionButtonLabel = keyActionIsDelete ? 'Delete key' : 'Revoke key';
 
   return (
     <div className="h-full overflow-hidden">
