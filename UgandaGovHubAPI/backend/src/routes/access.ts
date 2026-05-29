@@ -4,6 +4,7 @@ import { generateApiKey, generatePublicId } from '../ids';
 import { computeApiKeyHash, getApiKeyPreview, normalizeExpiryInput } from '../admin';
 import { requireAuth } from '../auth';
 import { buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, findBlockingAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
+import { decryptAtRest, encryptAtRest } from '../crypto-at-rest';
 import type { DbClient } from '../db';
 import { many, one, run } from '../db';
 
@@ -133,6 +134,13 @@ router.post('/:id/reveal-key', requireAuth(db, ['developer']), async (req, res) 
         code: 'ONE_TIME_KEY_UNAVAILABLE',
       });
     }
+    const revealedApiKey = decryptAtRest(claim.api_key);
+    if (!revealedApiKey) {
+      return res.status(404).json({
+        error: 'No one-time API key is available for this access request.',
+        code: 'ONE_TIME_KEY_UNAVAILABLE',
+      });
+    }
 
     await logAuditEvent(db, 'API_KEY_REVEALED', claim.consumer_mda_id, claim.api_id, id, {
       api_key_preview: claim.api_key_preview,
@@ -141,7 +149,7 @@ router.post('/:id/reveal-key', requireAuth(db, ['developer']), async (req, res) 
 
     res.json({
       id,
-      api_key: claim.api_key,
+      api_key: revealedApiKey,
       api_key_preview: claim.api_key_preview,
       api_key_expires_at: claim.api_key_expires_at,
     });
@@ -173,7 +181,7 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req,
       UPDATE access_requests 
       SET status = 'APPROVED', api_key = $1, api_key_hash = $2, api_key_preview = $3, api_key_status = 'ACTIVE', api_key_expires_at = $4, api_key_revoked_at = NULL
       WHERE id = $5
-    `, [apiKey, computeApiKeyHash(apiKey), getApiKeyPreview(apiKey), expiresAt, id]);
+    `, [encryptAtRest(apiKey), computeApiKeyHash(apiKey), getApiKeyPreview(apiKey), expiresAt, id]);
     
     // Log audit events
     await logAuditEvent(db, 'ACCESS_APPROVED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {

@@ -1,14 +1,9 @@
 import assert from 'assert/strict';
-import { normalizeSql } from './db';
+import { exec, many, one, run } from './db';
 
-assert.equal(
-  normalizeSql('SELECT spec_sha FROM api_versions WHERE api_id = ? AND is_current = 1'),
-  'SELECT spec_sha FROM api_versions WHERE api_id = ? AND is_current = TRUE'
-);
+assert.equal(typeof one, 'function');
+assert.equal(typeof many, 'function');
+assert.equal(typeof run, 'function');
+assert.equal(typeof exec, 'function');
 
-assert.equal(
-  normalizeSql('UPDATE api_versions SET is_current = 0 WHERE api_id = ?'),
-  'UPDATE api_versions SET is_current = FALSE WHERE api_id = ?'
-);
-
-console.log('db tests passed');
+console.log('db helper tests passed');

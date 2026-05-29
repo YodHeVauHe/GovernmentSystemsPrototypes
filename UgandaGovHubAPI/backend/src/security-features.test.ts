@@ -3,7 +3,6 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import { createServer, type Server } from 'http';
-import Database from 'better-sqlite3';
 import { ensureAdminSchema } from './admin';
 import { ensureAccountVerificationSchema, getAccountSnapshot, upsertVerificationDocument } from './account-verification';
 import {
@@ -20,24 +19,25 @@ import {
 } from './auth';
 import { adminUsersRouter, authRouter } from './routes/auth';
 import { getTlsConfig } from './tls';
+import { openPostgresTestDb } from './postgres-test-db';
 
 process.env.GOVHUB_DATA_ENCRYPTION_KEY = 'test-encryption-key-for-security-feature-tests';
 
 async function startApp() {
-  const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE mdas (id TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT NOT NULL);
-    CREATE TABLE apis (id TEXT PRIMARY KEY, name TEXT NOT NULL, owning_mda_id TEXT NOT NULL);
+  const { db, close } = await openPostgresTestDb();
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS mdas (id TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS apis (id TEXT PRIMARY KEY, name TEXT NOT NULL, owning_mda_id TEXT NOT NULL);
   `);
-  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3', 'Ministry of ICT and National Guidance', 'MoICT');
-  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', 'Ministry of Health', 'MoH');
-  db.prepare('INSERT INTO apis (id, name, owning_mda_id) VALUES (?, ?, ?)').run('api-nira-01', 'NIRA Identity', 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3');
-  ensureAuthSchema(db);
-  ensureAdminSchema(db);
-  process.env.GOVHUB_ADMIN_EMAIL = 'admin@ict.go.ug';
+  await db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING').run('mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3', 'Ministry of ICT and National Guidance', 'MoICT');
+  await db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING').run('mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', 'Ministry of Health', 'MoH');
+  await db.prepare('INSERT INTO apis (id, name, owning_mda_id) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING').run('api-nira-01', 'NIRA Identity', 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3');
+  await ensureAuthSchema(db);
+  await ensureAdminSchema(db);
+  process.env.GOVHUB_ADMIN_EMAIL = 'admin.test@ict.go.ug';
   process.env.GOVHUB_ADMIN_PASSWORD = 'AdminPass123!';
-  ensureDefaultAdmin(db);
-  ensureAccountVerificationSchema(db);
+  await ensureDefaultAdmin(db);
+  await ensureAccountVerificationSchema(db);
 
   const app = express();
   app.use(express.json());
@@ -48,7 +48,7 @@ async function startApp() {
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert(address && typeof address === 'object');
-  return { db, server, baseUrl: `http://127.0.0.1:${address.port}` };
+  return { db, server, closeDb: close, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
 async function request(baseUrl: string, route: string, init: RequestInit = {}) {
@@ -78,9 +78,9 @@ async function run() {
   assert.equal(decryptAtRest(encrypted), 'CM123456789ABCD');
   assert.equal(decryptAtRest(null), null);
 
-  const { db, server, baseUrl } = await startApp();
+  const { db, server, closeDb, baseUrl } = await startApp();
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO users (
         id, full_name, email, password_hash, account_type, requested_role,
         requested_mda_id, requested_organization, requested_purpose, status, role, mda_id
@@ -88,7 +88,7 @@ async function run() {
     `).run(
       'usr_secure',
       'Secure User',
-      'secure@example.go.ug',
+      'secure.security-test@example.go.ug',
       hashPassword('StrongPass123!'),
       'public_developer',
       'developer',
@@ -99,37 +99,37 @@ async function run() {
       'developer',
       null
     );
-    ensureAccountVerificationSchema(db);
-    db.prepare(`
+    await ensureAccountVerificationSchema(db);
+    await db.prepare(`
       UPDATE user_profiles SET
         nin = ?, national_id_number = ?, contact_phone = ?, address = ?
       WHERE user_id = ?
     `).run('CM123456789ABCD', '000000001', '+256700000000', 'Kampala', 'usr_secure');
-    ensureAccountVerificationSchema(db);
-    const storedProfile = db.prepare('SELECT nin, national_id_number, contact_phone, address FROM user_profiles WHERE user_id = ?').get('usr_secure') as any;
+    await ensureAccountVerificationSchema(db);
+    const storedProfile = await db.prepare('SELECT nin, national_id_number, contact_phone, address FROM user_profiles WHERE user_id = ?').get<any>('usr_secure');
     assert.equal(isEncryptedAtRest(storedProfile.nin), true);
     assert.equal(isEncryptedAtRest(storedProfile.national_id_number), true);
     assert.equal(isEncryptedAtRest(storedProfile.contact_phone), true);
     assert.equal(isEncryptedAtRest(storedProfile.address), true);
-    const snapshot = getAccountSnapshot(db, 'usr_secure');
+    const snapshot = await getAccountSnapshot(db, 'usr_secure');
     assert.equal(snapshot?.profile.nin, 'CM123456789ABCD');
     assert.equal(snapshot?.profile.address, 'Kampala');
 
-    upsertVerificationDocument(db, 'usr_secure', {
+    await upsertVerificationDocument(db, 'usr_secure', {
       type: 'national_id_front',
       label: 'National ID front',
       file_name: 'front.png',
       mime_type: 'image/png',
       storage_ref: 's3://vault/front.png',
     });
-    const storedDocument = db.prepare('SELECT file_name, storage_ref FROM verification_documents WHERE user_id = ?').get('usr_secure') as any;
+    const storedDocument = await db.prepare('SELECT file_name, storage_ref FROM verification_documents WHERE user_id = ?').get<any>('usr_secure');
     assert.equal(isEncryptedAtRest(storedDocument.file_name), true);
     assert.equal(isEncryptedAtRest(storedDocument.storage_ref), true);
-    assert.equal(getAccountSnapshot(db, 'usr_secure')?.documents[0].file_name, 'front.png');
+    assert.equal((await getAccountSnapshot(db, 'usr_secure'))?.documents[0].file_name, 'front.png');
 
     const login = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: 'secure@example.go.ug', password: 'StrongPass123!' }),
+      body: JSON.stringify({ email: 'secure.security-test@example.go.ug', password: 'StrongPass123!' }),
     });
     assert.equal(login.response.status, 200);
     const cookie = sessionCookie(login.response);
@@ -149,7 +149,7 @@ async function run() {
     });
     assert.equal(enable.response.status, 200);
     assert.equal(enable.body.user.mfa_enabled, true);
-    const enabledUser = db.prepare('SELECT mfa_enabled_at, mfa_secret_encrypted FROM users WHERE id = ?').get('usr_secure') as any;
+    const enabledUser = await db.prepare('SELECT mfa_enabled_at, mfa_secret_encrypted FROM users WHERE id = ?').get<any>('usr_secure');
     assert.equal(typeof enabledUser.mfa_enabled_at, 'string');
     assert.equal(typeof enabledUser.mfa_secret_encrypted, 'string');
 
@@ -159,20 +159,20 @@ async function run() {
     });
     assert.equal(resetWhileEnabled.response.status, 409);
     assert.equal(resetWhileEnabled.body.code, 'MFA_ALREADY_ENABLED');
-    const stillEnabledUser = db.prepare('SELECT mfa_enabled_at, mfa_secret_encrypted FROM users WHERE id = ?').get('usr_secure') as any;
+    const stillEnabledUser = await db.prepare('SELECT mfa_enabled_at, mfa_secret_encrypted FROM users WHERE id = ?').get<any>('usr_secure');
     assert.equal(stillEnabledUser.mfa_enabled_at, enabledUser.mfa_enabled_at);
     assert.equal(stillEnabledUser.mfa_secret_encrypted, enabledUser.mfa_secret_encrypted);
 
     const missingMfa = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: 'secure@example.go.ug', password: 'StrongPass123!' }),
+      body: JSON.stringify({ email: 'secure.security-test@example.go.ug', password: 'StrongPass123!' }),
     });
     assert.equal(missingMfa.response.status, 202);
     assert.equal(missingMfa.body.mfa_required, true);
 
     const badMfa = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: 'secure@example.go.ug', password: 'StrongPass123!', mfa_code: '000000' }),
+      body: JSON.stringify({ email: 'secure.security-test@example.go.ug', password: 'StrongPass123!', mfa_code: '000000' }),
     });
     assert.equal(badMfa.response.status, 401);
     assert.equal(badMfa.body.code, 'INVALID_MFA_CODE');
@@ -180,7 +180,7 @@ async function run() {
     const goodMfa = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({
-        email: 'secure@example.go.ug',
+        email: 'secure.security-test@example.go.ug',
         password: 'StrongPass123!',
         mfa_code: getTotpCode(setup.body.secret, new Date()),
       }),
@@ -203,6 +203,7 @@ async function run() {
     fs.unlinkSync(keyPath);
   } finally {
     await close(server);
+    await closeDb();
   }
 }
 

@@ -21,6 +21,14 @@ const SANDBOX_RATE_WINDOW_MS = 60 * 1000;
 
 const sensitiveLogKeys = new Set(['nin', 'tin', 'password', 'token', 'api_key', 'x-govhub-api-key', 'authorization', 'cookie']);
 
+const sensitivePathSegmentPatterns = [
+  /^\/api\/v1\/identity\/(?:status|card-status|death-status)\/[^/?#]+/,
+  /^\/api\/v1\/tax\/(?:tin-status|clearance|vat-status|importer-status|filing-obligations|withholding-exemption)\/[^/?#]+/,
+  /^\/api\/v1\/business\/(?:registration|company-status|directors|beneficial-ownership|annual-return-status)\/[^/?#]+/,
+  /^\/api\/v1\/transport\/(?:driving-permit\/(?:status|classes)|driver-test-results)\/[^/?#]+/,
+  /^\/api\/v1\/service-uganda\/(?:cases|case-status|service-bundle)\/[^/?#]+/,
+];
+
 export function redactSandboxLogValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(item => redactSandboxLogValue(item));
   if (!value || typeof value !== 'object') return value;
@@ -41,11 +49,17 @@ export function redactSandboxLogValue(value: unknown): unknown {
 
 export function normalizeSandboxLogPath(pathWithQuery: string) {
   const [pathname, query = ''] = pathWithQuery.split('?');
-  const redactedPathname = pathname
-    .replace(/^\/api\/v1\/identity\/status\/[^/?#]+/, '/api/v1/identity/status/[REDACTED]')
-    .replace(/^\/api\/v1\/tax\/clearance\/[^/?#]+/, '/api/v1/tax/clearance/[REDACTED]')
-    .replace(/^\/api\/v1\/business\/registration\/[^/?#]+/, '/api/v1/business/registration/[REDACTED]')
-    .replace(/^\/api\/v1\/transport\/driving-permit\/status\/[^/?#]+/, '/api/v1/transport/driving-permit/status/[REDACTED]');
+  const dynamicallyRedactedPath = pathname.replace(
+    /^(\/api\/v1\/sandbox\/[^/?#]+)(?:\/[^?#]*)?/,
+    '$1/[REDACTED]'
+  );
+  const redactedPathname = sensitivePathSegmentPatterns.reduce(
+    (currentPath, pattern) => currentPath.replace(pattern, match => {
+      const lastSlash = match.lastIndexOf('/');
+      return `${match.slice(0, lastSlash + 1)}[REDACTED]`;
+    }),
+    dynamicallyRedactedPath
+  );
   if (!query) return redactedPathname;
   const params = new URLSearchParams(query);
   for (const key of Array.from(params.keys())) {

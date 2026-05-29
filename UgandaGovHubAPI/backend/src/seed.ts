@@ -1,10 +1,10 @@
 import 'dotenv/config';
 import yaml from 'js-yaml';
-import { createDb } from './db';
+import { createDb, run } from './db';
 import { ensureAuthSchema, ensureDefaultAdmin, ensureDemoUsers } from './auth';
 import { ensureAccountVerificationSchema } from './account-verification';
 import { ensureApiVersionSchema, parseSpecMetadata, slugifyVersion } from './versioning';
-import { productionDemoApis } from './seed-production-demo-catalog';
+import { productionDemoApis } from './production-demo-catalog-data';
 
 const db = createDb();
 process.env.GOVHUB_DEMO_MODE = process.env.GOVHUB_DEMO_MODE || 'true';
@@ -63,7 +63,7 @@ await db.exec(`
     api_id TEXT,
     request_id TEXT,
     details TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   );
 `);
 
@@ -90,7 +90,7 @@ await db.exec(`
     volume_tier TEXT,
     legal_basis TEXT,
     environment TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (consumer_mda_id) REFERENCES mdas (id),
     FOREIGN KEY (consumer_user_id) REFERENCES users (id),
     FOREIGN KEY (api_id) REFERENCES apis (id)
@@ -101,7 +101,7 @@ await ensureAccountVerificationSchema(db);
 
 console.log('Inserting seed data...');
 
-const insertMda = db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)');
+const insertMdaSql = 'INSERT INTO mdas (id, name, short_name) VALUES ($1, $2, $3)';
 const mdas = [
   ['mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41', 'National Identification and Registration Authority', 'NIRA'],
   ['mda-ura-2efff0d3-952e-4475-8231-232873a69854', 'Uganda Revenue Authority', 'URA'],
@@ -114,16 +114,19 @@ const mdas = [
   ['mda-upf-80e53954-69a8-41d0-818d-01372005684e', 'Uganda Police Force', 'UPF'],
   ['mda-nita-u-b47d8923-86ad-47ad-9992-3167c54f0a12', 'National Information Technology Authority Uganda', 'NITA-U']
 ];
-for (const m of mdas) await insertMda.run(...m);
+for (const mda of mdas) await run(db, insertMdaSql, mda);
 
-const insertApi = db.prepare(`
+const insertApiSql = `
   INSERT INTO apis (
     id, name, owning_mda_id, sector, description, lifecycle_status, 
     sensitivity_level, sandbox_available, openapi_spec_path, openapi_spec_text, required_approval_level, contact_office,
     technical_owner, personal_data_categories, purpose_limitation, data_minimization_note,
     retention_class, statutory_basis, security_classification, sla_target, compliance_status
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
+  ) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+    $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+  )
+`;
 
 const apis = productionDemoApis.map(api => {
   const specText = yaml.dump(api.spec, { lineWidth: 120, noRefs: true });
@@ -136,7 +139,7 @@ const apis = productionDemoApis.map(api => {
     api.description,
     api.lifecycle_status,
     api.sensitivity_level,
-    1,
+    true,
     `/openapi/${api.id}-${slugifyVersion(metadata.version)}.yaml`,
     specText,
     api.required_approval_level,
@@ -152,7 +155,7 @@ const apis = productionDemoApis.map(api => {
     api.compliance_status
   ];
 });
-for (const a of apis) await insertApi.run(...a);
+for (const api of apis) await run(db, insertApiSql, api);
 await ensureApiVersionSchema(db);
 
 console.log('Seed data inserted successfully.');

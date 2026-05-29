@@ -4,9 +4,9 @@
 
 **Goal:** Create a high-fidelity API registration modal that lets admins validate OpenAPI specs (via URLs, uploaded files, or raw content) and register them as first-class citizens in the Uganda GovHub database with strict compliance parameters.
 
-**Architecture:** A lightweight backend validator checks the uploaded or downloaded spec for standard OpenAPI compliance using `js-yaml`, returning parsed metadata to pre-populate the registry configuration form. Upon admin approval, the backend writes the YAML file to `backend/openapi/`, registers the SQLite database row, and records the `API_REGISTERED` audit log.
+**Architecture:** A lightweight backend validator checks the uploaded or downloaded spec for standard OpenAPI compliance using `js-yaml`, returning parsed metadata to pre-populate the registry configuration form. Upon admin approval, the backend stores the OpenAPI text in Postgres, exposes it through a stable `/openapi/` route, and records the `API_REGISTERED` audit log.
 
-**Tech Stack:** React, Tailwind CSS, Lucide icons, Express, SQLite, js-yaml.
+**Tech Stack:** React, Tailwind CSS, Lucide icons, Express, Postgres, js-yaml.
 
 ---
 
@@ -161,7 +161,7 @@ app.post('/api/catalog', (req, res) => {
     // Write OpenAPI file to disk
     fs.writeFileSync(absoluteSpecPath, openapi_spec, 'utf8');
 
-    // Insert into SQLite database
+    // Insert into Postgres database
     const stmt = db.prepare(`
       INSERT INTO apis (
         id, name, owning_mda_id, sector, description, lifecycle_status,

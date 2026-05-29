@@ -1,34 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import Database from '../../backend/node_modules/better-sqlite3';
-
-async function waitForBackend(page: Page) {
-  await expect.poll(async () => {
-    const response = await page.request.get('http://127.0.0.1:4000/api/health').catch(() => null);
-    return response?.ok() ? 'ok' : 'pending';
-  }, { timeout: 60_000 }).toBe('ok');
-}
-
-async function login(page: Page, email: string, password: string) {
-  await waitForBackend(page);
-  await page.goto('/login');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
-
-async function logout(page: Page) {
-  await page.getByRole('button', { name: 'Account menu' }).click();
-  await page.getByRole('menuitem', { name: 'Log out' }).click();
-  await expect(page).toHaveURL(/\/login/);
-}
-
-async function getCurrentUserId(page: Page) {
-  const response = await page.request.get('http://127.0.0.1:4000/api/auth/me');
-  expect(response.ok()).toBeTruthy();
-  const body = await response.json();
-  return body.user.id as string;
-}
+import { backendUrl, deleteAccessRequestsByPurpose, getCurrentUserId, login, logout } from './support/backend';
 
 async function seedAccountNotification(page: Page, userId: string, message: string) {
   await page.evaluate(({ message, userId }) => {
@@ -44,22 +15,6 @@ async function seedAccountNotification(page: Page, userId: string, message: stri
     localStorage.setItem('govhub_notifications', JSON.stringify([notification]));
     localStorage.setItem(`govhub_notifications:${userId}`, JSON.stringify([notification]));
   }, { message, userId });
-}
-
-function deleteAccessRequestsByPurpose(purpose: string) {
-  const db = new Database('backend/data/govhub.db');
-  try {
-    const rows = db.prepare('SELECT id FROM access_requests WHERE purpose = ?').all(purpose) as Array<{ id: string }>;
-    const removeRows = db.transaction(() => {
-      for (const row of rows) {
-        db.prepare('DELETE FROM audit_logs WHERE request_id = ?').run(row.id);
-        db.prepare('DELETE FROM access_requests WHERE id = ?').run(row.id);
-      }
-    });
-    removeRows();
-  } finally {
-    db.close();
-  }
 }
 
 test('notifications are scoped to the signed-in account', async ({ page }) => {
@@ -84,7 +39,7 @@ test('access approval notification is delivered to the requesting user', async (
 
   try {
     await login(page, 'demo.developer@govhub.go.ug', 'DemoDeveloper123!');
-    const accessResponse = await page.request.post('http://127.0.0.1:4000/api/access', {
+    const accessResponse = await page.request.post(`${backendUrl}/api/access`, {
       data: {
         api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
         consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
@@ -111,6 +66,6 @@ test('access approval notification is delivered to the requesting user', async (
     await page.goto('/account/settings?tab=notifications');
     await expect(page.getByText(expectedDeveloperMessage)).toBeVisible();
   } finally {
-    deleteAccessRequestsByPurpose(purpose);
+    await deleteAccessRequestsByPurpose(purpose);
   }
 });

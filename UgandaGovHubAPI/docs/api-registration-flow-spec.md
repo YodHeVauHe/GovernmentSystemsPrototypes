@@ -21,8 +21,8 @@ Admin UI (Catalog)
   |-- POST /api/catalog
         |
         |-- Generate api-reg-<uuid>
-        |-- Write OpenAPI YAML to backend/openapi/
-        |-- Insert SQLite catalog row
+        |-- Store OpenAPI text in Postgres
+        |-- Insert Postgres catalog row
         |-- Log API_REGISTERED audit event
 ```
 
@@ -62,7 +62,7 @@ Purpose:
 Processing:
 
 - Generate `id = "api-reg-" + crypto.randomUUID()`.
-- Save the spec as `backend/openapi/<id>.yaml`.
+- Save the spec text in Postgres (`openapi_spec_text`) and expose it through the stable `/openapi/<id>.yaml` route.
 - Insert catalog metadata into the `apis` table.
 - Insert an audit event with event type `API_REGISTERED`.
 - Return the created API id.

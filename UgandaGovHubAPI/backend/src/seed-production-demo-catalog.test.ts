@@ -1,12 +1,13 @@
 import assert from 'assert/strict';
-import { productionDemoApis, syncProductionDemoCatalog } from './seed-production-demo-catalog';
+import { productionDemoApis } from './production-demo-catalog-data';
+import { syncProductionDemoCatalog } from './seed-production-demo-catalog';
 
 const allowedMethods = new Set(['get', 'post', 'put', 'delete', 'patch', 'options', 'head']);
 
 type PreparedCall = {
-  method: 'run' | 'all';
+  method: 'query';
   sql: string;
-  params: unknown[];
+  params: readonly unknown[];
 };
 
 function createRecordingDb() {
@@ -15,17 +16,9 @@ function createRecordingDb() {
   return {
     calls,
     db: {
-      prepare(sql: string) {
-        return {
-          async run(...params: unknown[]) {
-            calls.push({ method: 'run', sql, params });
-            return { changes: 0 };
-          },
-          async all(...params: unknown[]) {
-            calls.push({ method: 'all', sql, params });
-            return [];
-          },
-        };
+      async query(sql: string, params: readonly unknown[] = []) {
+        calls.push({ method: 'query', sql, params });
+        return { rows: [], rowCount: 0 };
       },
     } as any,
   };
@@ -83,15 +76,15 @@ async function assertLegacyDemoRowsAreCleanedUp() {
   await syncProductionDemoCatalog(db);
 
   assert.ok(
-    calls.some(call => call.method === 'run' && /UPDATE\s+access_requests/i.test(call.sql) && call.params.includes('api-mowt-01')),
+    calls.some(call => /UPDATE\s+access_requests/i.test(call.sql) && call.params.includes('api-mowt-01')),
     'production sync should migrate access requests from legacy demo API ids before deleting duplicates'
   );
   assert.ok(
-    calls.some(call => call.method === 'run' && /DELETE\s+FROM\s+api_versions/i.test(call.sql) && call.params.includes('api-mowt-01')),
+    calls.some(call => /DELETE\s+FROM\s+api_versions/i.test(call.sql) && call.params.includes('api-mowt-01')),
     'production sync should delete legacy demo API versions'
   );
   assert.ok(
-    calls.some(call => call.method === 'run' && /DELETE\s+FROM\s+apis/i.test(call.sql) && call.params.includes('api-mowt-01')),
+    calls.some(call => /DELETE\s+FROM\s+apis/i.test(call.sql) && call.params.includes('api-mowt-01')),
     'production sync should delete legacy demo API rows'
   );
 }

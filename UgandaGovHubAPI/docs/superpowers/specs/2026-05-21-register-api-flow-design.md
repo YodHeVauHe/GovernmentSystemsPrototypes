@@ -23,8 +23,8 @@ This specification defines the implementation of a high-fidelity "Add API" workf
        └── 2. POST /api/catalog (OpenAPI Spec + MDA Governance details)
               │
               ├── Generate random cryptographically secure UUID
-              ├── Write openapi yaml file to backend/openapi/api-reg-<uuid>.yaml
-              ├── Insert into SQLite database (apis table)
+              ├── Store openapi text in Postgres for api-reg-<uuid>
+              ├── Insert into Postgres database (apis table)
               └── Log Audit Event API_REGISTERED
 ```
 
@@ -51,13 +51,13 @@ This specification defines the implementation of a high-fidelity "Add API" workf
   5. Return successful metadata or detailed error messages.
 
 #### 2. `POST /api/catalog`
-* **Purpose:** Writes the validated specification file, creates a SQLite entry, and adds audit trails.
+* **Purpose:** Writes the validated specification file, creates a Postgres entry, and adds audit trails.
 * **Payload Structure:** Matches the database fields including `owning_mda_id`, `openapi_spec`, and statutory compliance metadata.
 * **Processing Steps:**
   1. Generate random UUID: `id = 'api-reg-' + crypto.randomUUID()`.
   2. Map spec save file path: `openapi_spec_path = '/openapi/' + id + '.yaml'`.
-  3. Write the spec raw string to `backend/openapi/` relative directory.
-  4. Execute SQLite prepare-run statement on the `apis` table.
+  3. Persist the raw spec string in Postgres and expose it through the `/openapi/` route.
+  4. Execute a parameterized Postgres insert on the `apis` table.
   5. Log audit event `API_REGISTERED`.
 
 ---

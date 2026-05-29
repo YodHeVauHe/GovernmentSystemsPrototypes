@@ -1,27 +1,27 @@
 import assert from 'assert/strict';
 import express from 'express';
 import { createServer, type Server } from 'http';
-import Database from 'better-sqlite3';
 import { ensureAuthSchema, ensureDefaultAdmin, hashPassword, requireApprovedAuth, requireAuth } from './auth';
 import { authRouter, adminUsersRouter } from './routes/auth';
 import { ensureAccountVerificationSchema, getAccountSnapshot } from './account-verification';
 import { computeApiKeyHash, ensureAdminSchema } from './admin';
+import { openPostgresTestDb } from './postgres-test-db';
 
 async function startApp() {
-  const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE mdas (id TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT NOT NULL);
-    CREATE TABLE apis (id TEXT PRIMARY KEY, name TEXT NOT NULL, owning_mda_id TEXT NOT NULL);
+  const { db, close } = await openPostgresTestDb();
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS mdas (id TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS apis (id TEXT PRIMARY KEY, name TEXT NOT NULL, owning_mda_id TEXT NOT NULL);
   `);
-  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3', 'Ministry of ICT and National Guidance', 'MoICT');
-  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', 'Ministry of Health', 'MoH');
-  db.prepare('INSERT INTO apis (id, name, owning_mda_id) VALUES (?, ?, ?)').run('api-nira-01', 'NIRA Identity', 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3');
-  ensureAuthSchema(db);
-  ensureAdminSchema(db);
-  process.env.GOVHUB_ADMIN_EMAIL = 'admin@ict.go.ug';
+  await db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING').run('mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3', 'Ministry of ICT and National Guidance', 'MoICT');
+  await db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING').run('mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', 'Ministry of Health', 'MoH');
+  await db.prepare('INSERT INTO apis (id, name, owning_mda_id) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING').run('api-nira-01', 'NIRA Identity', 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3');
+  await ensureAuthSchema(db);
+  await ensureAdminSchema(db);
+  process.env.GOVHUB_ADMIN_EMAIL = 'admin.test@ict.go.ug';
   process.env.GOVHUB_ADMIN_PASSWORD = 'AdminPass123!';
-  ensureDefaultAdmin(db);
-  ensureAccountVerificationSchema(db);
+  await ensureDefaultAdmin(db);
+  await ensureAccountVerificationSchema(db);
 
   const app = express();
   app.use(express.json());
@@ -35,7 +35,7 @@ async function startApp() {
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert(address && typeof address === 'object');
-  return { db, server, baseUrl: `http://127.0.0.1:${address.port}` };
+  return { db, server, closeDb: close, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
 async function request(baseUrl: string, path: string, init: RequestInit = {}) {
@@ -59,14 +59,14 @@ async function close(server: Server) {
 }
 
 async function run() {
-  const { db, server, baseUrl } = await startApp();
+  const { db, server, closeDb, baseUrl } = await startApp();
 
   try {
     const signup = await request(baseUrl, '/api/auth/signup', {
       method: 'POST',
       body: JSON.stringify({
         full_name: 'Jane Developer',
-        email: 'Jane@Example.go.ug',
+        email: 'Jane.Auth-Route@Example.go.ug',
         password: 'StrongPass123!',
         account_type: 'government',
         requested_role: 'developer',
@@ -76,7 +76,7 @@ async function run() {
       }),
     });
     assert.equal(signup.response.status, 201);
-    assert.equal(signup.body.user.email, 'jane@example.go.ug');
+    assert.equal(signup.body.user.email, 'jane.auth-route@example.go.ug');
     assert.equal(signup.body.user.status, 'PENDING_REVIEW');
     assert.equal(signup.body.token, undefined);
 
@@ -84,7 +84,7 @@ async function run() {
       method: 'POST',
       body: JSON.stringify({
         full_name: 'Sam Civic',
-        email: 'sam@example.com',
+        email: 'sam.auth-route@example.com',
         password: 'StrongPass123!',
         account_type: 'public_developer',
         requested_role: 'developer',
@@ -100,7 +100,7 @@ async function run() {
       method: 'POST',
       body: JSON.stringify({
         full_name: 'Mallory Admin',
-        email: 'mallory@example.com',
+        email: 'mallory.auth-route@example.com',
         password: 'StrongPass123!',
         account_type: 'public_developer',
         requested_role: 'admin',
@@ -112,7 +112,7 @@ async function run() {
 
     const login = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: 'jane@example.go.ug', password: 'StrongPass123!' }),
+      body: JSON.stringify({ email: 'jane.auth-route@example.go.ug', password: 'StrongPass123!' }),
     });
     assert.equal(login.response.status, 200);
     assert.equal(login.body.user.status, 'PENDING_REVIEW');
@@ -123,7 +123,7 @@ async function run() {
       headers: { cookie: janeCookie },
     });
     assert.equal(me.response.status, 200);
-    assert.equal(me.body.user.email, 'jane@example.go.ug');
+    assert.equal(me.body.user.email, 'jane.auth-route@example.go.ug');
 
     const blocked = await request(baseUrl, '/protected', {
       headers: { cookie: janeCookie },
@@ -183,11 +183,11 @@ async function run() {
 
     const adminLogin = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: 'admin@ict.go.ug', password: 'AdminPass123!' }),
+      body: JSON.stringify({ email: 'admin.test@ict.go.ug', password: 'AdminPass123!' }),
     });
     assert.equal(adminLogin.response.status, 200);
     const adminCookie = sessionCookie(adminLogin.response);
-    const adminSnapshot = getAccountSnapshot(db, adminLogin.body.user.id);
+    const adminSnapshot = await getAccountSnapshot(db, adminLogin.body.user.id);
     assert.equal(adminSnapshot?.profile.account_category, 'admin');
     assert.equal(adminSnapshot?.profile.verification_status, 'verified');
 
@@ -199,7 +199,7 @@ async function run() {
     assert.equal(mfaBlockedAdminList.body.code, 'ADMIN_MFA_REQUIRED');
     delete process.env.GOVHUB_REQUIRE_ADMIN_MFA;
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO users (
         id, full_name, email, password_hash, account_type, requested_role,
         requested_mda_id, requested_organization, requested_purpose, status
@@ -207,7 +207,7 @@ async function run() {
     `).run(
       'usr_public_admin_candidate',
       'Public Admin Candidate',
-      'public.admin@example.com',
+      'public.admin.auth-route@example.com',
       hashPassword('StrongPass123!'),
       'public_developer',
       'developer',
@@ -215,7 +215,7 @@ async function run() {
       'Independent Civic Developer',
       'Request elevated platform access'
     );
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO user_profiles (user_id, verification_status, account_category)
       VALUES (?, 'submitted_for_review', 'public_developer')
     `).run('usr_public_admin_candidate');
@@ -228,7 +228,7 @@ async function run() {
     assert.equal(publicAdminPromotion.response.status, 400);
     assert.equal(publicAdminPromotion.body.code, 'ADMIN_PROMOTION_REQUIRES_GOVERNMENT_IDENTITY');
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO users (
         id, full_name, email, password_hash, account_type, requested_role,
         requested_mda_id, requested_organization, requested_purpose, status
@@ -236,7 +236,7 @@ async function run() {
     `).run(
       'usr_gov_admin_candidate',
       'Government Admin Candidate',
-      'gov.admin@example.go.ug',
+      'gov.admin.auth-route@example.go.ug',
       hashPassword('StrongPass123!'),
       'government_employee',
       'reviewer',
@@ -244,7 +244,7 @@ async function run() {
       'Ministry of ICT and National Guidance',
       'Operate platform administration workflows'
     );
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO user_profiles (user_id, verification_status, account_category)
       VALUES (?, 'submitted_for_review', 'government_employee')
     `).run('usr_gov_admin_candidate');
@@ -256,7 +256,7 @@ async function run() {
     });
     assert.equal(govAdminPromotion.response.status, 200);
     assert.equal(govAdminPromotion.body.user.role, 'admin');
-    const promotedAdminSnapshot = getAccountSnapshot(db, 'usr_gov_admin_candidate');
+    const promotedAdminSnapshot = await getAccountSnapshot(db, 'usr_gov_admin_candidate');
     assert.equal(promotedAdminSnapshot?.profile.account_category, 'admin');
     assert.equal(promotedAdminSnapshot?.profile.verification_status, 'verified');
 
@@ -264,7 +264,10 @@ async function run() {
       headers: { cookie: adminCookie },
     });
     assert.equal(users.response.status, 200);
-    assert.equal(users.body.users.length, 3);
+    const pendingUserIds = users.body.users.map((user: any) => user.id);
+    assert.equal(pendingUserIds.includes(signup.body.user.id), true);
+    assert.equal(pendingUserIds.includes(publicDeveloperSignup.body.user.id), true);
+    assert.equal(pendingUserIds.includes('usr_public_admin_candidate'), true);
 
     const publicDeveloperApproval = await request(baseUrl, `/api/admin/users/${publicDeveloperSignup.body.user.id}/approve`, {
       method: 'POST',
@@ -311,7 +314,7 @@ async function run() {
     assert.equal(blockedAfterProfileChange.response.status, 403);
     assert.equal(blockedAfterProfileChange.body.code, 'ACCOUNT_NOT_APPROVED');
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO access_requests (
         id, consumer_user_id, consumer_type, api_id, purpose, status,
         api_key_hash, api_key_preview, api_key_status, api_key_expires_at
@@ -331,7 +334,7 @@ async function run() {
       headers: { cookie: adminCookie },
     });
     assert.equal(suspendJane.response.status, 200);
-    const suspendedKey = db.prepare('SELECT api_key_status, api_key_revoked_at FROM access_requests WHERE id = ?').get('req-jane-key') as any;
+    const suspendedKey = await db.prepare('SELECT api_key_status, api_key_revoked_at FROM access_requests WHERE id = ?').get<any>('req-jane-key');
     assert.equal(suspendedKey.api_key_status, 'REVOKED');
     assert.equal(typeof suspendedKey.api_key_revoked_at, 'string');
 
@@ -372,11 +375,12 @@ async function run() {
     assert.equal(deletePublicDeveloper.response.status, 200);
     assert.equal(deletePublicDeveloper.body.deleted, true);
     assert.equal(deletePublicDeveloper.body.user.id, publicDeveloperSignup.body.user.id);
-    assert.equal((db.prepare('SELECT COUNT(*) as count FROM users WHERE id = ?').get(publicDeveloperSignup.body.user.id) as any).count, 0);
-    assert.equal((db.prepare('SELECT COUNT(*) as count FROM sessions WHERE user_id = ?').get(publicDeveloperSignup.body.user.id) as any).count, 0);
-    assert.equal((db.prepare('SELECT COUNT(*) as count FROM user_profiles WHERE user_id = ?').get(publicDeveloperSignup.body.user.id) as any).count, 0);
+    assert.equal(Number((await db.prepare('SELECT COUNT(*) as count FROM users WHERE id = ?').get<{ count: string }>(publicDeveloperSignup.body.user.id))?.count || 0), 0);
+    assert.equal(Number((await db.prepare('SELECT COUNT(*) as count FROM sessions WHERE user_id = ?').get<{ count: string }>(publicDeveloperSignup.body.user.id))?.count || 0), 0);
+    assert.equal(Number((await db.prepare('SELECT COUNT(*) as count FROM user_profiles WHERE user_id = ?').get<{ count: string }>(publicDeveloperSignup.body.user.id))?.count || 0), 0);
   } finally {
     await close(server);
+    await closeDb();
   }
 }
 

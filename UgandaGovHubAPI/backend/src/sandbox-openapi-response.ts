@@ -13,7 +13,9 @@ function normalizePathname(pathname: string) {
 }
 
 function requestPathname(originalUrl: string) {
-  return normalizePathname(new URL(originalUrl, 'http://sandbox.local').pathname);
+  const pathname = normalizePathname(new URL(originalUrl, 'http://sandbox.local').pathname);
+  const registeredSandboxMatch = /^\/api\/v1\/sandbox\/[^/]+(\/.*)?$/i.exec(pathname);
+  return registeredSandboxMatch ? normalizePathname(registeredSandboxMatch[1] || '/') : pathname;
 }
 
 function serverBasePaths(spec: OpenApiSpec) {

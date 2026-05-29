@@ -4,9 +4,9 @@
 
 **Goal:** Build a Swagger/Stoplight-style developer portal and sandbox MVP for Ugandan government interoperability APIs.
 
-**Architecture:** A single web application serves the developer portal, API catalog, interactive OpenAPI documentation, mock sandbox endpoints, access request workflow, and admin dashboard. API definitions are stored as OpenAPI files and enriched with Uganda-specific governance metadata.
+**Architecture:** A single web application serves the developer portal, API catalog, interactive OpenAPI documentation, mock sandbox endpoints, access request workflow, and admin dashboard. API definitions are stored as Postgres-backed OpenAPI spec text and enriched with Uganda-specific governance metadata.
 
-**Tech Stack:** The implemented prototype uses React/Vite for the portal, Node.js/Express for sandbox APIs, OpenAPI specs for machine-readable contracts, custom GovHub documentation pages for rendering, deterministic mock handlers for sandbox responses, SQLite for MVP persistence, and Playwright for end-to-end demo validation.
+**Tech Stack:** The implemented prototype uses React/Vite for the portal, Node.js/Express for sandbox APIs, OpenAPI specs for machine-readable contracts, custom GovHub documentation pages for rendering, deterministic mock handlers for sandbox responses, Postgres for persistence, and Playwright for end-to-end demo validation.
 
 ---
 
@@ -228,7 +228,7 @@ Expected output:
 
 ### Milestone 1: Demo Skeleton
 
-Catalog, API details, static OpenAPI docs, and seed data.
+Catalog, API details, Postgres-backed OpenAPI docs, and seed data.
 
 ### Milestone 2: Interactive Sandbox
 

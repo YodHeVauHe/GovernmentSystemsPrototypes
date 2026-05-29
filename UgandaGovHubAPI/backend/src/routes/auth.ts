@@ -20,6 +20,7 @@ import {
   verifyPassword,
 } from '../auth';
 import {
+  ACCOUNT_TYPE_REQUIREMENTS,
   canSubmitVerification,
   ensureUserProfile,
   encryptProfileForStorage,
@@ -59,7 +60,7 @@ async function revokeUserApiKeys(db: DbClient, userId: string, status: 'REVOKED'
       SET api_key = NULL,
           api_key_hash = NULL,
           api_key_status = 'DELETED',
-          api_key_revoked_at = ?,
+          api_key_revoked_at = $1,
           api_key_expires_at = NULL,
           consumer_user_id = NULL
       WHERE consumer_user_id = $2
@@ -85,6 +86,9 @@ const PASSWORD_UPPERCASE_RE = /[A-Z]/;
 const PASSWORD_LOWERCASE_RE = /[a-z]/;
 const PASSWORD_DIGIT_RE = /[0-9]/;
 const PASSWORD_SYMBOL_RE = /[^A-Za-z0-9]/;
+const SIGNUP_ACCOUNT_TYPES = new Set(
+  Object.keys(ACCOUNT_TYPE_REQUIREMENTS).filter(accountType => accountType !== 'admin')
+);
 
 function validateSignup(body: any) {
   const required = ['full_name', 'email', 'password', 'account_type', 'requested_role', 'requested_organization', 'requested_purpose'];
@@ -105,6 +109,12 @@ function validateSignup(body: any) {
   if (!PASSWORD_LOWERCASE_RE.test(pwd)) return 'Password must contain at least one lowercase letter.';
   if (!PASSWORD_DIGIT_RE.test(pwd)) return 'Password must contain at least one digit.';
   if (!PASSWORD_SYMBOL_RE.test(pwd)) return 'Password must contain at least one special character.';
+  const requestedAccountType = body.account_type.trim();
+  const normalizedAccountType = normalizeAccountType(requestedAccountType);
+  const isKnownAccountType = requestedAccountType === 'government' || SIGNUP_ACCOUNT_TYPES.has(requestedAccountType);
+  if (!isKnownAccountType || !SIGNUP_ACCOUNT_TYPES.has(normalizedAccountType)) {
+    return 'account_type is invalid.';
+  }
   if (!isUserRole(body.requested_role)) return 'requested_role is invalid.';
   if (body.requested_role === 'admin') return 'Admin accounts must be created by an existing administrator.';
   return null;
@@ -144,6 +154,21 @@ async function canMutateAdminAccount(db: DbClient, actorId: string, target: any)
   return { allowed: true };
 }
 
+function isApprovedAdminAccount(user: any) {
+  return user?.status === 'APPROVED' && user?.role === 'admin';
+}
+
+function wouldVerificationChange(currentStatus?: string | null) {
+  return ['submitted_for_review', 'verified'].includes(currentStatus || '');
+}
+
+async function rejectSelfAdminVerificationMutation(db: DbClient, actorId: string, target: any, currentVerificationStatus?: string | null) {
+  if (!isApprovedAdminAccount(target) || !wouldVerificationChange(currentVerificationStatus)) {
+    return null;
+  }
+  return canMutateAdminAccount(db, actorId, target);
+}
+
 export function authRouter(db: Db) {
   const router = Router();
 
@@ -157,6 +182,7 @@ export function authRouter(db: Db) {
     }
 
     const id = `usr_${crypto.randomUUID()}`;
+    const accountType = normalizeAccountType(req.body.account_type);
     await run(db, `
       INSERT INTO users (
         id, full_name, email, password_hash, account_type, requested_role,
@@ -167,13 +193,13 @@ export function authRouter(db: Db) {
       req.body.full_name.trim(),
       email,
       hashPassword(req.body.password),
-      req.body.account_type.trim(),
+      accountType,
       req.body.requested_role,
       req.body.requested_mda_id || null,
       req.body.requested_organization.trim(),
       req.body.requested_purpose.trim()
     ]);
-    await ensureUserProfile(db, id, req.body.account_type, req.body.requested_organization.trim());
+    await ensureUserProfile(db, id, accountType, req.body.requested_organization.trim());
 
     res.status(201).json({ user: sanitizeUser(await getUserById(db, id)) });
   });
@@ -301,6 +327,10 @@ export function authRouter(db: Db) {
     ];
     const current = await getAccountSnapshot(db, req.user!.id);
     if (!current) return res.status(404).json({ error: 'Account not found.' });
+    const adminMutationDecision = await rejectSelfAdminVerificationMutation(db, req.user!.id, current.user, current.profile.verification_status);
+    if (adminMutationDecision?.allowed === false) {
+      return res.status(400).json({ error: adminMutationDecision.message, code: adminMutationDecision.code });
+    }
 
     const next: Record<string, any> = {};
     for (const key of allowed) {
@@ -356,6 +386,11 @@ export function authRouter(db: Db) {
       return res.status(400).json({ error: 'type, label, file_name, and mime_type are required.' });
     }
     const current = await getAccountSnapshot(db, req.user!.id);
+    if (!current) return res.status(404).json({ error: 'Account not found.' });
+    const adminMutationDecision = await rejectSelfAdminVerificationMutation(db, req.user!.id, current.user, current.profile.verification_status);
+    if (adminMutationDecision?.allowed === false) {
+      return res.status(400).json({ error: adminMutationDecision.message, code: adminMutationDecision.code });
+    }
     await db.transaction(async client => {
       await upsertVerificationDocument(client, req.user!.id, { type, label, file_name, mime_type, storage_ref });
       if (await markVerificationChanged(client, req.user!.id, current?.profile.verification_status)) {
@@ -477,6 +512,10 @@ export function adminUsersRouter(db: Db) {
     if (!mutationDecision.allowed) {
       return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
     }
+    const snapshot = await getAccountSnapshot(db, req.params.id);
+    if (!snapshot || snapshot.profile.verification_status !== 'submitted_for_review') {
+      return res.status(400).json({ error: 'Only accounts submitted for review can be returned for more information.', code: 'VERIFICATION_NOT_SUBMITTED' });
+    }
 
     await run(db, `
       UPDATE user_profiles
@@ -496,14 +535,16 @@ export function adminUsersRouter(db: Db) {
       return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
     }
 
-    await run(db, `
-      UPDATE users
-      SET status = 'REJECTED', role = NULL, mda_id = NULL, reviewed_by = $1,
-          reviewed_at = $2, rejection_reason = $3, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4
-    `, [req.user!.id, new Date().toISOString(), reason || 'Application rejected by administrator.', req.params.id]);
-    await run(db, "UPDATE user_profiles SET verification_status = 'rejected', review_notes = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2", [reason || 'Application rejected by administrator.', req.params.id]);
-    await revokeUserApiKeys(db, req.params.id);
+    await db.transaction(async client => {
+      await run(client, `
+        UPDATE users
+        SET status = 'REJECTED', role = NULL, mda_id = NULL, reviewed_by = $1,
+            reviewed_at = $2, rejection_reason = $3, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+      `, [req.user!.id, new Date().toISOString(), reason || 'Application rejected by administrator.', req.params.id]);
+      await run(client, "UPDATE user_profiles SET verification_status = 'rejected', review_notes = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2", [reason || 'Application rejected by administrator.', req.params.id]);
+      await revokeUserApiKeys(client, req.params.id);
+    });
 
     res.json({ user: sanitizeUser(await getUserById(db, req.params.id)) });
   });
@@ -516,13 +557,15 @@ export function adminUsersRouter(db: Db) {
       return res.status(400).json({ error: mutationDecision.message, code: mutationDecision.code });
     }
 
-    await run(db, `
-      UPDATE users
-      SET status = 'SUSPENDED', reviewed_by = $1, reviewed_at = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
-    `, [req.user!.id, new Date().toISOString(), req.params.id]);
-    await run(db, "UPDATE user_profiles SET verification_status = 'suspended', updated_at = CURRENT_TIMESTAMP WHERE user_id = $1", [req.params.id]);
-    await revokeUserApiKeys(db, req.params.id);
+    await db.transaction(async client => {
+      await run(client, `
+        UPDATE users
+        SET status = 'SUSPENDED', reviewed_by = $1, reviewed_at = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `, [req.user!.id, new Date().toISOString(), req.params.id]);
+      await run(client, "UPDATE user_profiles SET verification_status = 'suspended', updated_at = CURRENT_TIMESTAMP WHERE user_id = $1", [req.params.id]);
+      await revokeUserApiKeys(client, req.params.id);
+    });
 
     res.json({ user: sanitizeUser(await getUserById(db, req.params.id)) });
   });

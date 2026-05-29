@@ -37,7 +37,7 @@ Add API docs metadata and authorization helpers:
 - Extend catalog API responses with `docs_visibility`.
 - Add `GET /api/docs`, returning only APIs visible to the current visitor.
 - Add `GET /api/docs/:id`, returning API metadata and the active OpenAPI spec URL only when the visitor can view docs.
-- Keep serving static OpenAPI files at `/openapi`, but do not rely on hiding static files as the only security control. The docs route should only disclose restricted spec URLs to authorized users.
+- Serve OpenAPI specs at `/openapi` from Postgres-backed spec text, but do not rely on route obscurity as the only security control. The docs route should only disclose restricted spec URLs to authorized users.
 - Add tests for the visibility matrix across anonymous users, developers, API owners, reviewers, and admins.
 
 ## Frontend
@@ -63,7 +63,7 @@ Expose access groups for easy review:
 
 - Anonymous users opening restricted docs see a sign-in prompt or 401 state.
 - Approved but unauthorized users see a clear 403 state explaining that the docs are restricted.
-- Missing APIs or missing OpenAPI files show a 404 state.
+- Missing APIs or missing Postgres-backed spec text show a 404 state.
 - Invalid OpenAPI specs show a readable load failure plus a download link only if the user is authorized.
 
 ## Testing

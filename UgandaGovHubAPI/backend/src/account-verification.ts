@@ -1,127 +1,36 @@
 import crypto from 'crypto';
-import { sanitizeUser, type AuthUser, type PublicUser, type UserRole } from './auth';
+import { sanitizeUser, type AuthUser } from './auth';
+import {
+  ACCOUNT_TYPE_REQUIREMENTS,
+  ENCRYPTED_DOCUMENT_FIELDS,
+  ENCRYPTED_PROFILE_FIELDS,
+  normalizeAccountType,
+} from './account-verification-policy';
+import type {
+  AccountProfile,
+  AccountRequirement,
+  AccountSnapshot,
+  AccountType,
+  PrivilegeSummary,
+  VerificationDocument,
+  VerificationProgress,
+  VerificationStatus,
+} from './account-verification-types';
 import { decryptFields, encryptAtRest, encryptFields } from './crypto-at-rest';
 import type { DbClient } from './db';
 import { exec, many, one, run } from './db';
 
-export type AccountType =
-  | 'government_employee'
-  | 'mda_api_owner'
-  | 'private_company'
-  | 'business_name'
-  | 'public_developer'
-  | 'civil_society'
-  | 'research_institution'
-  | 'admin';
-
-export type VerificationStatus =
-  | 'draft_profile'
-  | 'submitted_for_review'
-  | 'needs_more_information'
-  | 'verified'
-  | 'rejected'
-  | 'suspended';
-
-export type VerificationDocument = {
-  id: string;
-  user_id: string;
-  type: string;
-  label: string;
-  file_name: string;
-  mime_type: string;
-  storage_ref: string;
-  status: string;
-  uploaded_at: string;
-};
-
-export type AccountProfile = {
-  user_id: string;
-  verification_status: VerificationStatus;
-  account_category: AccountType;
-  nin: string | null;
-  national_id_number: string | null;
-  contact_phone: string | null;
-  address: string | null;
-  organization_name: string | null;
-  organization_type: string | null;
-  ursb_number: string | null;
-  brn: string | null;
-  tin: string | null;
-  staff_id: string | null;
-  department: string | null;
-  job_title: string | null;
-  supervisor_name: string | null;
-  supervisor_email: string | null;
-  review_notes: string | null;
-  submitted_at: string | null;
-};
-
-export type AccountSnapshot = {
-  user: PublicUser;
-  profile: AccountProfile;
-  documents: VerificationDocument[];
-  requirements: AccountRequirement;
-  privileges: PrivilegeSummary;
-  verification_progress: VerificationProgress;
-};
-
-export type AccountRequirement = {
-  label: string;
-  description: string;
-  requiredFields: Array<{ key: keyof AccountProfile; label: string }>;
-  requiredDocuments: Array<{ type: string; label: string; accepts: string }>;
-};
-
-export type PrivilegeSummary = {
-  accessGroup: string;
-  permissions: string[];
-  restrictions: string[];
-};
-
-export type VerificationProgress = {
-  missing_fields: string[];
-  missing_documents: string[];
-  completed_fields: number;
-  total_fields: number;
-  completed_documents: number;
-  total_documents: number;
-  completed_requirements: number;
-  total_requirements: number;
-  can_submit: boolean;
-  next_action:
-    | 'complete_profile'
-    | 'upload_documents'
-    | 'submit_for_review'
-    | 'await_admin_review'
-    | 'respond_to_admin_request'
-    | 'approved'
-    | 'rejected'
-    | 'suspended';
-  message: string;
-};
-
-const ENCRYPTED_PROFILE_FIELDS: Array<keyof AccountProfile> = [
-  'nin',
-  'national_id_number',
-  'contact_phone',
-  'address',
-  'organization_name',
-  'organization_type',
-  'ursb_number',
-  'brn',
-  'tin',
-  'staff_id',
-  'department',
-  'job_title',
-  'supervisor_name',
-  'supervisor_email',
-  'review_notes',
-];
-
-const ENCRYPTED_DOCUMENT_FIELDS: Array<keyof VerificationDocument> = [
-  'file_name',
-  'storage_ref',
-];
+export type {
+  AccountProfile,
+  AccountRequirement,
+  AccountSnapshot,
+  AccountType,
+  PrivilegeSummary,
+  VerificationDocument,
+  VerificationProgress,
+  VerificationStatus,
+} from './account-verification-types';
+export { ACCOUNT_TYPE_REQUIREMENTS, normalizeAccountType } from './account-verification-policy';
 
 export function encryptProfileForStorage(profile: Record<string, any>) {
   return encryptFields(profile, ENCRYPTED_PROFILE_FIELDS as string[]);
@@ -133,123 +42,6 @@ function decryptProfileFromStorage(profile: AccountProfile): AccountProfile {
 
 function decryptDocumentFromStorage(document: VerificationDocument): VerificationDocument {
   return decryptFields(document, ENCRYPTED_DOCUMENT_FIELDS as string[]) as VerificationDocument;
-}
-
-export const ACCOUNT_TYPE_REQUIREMENTS: Record<AccountType, AccountRequirement> = {
-  government_employee: {
-    label: 'Government Employee',
-    description: 'For verified staff working under a Ugandan Ministry, Department, or Agency.',
-    requiredFields: [
-      { key: 'staff_id', label: 'Staff ID or appointment reference' },
-      { key: 'department', label: 'Department or unit' },
-      { key: 'job_title', label: 'Job title' },
-      { key: 'supervisor_name', label: 'Supervisor name' },
-      { key: 'supervisor_email', label: 'Supervisor email' },
-    ],
-    requiredDocuments: [
-      { type: 'staff_id_or_appointment', label: 'Staff ID or appointment proof', accepts: 'image/*,application/pdf' },
-      { type: 'authorization_letter', label: 'Authorization letter', accepts: 'image/*,application/pdf' },
-    ],
-  },
-  mda_api_owner: {
-    label: 'MDA API Owner',
-    description: 'For MDA officers authorized to manage APIs owned by their institution.',
-    requiredFields: [
-      { key: 'staff_id', label: 'Staff ID or appointment reference' },
-      { key: 'department', label: 'Department or unit' },
-      { key: 'job_title', label: 'Job title' },
-      { key: 'supervisor_name', label: 'Authorizing officer name' },
-      { key: 'supervisor_email', label: 'Authorizing officer email' },
-    ],
-    requiredDocuments: [
-      { type: 'mda_authorization_letter', label: 'MDA authorization letter', accepts: 'image/*,application/pdf' },
-      { type: 'staff_id_or_appointment', label: 'Staff ID or appointment proof', accepts: 'image/*,application/pdf' },
-    ],
-  },
-  private_company: {
-    label: 'Private Company',
-    description: 'For incorporated companies requesting API access for approved integrations.',
-    requiredFields: [
-      { key: 'organization_name', label: 'Company name' },
-      { key: 'ursb_number', label: 'URSB registration number' },
-      { key: 'tin', label: 'URA TIN' },
-      { key: 'nin', label: 'Authorized representative NIN' },
-    ],
-    requiredDocuments: [
-      { type: 'certificate_of_incorporation', label: 'Certificate of incorporation', accepts: 'image/*,application/pdf' },
-      { type: 'ursb_registration', label: 'URSB registration document', accepts: 'image/*,application/pdf' },
-      { type: 'ura_tin_certificate', label: 'URA TIN certificate', accepts: 'image/*,application/pdf' },
-      { type: 'authorization_letter', label: 'Authorization letter', accepts: 'image/*,application/pdf' },
-    ],
-  },
-  business_name: {
-    label: 'Business Name',
-    description: 'For registered businesses that are not incorporated companies.',
-    requiredFields: [
-      { key: 'organization_name', label: 'Business name' },
-      { key: 'brn', label: 'Business Registration Number' },
-      { key: 'nin', label: 'Proprietor or representative NIN' },
-    ],
-    requiredDocuments: [
-      { type: 'business_registration_certificate', label: 'Business registration certificate', accepts: 'image/*,application/pdf' },
-      { type: 'national_id_front', label: 'Representative national ID front', accepts: 'image/*' },
-      { type: 'national_id_back', label: 'Representative national ID back', accepts: 'image/*' },
-    ],
-  },
-  public_developer: {
-    label: 'Public Developer',
-    description: 'For individual developers requesting lawful API access after identity verification.',
-    requiredFields: [
-      { key: 'nin', label: 'National Identification Number' },
-      { key: 'national_id_number', label: 'National ID number' },
-      { key: 'contact_phone', label: 'Phone number' },
-      { key: 'address', label: 'Address' },
-    ],
-    requiredDocuments: [
-      { type: 'national_id_front', label: 'National ID front image', accepts: 'image/*' },
-      { type: 'national_id_back', label: 'National ID back image', accepts: 'image/*' },
-      { type: 'nin_confirmation', label: 'NIN confirmation or NIRA document', accepts: 'image/*,application/pdf' },
-    ],
-  },
-  civil_society: {
-    label: 'Civil Society',
-    description: 'For registered non-government or civil society organizations.',
-    requiredFields: [
-      { key: 'organization_name', label: 'Organization name' },
-      { key: 'tin', label: 'TIN if available' },
-      { key: 'nin', label: 'Authorized representative NIN' },
-    ],
-    requiredDocuments: [
-      { type: 'registration_certificate', label: 'Registration certificate', accepts: 'image/*,application/pdf' },
-      { type: 'authorization_letter', label: 'Authorization letter', accepts: 'image/*,application/pdf' },
-    ],
-  },
-  research_institution: {
-    label: 'Research Institution',
-    description: 'For universities and research institutions with approved public-interest use cases.',
-    requiredFields: [
-      { key: 'organization_name', label: 'Institution name' },
-      { key: 'department', label: 'Research department' },
-      { key: 'supervisor_name', label: 'Principal investigator or supervisor' },
-      { key: 'supervisor_email', label: 'Institution contact email' },
-    ],
-    requiredDocuments: [
-      { type: 'institution_authorization', label: 'Institution authorization letter', accepts: 'image/*,application/pdf' },
-      { type: 'research_summary', label: 'Research or project summary', accepts: 'image/*,application/pdf' },
-    ],
-  },
-  admin: {
-    label: 'Platform Administrator',
-    description: 'For trusted platform operators only.',
-    requiredFields: [],
-    requiredDocuments: [],
-  },
-};
-
-export function normalizeAccountType(value: string | null | undefined): AccountType {
-  if (value === 'government') return 'government_employee';
-  if (value && value in ACCOUNT_TYPE_REQUIREMENTS) return value as AccountType;
-  return 'public_developer';
 }
 
 function initialAccountCategory(user: { account_type: string; requested_role?: string | null; role?: string | null; status?: string | null }): AccountType {

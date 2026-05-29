@@ -378,7 +378,7 @@ In `backend/src/versioning.ts`, update the backfill query:
 const apis = await many(db, 'SELECT id, openapi_spec_path, openapi_spec_text FROM apis');
 ```
 
-Replace filesystem read fallback with:
+Keep the backfill database-only:
 
 ```ts
 const specText = api.openapi_spec_text;
@@ -879,7 +879,7 @@ Expected: PASS and `frontend/dist` created.
 Change:
 
 ```md
-- **API contracts:** OpenAPI files stored in `backend/openapi/`.
+- **API contracts:** OpenAPI spec text stored in Postgres and served through `/openapi/` routes.
 ```
 
 to:
@@ -1016,4 +1016,3 @@ git commit -m "feat: support full Vercel deployment"
 ```
 
 If Git staging is blocked by sandbox permissions, report the exact files changed and leave commit to the user.
-

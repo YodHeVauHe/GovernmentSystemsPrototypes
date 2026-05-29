@@ -1,5 +1,5 @@
 import assert from 'assert/strict';
-import { productionDemoApis } from './seed-production-demo-catalog';
+import { productionDemoApis } from './production-demo-catalog-data';
 import { findSandboxOpenApiResponseExample } from './sandbox-openapi-response';
 
 const uraSpec = productionDemoApis.find(api => api.id === 'api-ura-13897843-012d-4951-8b06-374fff183c3e')?.spec as any;
