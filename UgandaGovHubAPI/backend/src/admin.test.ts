@@ -30,10 +30,10 @@ assert.deepEqual(
       api_key_status: 'ACTIVE',
       api_key_expires_at: '2026-05-21T11:00:00.000Z',
       api_key_revoked_at: null,
-      api_id: 'api-nira-01',
-      consumer_mda_id: 'mda-06',
+      api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
+      consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
     },
-    'api-nira-01',
+    'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
     now
   ),
   { allowed: true }
@@ -46,10 +46,10 @@ assert.deepEqual(
       api_key_status: 'REVOKED',
       api_key_expires_at: '2026-05-21T11:00:00.000Z',
       api_key_revoked_at: '2026-05-21T09:00:00.000Z',
-      api_id: 'api-nira-01',
-      consumer_mda_id: 'mda-06',
+      api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
+      consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
     },
-    'api-nira-01',
+    'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
     now
   ),
   { allowed: false, code: 'REVOKED_API_KEY', message: 'The provided API key has been revoked.' }
@@ -62,10 +62,10 @@ assert.deepEqual(
       api_key_status: 'ACTIVE',
       api_key_expires_at: '2026-05-21T09:59:59.000Z',
       api_key_revoked_at: null,
-      api_id: 'api-nira-01',
-      consumer_mda_id: 'mda-06',
+      api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
+      consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
     },
-    'api-nira-01',
+    'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
     now
   ),
   { allowed: false, code: 'EXPIRED_API_KEY', message: 'The provided API key has expired.' }
@@ -78,12 +78,12 @@ assert.deepEqual(
       api_key_status: 'ACTIVE',
       api_key_expires_at: '2026-05-21T11:00:00.000Z',
       api_key_revoked_at: null,
-      api_id: 'api-nira-01',
-      consumer_mda_id: 'mda-06',
+      api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
+      consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
       consumer_user_id: 'usr-suspended',
       consumer_user_status: 'SUSPENDED',
     },
-    'api-nira-01',
+    'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
     now
   ),
   { allowed: false, code: 'ACCOUNT_NOT_APPROVED', message: 'The API key owner account is not approved.' }
@@ -95,12 +95,12 @@ assert.deepEqual(
       api_key_status: 'ACTIVE',
       api_key_expires_at: '2026-05-21T11:00:00.000Z',
       api_key_revoked_at: null,
-      api_id: 'api-nira-01',
-      consumer_mda_id: 'mda-06',
+      api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
+      consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
       consumer_user_id: 'usr-mda-suspended',
       consumer_user_status: 'SUSPENDED',
     },
-    'api-nira-01',
+    'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
     now
   ),
   { allowed: false, code: 'ACCOUNT_NOT_APPROVED', message: 'The API key owner account is not approved.' }
@@ -113,7 +113,7 @@ assert.equal(resolveOpenApiFilePath('/srv/app/openapi', '/openapi/a.yaml'), '/sr
 assert.throws(() => resolveOpenApiFilePath('/srv/app/openapi', '/openapi/../secrets.txt'), /Invalid OpenAPI path/);
 assert.throws(() => resolveOpenApiFilePath('/srv/app/openapi', '/etc/passwd'), /Invalid OpenAPI path/);
 
-assert.equal(resolveSandboxApiId('/api/v1/identity/verify-nin'), 'api-nira-01');
+assert.equal(resolveSandboxApiId('/api/v1/identity/verify-nin'), 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6');
 assert.equal(resolveSandboxApiId('/api/v1/registry/status', [
   { id: 'api-custom-01', sandbox_base_path: '/api/v1/registry' },
 ]), 'api-custom-01');

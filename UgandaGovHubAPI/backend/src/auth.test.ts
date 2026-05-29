@@ -30,7 +30,7 @@ db.prepare(`
   passwordHash,
   'government',
   'developer',
-  'mda-06',
+  'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
   'Ministry of Health',
   'Build a health service integration',
   'PENDING_REVIEW'
@@ -46,7 +46,7 @@ if (!pendingAccess.allowed) {
 
 db.prepare(`
   UPDATE users
-  SET status = 'APPROVED', role = 'developer', mda_id = 'mda-06', reviewed_at = ?, reviewed_by = ?
+  SET status = 'APPROVED', role = 'developer', mda_id = 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', reviewed_at = ?, reviewed_by = ?
   WHERE id = ?
 `).run('2026-05-22T10:00:00.000Z', 'admin-1', 'user-1');
 
@@ -69,6 +69,6 @@ assert.equal(getSessionUser(db, token, new Date('2026-05-23T10:01:00.000Z')), nu
 const publicUser = sanitizeUser(approvedUser);
 assert.equal('password_hash' in publicUser, false);
 assert.equal(publicUser.role, 'developer');
-assert.equal(publicUser.mda_id, 'mda-06');
+assert.equal(publicUser.mda_id, 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543');
 
 console.log('auth tests passed');

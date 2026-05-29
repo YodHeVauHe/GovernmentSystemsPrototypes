@@ -53,7 +53,7 @@ test('core demo pages pass automated accessibility checks', async ({ page }) => 
   await page.goto('/');
   await checkAccessibility(page, 'Catalog');
 
-  await page.goto('/api/api-nira-01');
+  await page.goto('/api/api-nira-000c9306-9410-4889-8392-0bb746edbbe6');
   await checkAccessibility(page, 'NIRA API detail');
 
   await page.goto('/catalog/add');

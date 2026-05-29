@@ -103,16 +103,16 @@ console.log('Inserting seed data...');
 
 const insertMda = db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)');
 const mdas = [
-  ['mda-01', 'National Identification and Registration Authority', 'NIRA'],
-  ['mda-02', 'Uganda Revenue Authority', 'URA'],
-  ['mda-03', 'Uganda Registration Services Bureau', 'URSB'],
-  ['mda-04', 'Ministry of Works and Transport', 'MoWT'],
-  ['mda-05', 'Ministry of ICT and National Guidance', 'MoICT'],
-  ['mda-06', 'Ministry of Health', 'MoH'],
-  ['mda-07', 'Public Procurement and Disposal of Public Assets Authority', 'PPDA'],
-  ['mda-08', 'National Social Security Fund', 'NSSF'],
-  ['mda-09', 'Uganda Police Force', 'UPF'],
-  ['mda-10', 'National Information Technology Authority Uganda', 'NITA-U']
+  ['mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41', 'National Identification and Registration Authority', 'NIRA'],
+  ['mda-ura-2efff0d3-952e-4475-8231-232873a69854', 'Uganda Revenue Authority', 'URA'],
+  ['mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5', 'Uganda Registration Services Bureau', 'URSB'],
+  ['mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7', 'Ministry of Works and Transport', 'MoWT'],
+  ['mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3', 'Ministry of ICT and National Guidance', 'MoICT'],
+  ['mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', 'Ministry of Health', 'MoH'],
+  ['mda-ppda-e122702f-76bd-46e0-b15f-2c2b93d9928b', 'Public Procurement and Disposal of Public Assets Authority', 'PPDA'],
+  ['mda-nssf-38be9aa8-edb6-453d-ab9e-5d396ca960bc', 'National Social Security Fund', 'NSSF'],
+  ['mda-upf-80e53954-69a8-41d0-818d-01372005684e', 'Uganda Police Force', 'UPF'],
+  ['mda-nita-u-b47d8923-86ad-47ad-9992-3167c54f0a12', 'National Information Technology Authority Uganda', 'NITA-U']
 ];
 for (const m of mdas) await insertMda.run(...m);
 

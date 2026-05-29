@@ -42,6 +42,11 @@ import { CodeSamples } from '@/components/CodeSamples';
 import { generatePublicId } from '@/lib/utils';
 import { toast } from 'sonner';
 import { API_BASE } from '@/lib/api-base';
+import {
+  readCatalogViewModePreference,
+  writeCatalogViewModePreference,
+  type CatalogViewMode,
+} from './catalog-view-helpers';
 
 function SectorBadge({ sector }: { sector: string }) {
   const value = sector || 'MDA API';
@@ -76,6 +81,36 @@ const APPEALABLE_API_KEY_STATUSES = new Set(['REVOKED', 'DELETED']);
 
 function isAppealableAccessRequest(request: any) {
   return request.status === 'APPROVED' && APPEALABLE_API_KEY_STATUSES.has(String(request.api_key_status || '').toUpperCase());
+}
+
+function getCatalogViewModeStorage() {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readInitialCatalogViewMode() {
+  const storage = getCatalogViewModeStorage();
+  return storage ? readCatalogViewModePreference(storage) : 'list';
+}
+
+function useCatalogViewModePreference() {
+  const [viewMode, setViewMode] = useState<CatalogViewMode>(() => readInitialCatalogViewMode());
+
+  const setPreferredViewMode = useCallback((nextViewMode: CatalogViewMode) => {
+    setViewMode(nextViewMode);
+
+    const storage = getCatalogViewModeStorage();
+    if (storage) {
+      writeCatalogViewModePreference(storage, nextViewMode);
+    }
+  }, []);
+
+  return [viewMode, setPreferredViewMode] as const;
 }
 
 function isBlockingAccessRequest(request: any) {
@@ -821,7 +856,7 @@ export function Catalog() {
   const search = searchParams.get('q') || '';
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [complianceFilter, setComplianceFilter] = useState('ALL');
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useCatalogViewModePreference();
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [catalogError, setCatalogError] = useState('');
 
@@ -1025,10 +1060,10 @@ export function Catalog() {
                     </span>
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-left text-[13px] text-[#ededed] font-medium">
-                    {api.owning_mda_id === 'mda-01' ? 'NIRA' :
-                     api.owning_mda_id === 'mda-02' ? 'URA' :
-                     api.owning_mda_id === 'mda-03' ? 'URSB' :
-                     api.owning_mda_id === 'mda-04' ? 'MoWT' : 'MoICT'}
+                    {api.owning_mda_id === 'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41' ? 'NIRA' :
+                     api.owning_mda_id === 'mda-ura-2efff0d3-952e-4475-8231-232873a69854' ? 'URA' :
+                     api.owning_mda_id === 'mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5' ? 'URSB' :
+                     api.owning_mda_id === 'mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7' ? 'MoWT' : 'MoICT'}
                   </TableCell>
                 </TableRow>
               ))}
@@ -1062,10 +1097,10 @@ export function Catalog() {
               <div className="flex justify-between items-center text-[12px] border-t border-[#2e2e2e] pt-4 mt-auto">
                 <span className="text-[#8b8b8b]">Owner</span>
                 <span className="text-white font-medium font-mono">
-                  {api.owning_mda_id === 'mda-01' ? 'NIRA' :
-                   api.owning_mda_id === 'mda-02' ? 'URA' :
-                   api.owning_mda_id === 'mda-03' ? 'URSB' :
-                   api.owning_mda_id === 'mda-04' ? 'MoWT' : 'MoICT'}
+                  {api.owning_mda_id === 'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41' ? 'NIRA' :
+                   api.owning_mda_id === 'mda-ura-2efff0d3-952e-4475-8231-232873a69854' ? 'URA' :
+                   api.owning_mda_id === 'mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5' ? 'URSB' :
+                   api.owning_mda_id === 'mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7' ? 'MoWT' : 'MoICT'}
                 </span>
               </div>
             </Link>
@@ -1121,11 +1156,11 @@ const sampleValues: Record<string, string> = {
 };
 
 const apiBasePathById: Record<string, string> = {
-  'api-nira-01': '/api/v1/identity',
-  'api-ura-01': '/api/v1/tax',
-  'api-ursb-01': '/api/v1/business',
-  'api-mowt-01': '/api/v1/transport/driving-permit',
-  'api-moict-01': '/api/v1/service-uganda',
+  'api-nira-000c9306-9410-4889-8392-0bb746edbbe6': '/api/v1/identity',
+  'api-ura-13897843-012d-4951-8b06-374fff183c3e': '/api/v1/tax',
+  'api-ursb-a75f163c-5df8-4c95-92aa-c21e86502b65': '/api/v1/business',
+  'api-mowt-817fd255-079c-44ba-a338-e95d510f56b7': '/api/v1/transport/driving-permit',
+  'api-moict-d0de33dc-0e3f-449b-8b9d-6608847cb6ac': '/api/v1/service-uganda',
 };
 
 function getSchemaDefault(schema: any, name: string): any {
@@ -1583,6 +1618,31 @@ function coerceParameterValue(value: string, schema: any) {
   return value;
 }
 
+function formatConsoleBody(body: unknown) {
+  const text = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+  return text.split('\n').map(line => {
+    const valuePrefix = line.match(/^(\s*"[^"]+"\s*:\s*)/);
+    const leadingWhitespace = line.match(/^\s*/)?.[0].length || 0;
+    const hangingIndent = Math.min(valuePrefix?.[1].length || leadingWhitespace + 2, 36);
+    return { line, hangingIndent };
+  });
+}
+
+function SandboxConsoleBody({ body, status }: { body: unknown; status: number }) {
+  const toneClassName = status === 200 ? 'text-[#3ecf8e]' : 'text-red-400';
+  const lines = formatConsoleBody(body).map(({ line, hangingIndent }, index) => (
+    <span
+      key={index}
+      className="block whitespace-pre-wrap break-words"
+      style={{ paddingLeft: `${hangingIndent}ch`, textIndent: `-${hangingIndent}ch` }}
+    >
+      {line || ' '}
+    </span>
+  ));
+
+  return <pre className={`overflow-x-hidden leading-relaxed text-[12.5px] ${toneClassName}`}><code>{lines}</code></pre>;
+}
+
 function getServerBasePath(spec: any, apiId: string) {
   const serverUrl = spec?.servers?.[0]?.url;
   if (serverUrl) {
@@ -1673,7 +1733,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
         : JSON.stringify(bodyExample.value, null, 2)
     );
     setResponse(null);
-  }, [activeEndpointIdx, activeEp]);
+  }, [activeEndpointIdx, activeEp, spec]);
 
   const updateParameter = (key: string, patch: Partial<SandboxParameterRow>) => {
     setParameters(prev => prev.map(row => row.key === key ? { ...row, ...patch } : row));
@@ -2034,26 +2094,26 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] text-[#8b8b8b] shrink-0">Presets:</span>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {api.id === 'api-nira-01' && (
+                  {api.id === 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6' && (
                     <>
                       <button onClick={() => loadProfile('valid-nira')} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Valid</button>
                       <button onClick={() => loadProfile('invalid-nira')} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">No Match</button>
                       <button onClick={() => loadProfile('expired-nira')} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Expired</button>
                     </>
                   )}
-                  {api.id === 'api-ura-01' && (
+                  {api.id === 'api-ura-13897843-012d-4951-8b06-374fff183c3e' && (
                     <>
                       <button onClick={() => loadProfile('compliant-ura')} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Compliant</button>
                       <button onClick={() => loadProfile('noncompliant-ura')} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Non-Comp</button>
                     </>
                   )}
-                  {api.id === 'api-mowt-01' && (
+                  {api.id === 'api-mowt-817fd255-079c-44ba-a338-e95d510f56b7' && (
                     <>
                       <button onClick={() => loadProfile('valid-permit')} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Valid</button>
                       <button onClick={() => loadProfile('suspended-permit')} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Suspended</button>
                     </>
                   )}
-                  {api.id === 'api-moict-01' && (
+                  {api.id === 'api-moict-d0de33dc-0e3f-449b-8b9d-6608847cb6ac' && (
                     <>
                       <button onClick={() => applySampleValues({ nin: 'CM99021234567X', tin: '1000123456', permit_number: 'WP30219' })} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Eligible</button>
                       <button onClick={() => applySampleValues({ nin: 'CM00000000000X', tin: '1000123456', permit_number: 'WP30219' })} className="px-2 py-0.5 bg-[#2e2e2e] hover:bg-[#333] border border-[#444] rounded text-[11px] text-white">Ineligible</button>
@@ -2170,9 +2230,7 @@ function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: an
                 {/* Body Display */}
                 <div>
                   <div className="text-[10px] text-[#8b8b8b] uppercase tracking-wider font-semibold mb-1">Body</div>
-                  <pre className={`leading-relaxed text-[12.5px] whitespace-pre-wrap overflow-x-auto ${response.status === 200 ? 'text-[#3ecf8e]' : 'text-red-400'}`}>
-                    {JSON.stringify(response.body, null, 2)}
-                  </pre>
+                  <SandboxConsoleBody body={response.body} status={response.status} />
                 </div>
               </div>
             ) : (
@@ -2442,10 +2500,10 @@ function APIPrintSummary({ api }: { api: any }) {
         <div>
           <span className="block text-[11px] uppercase tracking-wider font-mono text-gray-500">Owning MDA (Data Owner)</span>
           <span className="font-semibold text-gray-900">
-            {api.owning_mda_id === 'mda-01' ? 'National Identification and Registration Authority (NIRA)' :
-             api.owning_mda_id === 'mda-02' ? 'Uganda Revenue Authority (URA)' :
-             api.owning_mda_id === 'mda-03' ? 'Uganda Registration Services Bureau (URSB)' :
-             api.owning_mda_id === 'mda-04' ? 'Ministry of Works and Transport (MoWT)' : 
+            {api.owning_mda_id === 'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41' ? 'National Identification and Registration Authority (NIRA)' :
+             api.owning_mda_id === 'mda-ura-2efff0d3-952e-4475-8231-232873a69854' ? 'Uganda Revenue Authority (URA)' :
+             api.owning_mda_id === 'mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5' ? 'Uganda Registration Services Bureau (URSB)' :
+             api.owning_mda_id === 'mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7' ? 'Ministry of Works and Transport (MoWT)' :
              'Ministry of ICT and National Guidance (MoICT)'}
           </span>
         </div>
@@ -2906,10 +2964,10 @@ export function ApiDetail() {
                   <div>
                     <span className="block text-[#8b8b8b] text-[11px] uppercase tracking-wider font-mono">Data Owner (Controller)</span>
                     <span className="text-white font-medium">
-                      {api.owning_mda_id === 'mda-01' ? 'National Identification and Registration Authority (NIRA)' :
-                       api.owning_mda_id === 'mda-02' ? 'Uganda Revenue Authority (URA)' :
-                       api.owning_mda_id === 'mda-03' ? 'Uganda Registration Services Bureau (URSB)' :
-                       api.owning_mda_id === 'mda-04' ? 'Ministry of Works and Transport (MoWT)' : 
+                      {api.owning_mda_id === 'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41' ? 'National Identification and Registration Authority (NIRA)' :
+                       api.owning_mda_id === 'mda-ura-2efff0d3-952e-4475-8231-232873a69854' ? 'Uganda Revenue Authority (URA)' :
+                       api.owning_mda_id === 'mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5' ? 'Uganda Registration Services Bureau (URSB)' :
+                       api.owning_mda_id === 'mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7' ? 'Ministry of Works and Transport (MoWT)' :
                        'Ministry of ICT and National Guidance (MoICT)'}
                     </span>
                   </div>

@@ -58,12 +58,12 @@ interface UserContextType {
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export const MDAS_LIST: MDA[] = [
-  { id: 'mda-01', name: 'National Identification and Registration Authority', shortName: 'NIRA' },
-  { id: 'mda-02', name: 'Uganda Revenue Authority', shortName: 'URA' },
-  { id: 'mda-03', name: 'Uganda Registration Services Bureau', shortName: 'URSB' },
-  { id: 'mda-04', name: 'Ministry of Works and Transport', shortName: 'MoWT' },
-  { id: 'mda-05', name: 'Ministry of ICT and National Guidance', shortName: 'MoICT' },
-  { id: 'mda-06', name: 'Ministry of Health', shortName: 'MoH' },
+  { id: 'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41', name: 'National Identification and Registration Authority', shortName: 'NIRA' },
+  { id: 'mda-ura-2efff0d3-952e-4475-8231-232873a69854', name: 'Uganda Revenue Authority', shortName: 'URA' },
+  { id: 'mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5', name: 'Uganda Registration Services Bureau', shortName: 'URSB' },
+  { id: 'mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7', name: 'Ministry of Works and Transport', shortName: 'MoWT' },
+  { id: 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3', name: 'Ministry of ICT and National Guidance', shortName: 'MoICT' },
+  { id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', name: 'Ministry of Health', shortName: 'MoH' },
 ];
 
 async function parseAuthResponse(response: Response) {

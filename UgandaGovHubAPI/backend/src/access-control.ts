@@ -46,6 +46,7 @@ export async function buildAccessRequestList(db: DbClient, user: AccessUser) {
     SELECT
       r.id, r.consumer_mda_id, r.consumer_user_id, r.consumer_type, r.api_id, r.purpose,
       r.status, r.api_key_preview, r.api_key_status, r.api_key_expires_at, r.api_key_revoked_at,
+      (r.api_key IS NOT NULL) as api_key_pending_reveal,
       r.requested_fields, r.volume_tier, r.legal_basis, r.environment, r.created_at,
       a.name as api_name,
       a.owning_mda_id,
@@ -135,10 +136,8 @@ export async function listAuditLogs(db: DbClient, user?: AccessUser, limit = 100
   const safeOffset = Math.max(0, offset);
 
   if (user?.role === 'developer') {
-    const whereClause = user.mda_id
-      ? 'WHERE l.mda_id = $1'
-      : 'WHERE l.consumer_user_id = $1';
-    const param = user.mda_id || user.id;
+    const whereClause = "WHERE l.consumer_user_id = $1 AND l.event_type LIKE 'SANDBOX_CALL%'";
+    const param = user.id;
 
     const total = Number((await one<{ count: string }>(db, `SELECT COUNT(*) as count FROM audit_logs l ${whereClause}`, [param]))?.count || 0);
     const data = await many(db, `${baseSelect} ${whereClause} ORDER BY l.created_at DESC LIMIT $2 OFFSET $3`, [param, safeLimit, safeOffset]);

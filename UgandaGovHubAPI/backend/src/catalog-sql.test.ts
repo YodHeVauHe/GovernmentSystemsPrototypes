@@ -42,7 +42,7 @@ db.prepare(`
 `).run(
   'api-test',
   'Old API',
-  'mda-01',
+  'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41',
   'Old Sector',
   'Old description',
   'Draft',
@@ -66,7 +66,7 @@ db.prepare(`
 
 db.prepare(UPDATE_API_SQL).run(
   'New API',
-  'mda-02',
+  'mda-ura-2efff0d3-952e-4475-8231-232873a69854',
   'Finance',
   'Updated description',
   'Production',
@@ -92,7 +92,7 @@ db.prepare(UPDATE_API_SQL).run(
 const row = db.prepare('SELECT name, owning_mda_id, sector, openapi_spec_text, docs_visibility FROM apis WHERE id = ?').get('api-test') as any;
 assert.deepEqual(row, {
   name: 'New API',
-  owning_mda_id: 'mda-02',
+  owning_mda_id: 'mda-ura-2efff0d3-952e-4475-8231-232873a69854',
   sector: 'Finance',
   openapi_spec_text: 'openapi: 3.0.0\ninfo:\n  title: New\n  version: 1.0.0\npaths: {}',
   docs_visibility: 'restricted',

@@ -54,40 +54,40 @@ db.prepare(`
     id, name, owning_mda_id, lifecycle_status, sensitivity_level,
     security_classification, sandbox_available, openapi_spec_path, docs_visibility
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run('api-public', 'Public Registry', 'mda-03', 'Production', 'Low', 'Public', 1, '/openapi/public.yaml', 'public');
+`).run('api-public', 'Public Registry', 'mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5', 'Production', 'Low', 'Public', 1, '/openapi/public.yaml', 'public');
 
 db.prepare(`
   INSERT INTO apis (
     id, name, owning_mda_id, lifecycle_status, sensitivity_level,
     security_classification, sandbox_available, openapi_spec_path, docs_visibility
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run('api-auth', 'Authenticated Registry', 'mda-02', 'Beta', 'Medium', 'Official', 1, '/openapi/auth.yaml', 'authenticated');
+`).run('api-auth', 'Authenticated Registry', 'mda-ura-2efff0d3-952e-4475-8231-232873a69854', 'Beta', 'Medium', 'Official', 1, '/openapi/auth.yaml', 'authenticated');
 
 db.prepare(`
   INSERT INTO apis (
     id, name, owning_mda_id, lifecycle_status, sensitivity_level,
     security_classification, sandbox_available, openapi_spec_path, docs_visibility
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run('api-restricted', 'Restricted Registry', 'mda-01', 'Production', 'High', 'Restricted', 1, '/openapi/restricted.yaml', 'restricted');
+`).run('api-restricted', 'Restricted Registry', 'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41', 'Production', 'High', 'Restricted', 1, '/openapi/restricted.yaml', 'restricted');
 
 db.prepare(`
   INSERT INTO access_requests (
     id, consumer_mda_id, consumer_type, api_id, status, api_key_hash, api_key_status, api_key_expires_at
   ) VALUES (?, ?, 'mda', ?, ?, ?, ?, ?)
-`).run('req-approved', 'mda-06', 'api-restricted', 'APPROVED', 'hashed_key', 'ACTIVE', null);
+`).run('req-approved', 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', 'api-restricted', 'APPROVED', 'hashed_key', 'ACTIVE', null);
 db.prepare(`
   INSERT INTO access_requests (
     id, consumer_user_id, consumer_type, api_id, status, api_key_hash, api_key_status, api_key_expires_at
   ) VALUES (?, ?, 'user', ?, ?, ?, ?, ?)
 `).run('req-public-approved', 'usr-public', 'api-restricted', 'APPROVED', 'hashed_public_key', 'ACTIVE', null);
 
-const developer = { id: 'usr-dev', status: 'APPROVED' as const, role: 'developer' as const, mda_id: 'mda-06' };
+const developer = { id: 'usr-dev', status: 'APPROVED' as const, role: 'developer' as const, mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543' };
 const publicDeveloper = { id: 'usr-public', status: 'APPROVED' as const, role: 'developer' as const, mda_id: null };
-const otherDeveloper = { id: 'usr-other', status: 'APPROVED' as const, role: 'developer' as const, mda_id: 'mda-04' };
+const otherDeveloper = { id: 'usr-other', status: 'APPROVED' as const, role: 'developer' as const, mda_id: 'mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7' };
 const pendingDeveloper = { id: 'usr-pending', status: 'PENDING_REVIEW' as const, role: null, mda_id: null };
-const owner = { id: 'usr-owner', status: 'APPROVED' as const, role: 'api_owner' as const, mda_id: 'mda-01' };
-const reviewer = { id: 'usr-reviewer', status: 'APPROVED' as const, role: 'reviewer' as const, mda_id: 'mda-05' };
-const admin = { id: 'usr-admin', status: 'APPROVED' as const, role: 'admin' as const, mda_id: 'mda-05' };
+const owner = { id: 'usr-owner', status: 'APPROVED' as const, role: 'api_owner' as const, mda_id: 'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41' };
+const reviewer = { id: 'usr-reviewer', status: 'APPROVED' as const, role: 'reviewer' as const, mda_id: 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3' };
+const admin = { id: 'usr-admin', status: 'APPROVED' as const, role: 'admin' as const, mda_id: 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3' };
 
 assert.equal(resolveDocsVisibility({ docs_visibility: null, security_classification: 'Public' }), 'public');
 assert.equal(resolveDocsVisibility({ docs_visibility: null, security_classification: 'Official' }), 'authenticated');

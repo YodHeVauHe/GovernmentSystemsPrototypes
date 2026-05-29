@@ -44,7 +44,7 @@ test('seeded demo accounts can be used by presenters', async ({ page }) => {
 test('ministry presenter path covers request, approval, sandbox, and audit surfaces', async ({ page }) => {
   await loginAsDeveloper(page);
 
-  await page.goto('/api/api-nira-01');
+  await page.goto('/api/api-nira-000c9306-9410-4889-8392-0bb746edbbe6');
   await expect(page.getByRole('heading', { name: /NIRA Identity Verification API/i })).toBeVisible();
   const token = await page.evaluate(() => localStorage.getItem('govhub_auth_token'));
   const accessResponse = await page.request.post('http://127.0.0.1:4000/api/access', {
@@ -53,8 +53,8 @@ test('ministry presenter path covers request, approval, sandbox, and audit surfa
       'content-type': 'application/json',
     },
     data: {
-      api_id: 'api-nira-01',
-      consumer_mda_id: 'mda-06',
+      api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
+      consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
       purpose: 'Verify citizen identity for a controlled ministry service eligibility demonstration.',
       requested_fields: 'NIN, Surname, Given Name, Date of Birth',
       volume_tier: 'Low (< 1,000 / month)',
@@ -74,7 +74,7 @@ test('ministry presenter path covers request, approval, sandbox, and audit surfa
 
   await logout(page);
   await loginAsDeveloper(page);
-  await page.goto('/api/api-nira-01');
+  await page.goto('/api/api-nira-000c9306-9410-4889-8392-0bb746edbbe6');
   await page.getByRole('button', { name: 'Sandbox Try It' }).click();
   const sandboxDialog = page.getByRole('dialog', { name: 'Sandbox Console Simulator' });
   if (!(await sandboxDialog.isVisible().catch(() => false))) {

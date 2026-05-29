@@ -6,12 +6,12 @@ const adminUser = {
   email: 'admin@ict.go.ug',
   account_type: 'government',
   requested_role: 'admin',
-  requested_mda_id: 'mda-05',
+  requested_mda_id: 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3',
   requested_organization: 'MoICT',
   requested_purpose: 'Platform oversight',
   status: 'APPROVED',
   role: 'admin',
-  mda_id: 'mda-05',
+  mda_id: 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3',
   rejection_reason: null,
   mfa_enabled: true,
 };
@@ -19,10 +19,10 @@ const adminUser = {
 const pendingAccessRequest = {
   id: 'req-1',
   status: 'PENDING',
-  consumer_mda_id: 'mda-06',
+  consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
   consumer_user_id: 'user-dev',
   mda_name: 'Ministry of Health',
-  api_id: 'api-mowt-01',
+  api_id: 'api-mowt-817fd255-079c-44ba-a338-e95d510f56b7',
   api_name: 'Driving Permit Verification API',
   legal_basis: 'Road safety mandate',
   purpose: 'Verify permit status for patient transport drivers',
@@ -67,9 +67,9 @@ async function mockDashboardApis(
             id: 'log-1',
             created_at: '2026-05-29T07:00:00.000Z',
             event_type: 'SANDBOX_CALL_DENIED',
-            mda_id: 'mda-06',
+            mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
             mda_name: 'Ministry of Health',
-            api_id: 'api-mowt-01',
+            api_id: 'api-mowt-817fd255-079c-44ba-a338-e95d510f56b7',
             api_name: 'Driving Permit Verification API',
             request_id: 'corr-dashboard-view-test',
             correlation_id: 'corr-dashboard-view-test',
@@ -84,8 +84,8 @@ async function mockDashboardApis(
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify([
-          { consumer_mda_id: 'mda-06', api_id: 'api-mowt-01' },
-          { consumer_mda_id: 'mda-05', api_id: 'api-nira-01' },
+          { consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', api_id: 'api-mowt-817fd255-079c-44ba-a338-e95d510f56b7' },
+          { consumer_mda_id: 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3', api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6' },
         ]),
       });
       return;
@@ -118,6 +118,11 @@ test('dashboard tabs keep independent list and grid view modes', async ({ page }
   await expect(page.locator('table')).toHaveCount(0);
   await expect(page.getByText('Road safety mandate')).toBeVisible();
 
+  await page.getByRole('button', { name: 'Accounts' }).click();
+  await expect(page.locator('table')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Account card view' }).click();
+  await expect(page.locator('table')).toHaveCount(0);
+
   await page.getByRole('button', { name: 'Audit Trails' }).click();
   await expect(page.locator('table')).toHaveCount(1);
   await page.getByRole('button', { name: 'Show audit trails grid view' }).click();
@@ -131,6 +136,19 @@ test('dashboard tabs keep independent list and grid view modes', async ({ page }
   await expect(page.getByText('1/5 active').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Access Approvals' }).click();
+  await expect(page.locator('table')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Audit Trails' }).click();
+  await expect(page.locator('table')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Interoperability Matrix' }).click();
+  await expect(page.locator('table')).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Show access approvals list view' })).toBeVisible();
+  await expect(page.locator('table')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Accounts' }).click();
   await expect(page.locator('table')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Audit Trails' }).click();
@@ -171,12 +189,12 @@ test('requesters see requested APIs before approval with request statuses', asyn
       email: 'demo.developer@govhub.go.ug',
       account_type: 'government',
       requested_role: 'developer',
-      requested_mda_id: 'mda-06',
+      requested_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
       requested_organization: 'Ministry of Health',
       requested_purpose: 'Service integration',
       status: 'APPROVED',
       role: 'developer',
-      mda_id: 'mda-06',
+      mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
       rejection_reason: null,
       mfa_enabled: false,
     },
@@ -185,10 +203,10 @@ test('requesters see requested APIs before approval with request statuses', asyn
       {
         id: 'req-2',
         status: 'APPROVED',
-        consumer_mda_id: 'mda-06',
+        consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
         consumer_user_id: 'user-dev',
         mda_name: 'Ministry of Health',
-        api_id: 'api-nira-01',
+        api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
         api_name: 'NIRA Identity Verification API',
         legal_basis: 'Patient identity verification',
         purpose: 'Confirm patient identities during service enrollment',
@@ -215,4 +233,8 @@ test('requesters see requested APIs before approval with request statuses', asyn
   await expect(page.getByText('No sandbox key yet')).toBeVisible();
   await expect(page.getByText('NIRA Identity Verification API')).toBeVisible();
   await expect(page.getByText('Try Sandbox')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Show credentials list view' })).toBeVisible();
+  await expect(page.locator('table')).toHaveCount(0);
 });

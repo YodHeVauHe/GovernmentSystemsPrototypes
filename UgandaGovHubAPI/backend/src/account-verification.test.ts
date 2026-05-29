@@ -45,12 +45,12 @@ db.prepare(`
   hashPassword('StrongPass123!'),
   'government_employee',
   'api_owner',
-  'mda-01',
+  'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41',
   'NIRA',
   'Manage identity APIs',
   'APPROVED',
   'api_owner',
-  'mda-01'
+  'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41'
 );
 
 assert.deepEqual(

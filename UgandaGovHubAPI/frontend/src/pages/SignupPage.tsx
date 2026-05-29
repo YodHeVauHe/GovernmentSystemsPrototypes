@@ -113,7 +113,7 @@ export function SignupPage() {
       ...current,
       account_type: value,
       requested_role: nextType.roleOptions[0],
-      requested_mda_id: nextType.requiresMda ? current.requested_mda_id || 'mda-05' : '',
+      requested_mda_id: nextType.requiresMda ? current.requested_mda_id || 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3' : '',
     }));
   };
 
@@ -195,7 +195,7 @@ export function SignupPage() {
               <Label htmlFor="requested_mda_id">Assigned MDA</Label>
               <select
                 id="requested_mda_id"
-                value={form.requested_mda_id || 'mda-05'}
+                value={form.requested_mda_id || 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3'}
                 onChange={event => update('requested_mda_id', event.target.value)}
                 className="h-9 w-full rounded-md border border-[#2e2e2e] bg-[#181818] px-3 text-sm"
               >
