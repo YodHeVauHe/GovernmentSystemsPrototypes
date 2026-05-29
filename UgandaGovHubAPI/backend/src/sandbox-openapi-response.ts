@@ -34,16 +34,30 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function routePatternMatches(pattern: string, pathname: string) {
+function decodePathSegment(segment: string) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+function routePatternMatch(pattern: string, pathname: string) {
   let source = '';
   let lastIndex = 0;
+  const paramNames: string[] = [];
   for (const match of pattern.matchAll(/\{([^}]+)\}/g)) {
     source += escapeRegExp(pattern.slice(lastIndex, match.index));
-    source += '[^/]+';
+    source += '([^/]+)';
+    paramNames.push(match[1]);
     lastIndex = (match.index || 0) + match[0].length;
   }
   source += escapeRegExp(pattern.slice(lastIndex));
-  return new RegExp(`^${source}/?$`).test(pathname);
+  const result = new RegExp(`^${source}/?$`).exec(pathname);
+  if (!result) return null;
+  return Object.fromEntries(
+    paramNames.map((name, index) => [name, decodePathSegment(result[index + 1])]),
+  );
 }
 
 function candidatePaths(serverBasePath: string, operationPath: string) {
@@ -101,6 +115,78 @@ function responseExample(spec: OpenApiSpec, operation: any): unknown | null {
   return fromSchema === undefined ? null : fromSchema;
 }
 
+function normalizedParamKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function requestValues(originalUrl: string, pathParams: Record<string, string>) {
+  const url = new URL(originalUrl, 'http://sandbox.local');
+  const values = Object.fromEntries(url.searchParams.entries());
+  return { ...values, ...pathParams };
+}
+
+function requestValueForKey(key: string, values: Record<string, string>) {
+  if (values[key] !== undefined) return values[key];
+  const normalizedKey = normalizedParamKey(key);
+  return Object.entries(values).find(([requestKey]) => normalizedParamKey(requestKey) === normalizedKey)?.[1];
+}
+
+function coerceExampleValue(currentValue: unknown, nextValue: string) {
+  if (typeof currentValue === 'number' && nextValue.trim() !== '' && !Number.isNaN(Number(nextValue))) {
+    return Number(nextValue);
+  }
+  if (typeof currentValue === 'boolean') {
+    if (nextValue === 'true') return true;
+    if (nextValue === 'false') return false;
+  }
+  return nextValue;
+}
+
+function hydrateExampleWithRequestValues(example: unknown, values: Record<string, string>): unknown {
+  const replacements = new Map<string, string>();
+
+  function collectReplacements(value: unknown) {
+    if (Array.isArray(value)) {
+      value.forEach(collectReplacements);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+
+    for (const [key, childValue] of Object.entries(value as Record<string, unknown>)) {
+      const requestValue = requestValueForKey(key, values);
+      if (requestValue !== undefined && (typeof childValue === 'string' || typeof childValue === 'number')) {
+        replacements.set(String(childValue), requestValue);
+      }
+      collectReplacements(childValue);
+    }
+  }
+
+  function hydrate(value: unknown, key?: string): unknown {
+    const requestValue = key ? requestValueForKey(key, values) : undefined;
+    if (requestValue !== undefined && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) {
+      return coerceExampleValue(value, requestValue);
+    }
+    if (typeof value === 'string') {
+      return Array.from(replacements.entries()).reduce(
+        (current, [from, to]) => current.split(from).join(to),
+        value,
+      );
+    }
+    if (Array.isArray(value)) return value.map(item => hydrate(item));
+    if (!value || typeof value !== 'object') return value;
+
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+        childKey,
+        hydrate(childValue, childKey),
+      ]),
+    );
+  }
+
+  collectReplacements(example);
+  return hydrate(example);
+}
+
 export function findSandboxOpenApiResponseExample(specInput: unknown, originalUrl: string, method: string): unknown | null {
   const spec = specInput as OpenApiSpec;
   if (!spec?.paths) return null;
@@ -112,14 +198,15 @@ export function findSandboxOpenApiResponseExample(specInput: unknown, originalUr
     const operation = pathItem?.[methodName];
     if (!operation) continue;
 
-    const matches = serverBasePaths(spec).some(serverBasePath =>
-      candidatePaths(serverBasePath, operationPath).some(candidate =>
-        routePatternMatches(candidate, pathname),
-      ),
-    );
-    if (!matches) continue;
+    for (const serverBasePath of serverBasePaths(spec)) {
+      for (const candidate of candidatePaths(serverBasePath, operationPath)) {
+        const pathParams = routePatternMatch(candidate, pathname);
+        if (!pathParams) continue;
 
-    return responseExample(spec, operation);
+        const example = responseExample(spec, operation);
+        return example === null ? null : hydrateExampleWithRequestValues(example, requestValues(originalUrl, pathParams));
+      }
+    }
   }
 
   return null;
