@@ -72,7 +72,52 @@ function sensitivityBadgeClass(value?: string | null) {
   return 'border-[#2e2e2e] bg-[#141414] text-[#b5b5b5]';
 }
 
-function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void }) {
+const APPEALABLE_API_KEY_STATUSES = new Set(['REVOKED', 'DELETED']);
+
+function isAppealableAccessRequest(request: any) {
+  return request.status === 'APPROVED' && APPEALABLE_API_KEY_STATUSES.has(String(request.api_key_status || '').toUpperCase());
+}
+
+function isBlockingAccessRequest(request: any) {
+  if (request.status === 'PENDING') return true;
+  if (request.status !== 'APPROVED') return false;
+  return !isAppealableAccessRequest(request);
+}
+
+function isAccessRequestForConsumer(request: any, apiId: string, mdaId: string, userId?: string) {
+  if (request.api_id !== apiId) return false;
+  if (mdaId) return request.consumer_mda_id === mdaId;
+  return Boolean(userId && request.consumer_user_id === userId);
+}
+
+function getRequestAccessButtonState(requests: any[]) {
+  const blockingRequest = requests.find(isBlockingAccessRequest);
+  if (blockingRequest) {
+    return {
+      disabled: true,
+      label: blockingRequest.status === 'PENDING' ? 'Request pending review' : 'Access approved',
+      title: blockingRequest.status === 'PENDING'
+        ? 'You already have a pending request for this API.'
+        : 'You already have approved access for this API.',
+    };
+  }
+
+  if (requests.some(isAppealableAccessRequest)) {
+    return {
+      disabled: false,
+      label: 'Appeal request',
+      title: 'Submit a new request after an administrator revoked or deleted prior access.',
+    };
+  }
+
+  return {
+    disabled: false,
+    label: 'Request Access',
+    title: 'Request governed sandbox access for this API.',
+  };
+}
+
+function RequestAccessModal({ api, onClose, onSubmitted }: { api: any, onClose: () => void, onSubmitted?: () => void }) {
   const { user, mdaId, mdas } = useUser();
   const { addNotification } = useNotifications();
   const [purpose, setPurpose] = useState('');
@@ -131,6 +176,7 @@ function RequestAccessModal({ api, onClose }: { api: any, onClose: () => void })
         message: `${requesterName} requested access to ${api.name}.`,
       });
       setStatus('success');
+      onSubmitted?.();
     })
     .catch(err => {
       const message = err instanceof Error ? err.message : 'Failed to submit access request.';
@@ -2456,7 +2502,7 @@ function APIPrintSummary({ api }: { api: any }) {
 
 export function ApiDetail() {
   const { id } = useParams();
-  const { role, mdaId } = useUser();
+  const { role, mdaId, user } = useUser();
   const [api, setApi] = useState<any>(null);
   const [spec, setSpec] = useState<any>(null);
   const [versions, setVersions] = useState<ApiVersion[]>([]);
@@ -2521,7 +2567,7 @@ export function ApiDetail() {
       .catch(err => console.error(err));
   }, [id, selectedVersion]);
 
-  useEffect(() => {
+  const fetchAccessRequests = useCallback(() => {
     if (!id) return;
     fetch(`${API_BASE}/api/access`)
       .then(async res => {
@@ -2531,7 +2577,11 @@ export function ApiDetail() {
       })
       .then(data => setAccessRequests(data))
       .catch(() => setAccessRequests([]));
-  }, [id, role, mdaId]);
+  }, [id]);
+
+  useEffect(() => {
+    fetchAccessRequests();
+  }, [fetchAccessRequests, role, mdaId]);
 
   if (!api || !spec) {
     return (
@@ -2563,8 +2613,20 @@ export function ApiDetail() {
   const activeVersion = versions.find(version => version.version === selectedVersion);
   const canManageCurrentApi = role === 'admin' || (role === 'api_owner' && api?.owning_mda_id === mdaId);
   const isHighSensitivityApi = String(api.sensitivity_level || '').toLowerCase().includes('high');
-  const hasActiveApprovedAccess = accessRequests.some(request =>
-    request.api_id === api.id &&
+  const currentApiAccessRequests = accessRequests.filter(request =>
+    isAccessRequestForConsumer(request, api.id, mdaId, user?.id)
+  );
+  const requestAccessButtonState = getRequestAccessButtonState(currentApiAccessRequests);
+  const openRequestAccessModal = () => {
+    if (!requestAccessButtonState.disabled) setIsModalOpen(true);
+  };
+  const requestAccessButtonClassName = requestAccessButtonState.disabled
+    ? 'h-[30px] px-3 bg-[#2e2e2e] text-[#8b8b8b] font-medium rounded-[6px] text-[12.5px] transition-colors cursor-not-allowed'
+    : 'h-[30px] px-3 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-[6px] text-[12.5px] transition-colors';
+  const requestAccessOverlayButtonClassName = requestAccessButtonState.disabled
+    ? 'mt-5 inline-flex h-9 items-center rounded-md bg-[#2e2e2e] px-4 text-[13px] font-semibold text-[#8b8b8b] transition-colors cursor-not-allowed'
+    : 'mt-5 inline-flex h-9 items-center rounded-md bg-[#3ecf8e] px-4 text-[13px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90';
+  const hasActiveApprovedAccess = currentApiAccessRequests.some(request =>
     request.status === 'APPROVED' &&
     request.api_key_preview &&
     (request.api_key_status || 'ACTIVE') === 'ACTIVE' &&
@@ -2630,7 +2692,7 @@ export function ApiDetail() {
 
   return (
     <div className="text-left w-full max-w-[1400px] mx-auto text-[#ededed] flex h-full min-h-0 flex-col overflow-hidden">
-      {isModalOpen && <RequestAccessModal api={api} onClose={() => setIsModalOpen(false)} />}
+      {isModalOpen && <RequestAccessModal api={api} onClose={() => setIsModalOpen(false)} onSubmitted={fetchAccessRequests} />}
       {isEditOpen && <AdminApiEditorModal api={api} spec={spec} onClose={() => setIsEditOpen(false)} onSaved={refreshDetail} />}
       {isPublishOpen && id && <PublishVersionModal apiId={id} onClose={() => setIsPublishOpen(false)} onPublished={handleVersionPublished} />}
       {isDeleteOpen && <DeleteApiModal api={api} onClose={() => setIsDeleteOpen(false)} />}
@@ -2689,8 +2751,14 @@ export function ApiDetail() {
             >
               <IconExternalLink className="w-4 h-4 text-[#8b8b8b]" /> API Docs
             </Link>
-            <button onClick={() => setIsModalOpen(true)} className="h-[30px] px-3 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-[6px] text-[12.5px] transition-colors">
-              Request Access
+            <button
+              type="button"
+              onClick={openRequestAccessModal}
+              disabled={requestAccessButtonState.disabled}
+              title={requestAccessButtonState.title}
+              className={requestAccessButtonClassName}
+            >
+              {requestAccessButtonState.label}
             </button>
           </div>
         </div>
@@ -2963,10 +3031,12 @@ export function ApiDetail() {
               </p>
               <button
                 type="button"
-                onClick={() => setIsModalOpen(true)}
-                className="mt-5 inline-flex h-9 items-center rounded-md bg-[#3ecf8e] px-4 text-[13px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90"
+                onClick={openRequestAccessModal}
+                disabled={requestAccessButtonState.disabled}
+                title={requestAccessButtonState.title}
+                className={requestAccessOverlayButtonClassName}
               >
-                Request Access
+                {requestAccessButtonState.label}
               </button>
             </div>
           </div>

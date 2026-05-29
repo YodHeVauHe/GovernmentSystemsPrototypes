@@ -517,6 +517,7 @@ export default function DashboardPage() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [matrix, setMatrix] = useState<any[]>([]);
   const [selectedLog, setSelectedLog] = useState<any>(null);
+  const [selectedAccessRequest, setSelectedAccessRequest] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<string>('approvals');
   const [approving, setApproving] = useState<string | null>(null);
   const [accountReviewing, setAccountReviewing] = useState<string | null>(null);
@@ -526,6 +527,7 @@ export default function DashboardPage() {
   const [accountStatusFilter, setAccountStatusFilter] = useState<string>('ALL');
   const [accountViewMode, setAccountViewMode] = useState<'list' | 'grid'>('list');
   const [approvalViewMode, setApprovalViewMode] = useState<ViewMode>('list');
+  const [credentialViewMode, setCredentialViewMode] = useState<ViewMode>('list');
   const [auditViewMode, setAuditViewMode] = useState<ViewMode>('list');
   const [matrixViewMode, setMatrixViewMode] = useState<ViewMode>('list');
   const [timeRange, setTimeRange] = useState('7d');
@@ -922,7 +924,7 @@ export default function DashboardPage() {
     mdaId ? request.consumer_mda_id === mdaId : request.consumer_user_id === user?.id
   );
   const activeDashboardRequests = requests.filter(req => req.status !== 'APPROVED' || hasActiveApprovedApiKey(req));
-  const activeCredentialRequests = requests.filter(r => isCurrentConsumerRequest(r) && hasActiveApprovedApiKey(r));
+  const currentConsumerRequests = requests.filter(isCurrentConsumerRequest);
   const visibleRequests = activeDashboardRequests.filter(req => {
     if (role === 'developer') {
       return isCurrentConsumerRequest(req);
@@ -981,14 +983,17 @@ export default function DashboardPage() {
       user.account?.profile?.verification_status,
     ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
   });
-  const filteredCredentialRequests = activeCredentialRequests.filter(req => {
+  const filteredCredentialRequests = currentConsumerRequests.filter(req => {
     if (!dashboardSearch) return true;
     return [
       req.api_name,
       req.purpose,
+      req.status,
       req.api_key_preview,
       req.api_key_status,
       req.api_key_expires_at,
+      req.requested_fields,
+      req.volume_tier,
     ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
   });
   const accountStatusCounts = accountRequests.reduce((counts, user) => {
@@ -1021,6 +1026,16 @@ export default function DashboardPage() {
   const keyActionButtonLabel = keyActionBusy
     ? (keyActionIsDelete ? 'Deleting...' : 'Revoking...')
     : (keyActionIsDelete ? 'Delete key' : 'Revoke key');
+  const renderAccessRequestDetailsButton = (req: any) => (
+    <button
+      type="button"
+      aria-label={`Open details for ${req.api_name || 'access request'}`}
+      onClick={() => setSelectedAccessRequest(req)}
+      className="inline-flex h-[28px] items-center justify-center rounded-md border border-[#2e2e2e] px-2.5 text-[12px] font-medium text-[#3ecf8e] transition-colors hover:border-[#3ecf8e]/40 hover:bg-[#3ecf8e]/10"
+    >
+      Open details
+    </button>
+  );
   const renderAccessRequestActions = (req: any, variant: 'table' | 'card' = 'table') => {
     const wrapperClass = variant === 'card'
       ? 'flex flex-wrap items-center justify-between gap-2'
@@ -1313,7 +1328,10 @@ export default function DashboardPage() {
                             <AccessRequestStatusBadge request={req} />
                           </TableCell>
                           <TableCell className="py-3.5 px-4 text-right">
-                            {renderAccessRequestActions(req)}
+                            <div className="flex flex-col items-end gap-2">
+                              {renderAccessRequestDetailsButton(req)}
+                              {renderAccessRequestActions(req)}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1335,7 +1353,10 @@ export default function DashboardPage() {
                               <div className="text-[12px] font-semibold uppercase tracking-wide text-[#8b8b8b]">{req.mda_name}</div>
                               <h3 className="mt-1 truncate text-[15px] font-semibold text-white" title={req.api_name}>{req.api_name}</h3>
                             </div>
-                            <AccessRequestStatusBadge request={req} />
+                            <div className="flex shrink-0 flex-col items-end gap-2">
+                              <AccessRequestStatusBadge request={req} />
+                              {renderAccessRequestDetailsButton(req)}
+                            </div>
                           </div>
                           <div className="mt-4 grid grid-cols-1 gap-3 text-[12px] sm:grid-cols-2">
                             <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
@@ -1652,63 +1673,153 @@ export default function DashboardPage() {
         {/* Tab 2: My Credentials */}
         {!dashboardLoading && !dashboardError && activeTab === 'credentials' && (
           <div className="flex h-full min-h-0 flex-col gap-6">
-            <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
-              <div className="p-4 border-b border-[#2e2e2e] bg-[#141414]">
-                <h2 className="text-[15px] font-semibold text-white">Active Agency Sandbox Keys</h2>
-                <p className="text-[12px] text-[#8b8b8b] mt-0.5">Use these keys inside headers (<code>X-GovHub-API-Key</code>) to query mock registries.</p>
+              <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
+                <div className="flex flex-col gap-3 border-b border-[#2e2e2e] bg-[#141414] p-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-[15px] font-semibold text-white">My API Access Requests</h2>
+                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Track requested APIs, approval status, and active sandbox keys when access is granted.</p>
+                </div>
+                <ViewModeToggle
+                  value={credentialViewMode}
+                  onChange={setCredentialViewMode}
+                  gridLabel="Show credentials grid view"
+                  listLabel="Show credentials list view"
+                />
               </div>
+              {credentialViewMode === 'list' ? (
               <div className="min-h-0 flex-1 overflow-auto">
               <Table className="table-fixed">
                 <TableHeader>
                   <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
-                    <TableHead className="h-9 w-[22%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Authorized API</TableHead>
-                    <TableHead className="h-9 w-[18%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Purpose</TableHead>
+                    <TableHead className="h-9 w-[22%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Requested API</TableHead>
+                    <TableHead className="h-9 w-[22%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Purpose</TableHead>
                     <TableHead className="h-9 w-[16%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Status</TableHead>
-                    <TableHead className="h-9 w-[34%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Sandbox Token</TableHead>
-                    <TableHead className="h-9 w-[10%] px-4 text-right text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Actions</TableHead>
+                    <TableHead className="h-9 w-[30%] px-4 text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Fields & Token</TableHead>
+                    <TableHead className="h-9 w-[10%] px-4 text-right text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredCredentialRequests.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="h-28 text-center text-[#8b8b8b] text-[13px]">
-                        {dashboardSearch ? 'No approved API keys match this search.' : 'No approved API keys found for your agency. Go to the Catalog to submit a request.'}
+                        {dashboardSearch ? 'No API access requests match this search.' : 'No API access requests found for your agency. Go to the Catalog to submit a request.'}
                       </TableCell>
                     </TableRow>
-                  ) : filteredCredentialRequests.map(req => (
-                    <TableRow key={req.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
-                      <TableCell className="py-3.5 px-4 font-semibold text-[13.5px] text-white">{req.api_name}</TableCell>
-                      <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] max-w-xs truncate">{req.purpose}</TableCell>
-                      <TableCell className="py-3.5 px-4 text-[13px]">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono border border-[#3ecf8e]/20 text-[#3ecf8e] bg-[#3ecf8e]/5 uppercase">
-                          ACTIVE
-                        </span>
-                        {req.api_key_expires_at && (
-                          <div className="mt-1 text-[11px] text-[#8b8b8b]">
-                            Expires in {formatRemainingDuration(req.api_key_expires_at)}
+                  ) : filteredCredentialRequests.map(req => {
+                    const hasActiveKey = hasActiveApprovedApiKey(req);
+
+                    return (
+                      <TableRow key={req.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
+                        <TableCell className="py-3.5 px-4 font-semibold text-[13.5px] text-white">{req.api_name}</TableCell>
+                        <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] max-w-xs truncate">{req.purpose}</TableCell>
+                        <TableCell className="py-3.5 px-4 text-[13px]">
+                          <AccessRequestStatusBadge request={req} />
+                          {req.status === 'PENDING' && (
+                            <div className="mt-1 text-[11px] text-[#8b8b8b]">Awaiting approval</div>
+                          )}
+                          {hasActiveKey && req.api_key_expires_at && (
+                            <div className="mt-1 text-[11px] text-[#8b8b8b]">
+                              Expires in {formatRemainingDuration(req.api_key_expires_at)}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-0 whitespace-normal px-4 py-3.5 text-[12.5px]">
+                          <div className="font-mono text-[#ededed]">{req.volume_tier || 'Low'}</div>
+                          <div className="mt-0.5 truncate text-[#8b8b8b]" title={req.requested_fields}>{req.requested_fields || 'All requested fields'}</div>
+                          <div className={`mt-1 truncate font-mono ${hasActiveKey ? 'text-[#3ecf8e]' : 'text-[#666]'}`} title={req.api_key_preview || undefined}>
+                            {hasActiveKey ? req.api_key_preview : 'No sandbox key yet'}
                           </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-0 whitespace-normal px-4 py-3.5 font-mono text-[12.5px] text-[#3ecf8e]">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="block min-w-0 max-w-full truncate leading-5" title={req.api_key_preview}>
-                            {req.api_key_preview}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 text-right">
-                        <Link
-                          to={`/api/${req.api_id}`}
-                          className="inline-flex items-center gap-1 text-[12.5px] text-[#3ecf8e] hover:underline"
-                        >
-                          Try Sandbox <IconExternalLink className="w-3.5 h-3.5" />
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 text-right">
+                          {hasActiveKey ? (
+                            <Link
+                              to={`/api/${req.api_id}`}
+                              className="inline-flex items-center gap-1 text-[12.5px] text-[#3ecf8e] hover:underline"
+                            >
+                              Try Sandbox <IconExternalLink className="w-3.5 h-3.5" />
+                            </Link>
+                          ) : (
+                            <Link
+                              to={`/api/${req.api_id}`}
+                              className="inline-flex items-center gap-1 text-[12.5px] text-[#8b8b8b] hover:text-white hover:underline"
+                            >
+                              View API <IconExternalLink className="w-3.5 h-3.5" />
+                            </Link>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
               </div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  {filteredCredentialRequests.length === 0 ? (
+                    <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-dashed border-[#2e2e2e] bg-[#141414] px-4 text-center text-[13px] text-[#8b8b8b]">
+                      {dashboardSearch ? 'No API access requests match this search.' : 'No API access requests found for your agency. Go to the Catalog to submit a request.'}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      {filteredCredentialRequests.map(req => {
+                        const hasActiveKey = hasActiveApprovedApiKey(req);
+
+                        return (
+                          <div key={req.id} className="rounded-lg border border-[#2e2e2e] bg-[#181818] p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-[13.5px] font-semibold text-white" title={req.api_name}>{req.api_name}</div>
+                                <div className="mt-1 line-clamp-2 text-[12.5px] leading-5 text-[#8b8b8b]" title={req.purpose}>{req.purpose || 'No purpose recorded'}</div>
+                              </div>
+                              <AccessRequestStatusBadge request={req} />
+                            </div>
+                            <div className="mt-4 grid gap-3 text-[12px] sm:grid-cols-2">
+                              <div>
+                                <div className="font-mono uppercase tracking-wide text-[#8b8b8b]">Volume Tier</div>
+                                <div className="mt-1 font-mono text-[#ededed]">{req.volume_tier || 'Low'}</div>
+                              </div>
+                              <div>
+                                <div className="font-mono uppercase tracking-wide text-[#8b8b8b]">Status</div>
+                                <div className="mt-1 text-[#ededed]">
+                                  {req.status === 'PENDING'
+                                    ? 'Awaiting approval'
+                                    : hasActiveKey && req.api_key_expires_at
+                                      ? `Expires in ${formatRemainingDuration(req.api_key_expires_at)}`
+                                      : getRequestStatusLabel(req)}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-4 rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
+                              <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Fields & Token</div>
+                              <div className="mt-1 truncate text-[12px] text-[#b5b5b5]" title={req.requested_fields}>{req.requested_fields || 'All requested fields'}</div>
+                              <div className={`mt-2 truncate font-mono text-[12.5px] ${hasActiveKey ? 'text-[#3ecf8e]' : 'text-[#666]'}`} title={req.api_key_preview || undefined}>
+                                {hasActiveKey ? req.api_key_preview : 'No sandbox key yet'}
+                              </div>
+                            </div>
+                            <div className="mt-4 flex justify-end">
+                              {hasActiveKey ? (
+                                <Link
+                                  to={`/api/${req.api_id}`}
+                                  className="inline-flex items-center gap-1 text-[12.5px] text-[#3ecf8e] hover:underline"
+                                >
+                                  Try Sandbox <IconExternalLink className="h-3.5 w-3.5" />
+                                </Link>
+                              ) : (
+                                <Link
+                                  to={`/api/${req.api_id}`}
+                                  className="inline-flex items-center gap-1 text-[12.5px] text-[#8b8b8b] hover:text-white hover:underline"
+                                >
+                                  View API <IconExternalLink className="h-3.5 w-3.5" />
+                                </Link>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2102,6 +2213,92 @@ export default function DashboardPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Slide-over Detail Panel for Access Approval Requests */}
+      {selectedAccessRequest && (
+        <div
+          role="region"
+          aria-label="Access request details"
+          className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-[#2e2e2e] bg-[#1c1c1c] text-left shadow-2xl"
+        >
+          <div className="flex items-start justify-between gap-4 border-b border-[#2e2e2e] bg-[#141414] px-5 py-4">
+            <div className="min-w-0">
+              <h3 className="truncate text-[15px] font-semibold text-white" title={selectedAccessRequest.api_name}>
+                Access Request Details
+              </h3>
+              <p className="mt-0.5 text-[12px] text-[#8b8b8b]">
+                Request ID: <span className="font-mono text-white select-all">{selectedAccessRequest.id}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label="Close access request details"
+              onClick={() => setSelectedAccessRequest(null)}
+              className="rounded p-1 text-[#8b8b8b] transition-all hover:bg-[#2e2e2e] hover:text-white"
+            >
+              <IconX className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
+            <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5">
+              <span className="mb-1 block text-[10px] font-mono uppercase tracking-wider text-[#8b8b8b]">Requested API</span>
+              <div className="text-[15px] font-semibold text-white">{selectedAccessRequest.api_name}</div>
+              <div className="mt-2">
+                <AccessRequestStatusBadge request={selectedAccessRequest} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-[13px]">
+              <div>
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Consumer MDA</span>
+                <span className="font-medium text-white">{selectedAccessRequest.mda_name || 'Unknown consumer'}</span>
+              </div>
+              <div>
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Volume Tier</span>
+                <span className="font-medium text-white">{selectedAccessRequest.volume_tier || 'Low'}</span>
+              </div>
+              <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Lawful Basis</span>
+                <span className="font-medium text-white">{selectedAccessRequest.legal_basis || 'Not Provided'}</span>
+              </div>
+              <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Purpose</span>
+                <p className="mt-1 leading-5 text-white">{selectedAccessRequest.purpose || 'No purpose provided.'}</p>
+              </div>
+              <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Requested Fields</span>
+                <p className="mt-1 leading-5 text-white">{selectedAccessRequest.requested_fields || 'All'}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5 text-[12px]">
+              <div className="grid gap-3">
+                <div>
+                  <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">API ID</span>
+                  <span className="font-mono text-[#ededed]">{selectedAccessRequest.api_id || 'Unavailable'}</span>
+                </div>
+                <div>
+                  <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Consumer MDA ID</span>
+                  <span className="font-mono text-[#ededed]">{selectedAccessRequest.consumer_mda_id || 'Unavailable'}</span>
+                </div>
+                <div>
+                  <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Sandbox Key</span>
+                  <span className="font-mono text-[#3ecf8e]">{selectedAccessRequest.api_key_preview || 'Not generated'}</span>
+                </div>
+                <div>
+                  <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Key Expiry</span>
+                  <span className="font-mono text-[#ededed]">
+                    {selectedAccessRequest.api_key_expires_at
+                      ? new Date(selectedAccessRequest.api_key_expires_at).toLocaleString()
+                      : 'No expiry set'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Slide-over Detail Panel for Audit Logs Drill-down */}
       {selectedLog && (

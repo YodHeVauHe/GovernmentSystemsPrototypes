@@ -11,6 +11,7 @@
     "test:auth": "ts-node src/auth.test.ts",
     "test:auth-routes": "ts-node src/auth-routes.test.ts",
     "test:access-control": "ts-node src/access-control.test.ts",
+    "test:access-duplicates": "ts-node src/access-duplicates.test.ts",
     "test:ids": "ts-node src/ids.test.ts",
     "test:admin": "ts-node src/admin.test.ts",
     "test:account-verification": "ts-node src/account-verification.test.ts",
