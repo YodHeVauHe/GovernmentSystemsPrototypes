@@ -4,9 +4,9 @@
 
 **Goal:** Add account settings, privilege display, organization/person verification, and document metadata submission for government employees, public developers, and organizations.
 
-**Architecture:** Extend the existing auth schema with account profile fields, verification status, and document metadata stored in SQLite. Add authenticated account routes and admin review endpoints, then add a React account settings page that reuses `NotificationContext`.
+**Architecture:** Extend the existing auth schema with account profile fields, verification status, and document metadata stored in Postgres. Add authenticated account routes and admin review endpoints, then add a React account settings page that reuses `NotificationContext`.
 
-**Tech Stack:** Express 5, better-sqlite3, Node crypto, React 19, React Router, TypeScript.
+**Tech Stack:** Express 5, pg/Postgres, Node crypto, React 19, React Router, TypeScript.
 
 ---
 

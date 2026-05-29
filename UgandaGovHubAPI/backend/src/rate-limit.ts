@@ -48,38 +48,28 @@ export function consumeRateLimit(
   const nowIso = new Date(now).toISOString();
   const resetAtIso = new Date(now + windowMs).toISOString();
 
-  const consume = db.transaction(async (client): Promise<RateLimitResult> => {
-    const row = await one<{ count: number; reset_at: string }>(
-      client,
-      'SELECT count, reset_at FROM rate_limits WHERE bucket_key = $1 AND limit_group = $2',
-      [key, group],
-    );
-
-    // Window has expired or no row exists — start fresh
-    if (!row || row.reset_at <= nowIso) {
-      await run(client, `
-        INSERT INTO rate_limits (bucket_key, limit_group, count, reset_at)
-        VALUES ($1, $2, 1, $3)
-        ON CONFLICT(bucket_key, limit_group) DO UPDATE SET
-          count = 1,
-          reset_at = excluded.reset_at
-      `, [key, group, resetAtIso]);
-      const resetMs = new Date(resetAtIso).getTime();
-      return { allowed: true, remaining: limit - 1, resetAt: resetMs };
-    }
-
-    const resetMs = new Date(row.reset_at).getTime();
-
-    if (row.count >= limit) {
-      return { allowed: false, remaining: 0, resetAt: resetMs };
-    }
-
-    await run(client, 'UPDATE rate_limits SET count = count + 1 WHERE bucket_key = $1 AND limit_group = $2', [key, group]);
-
-    return { allowed: true, remaining: limit - row.count - 1, resetAt: resetMs };
+  return one<{ count: number; reset_at: string }>(db, `
+    INSERT INTO rate_limits (bucket_key, limit_group, count, reset_at)
+    VALUES ($1, $2, 1, $3)
+    ON CONFLICT (bucket_key, limit_group) DO UPDATE SET
+      count = CASE
+        WHEN rate_limits.reset_at <= $4 THEN 1
+        ELSE rate_limits.count + 1
+      END,
+      reset_at = CASE
+        WHEN rate_limits.reset_at <= $4 THEN EXCLUDED.reset_at
+        ELSE rate_limits.reset_at
+      END
+    RETURNING count, reset_at
+  `, [key, group, resetAtIso, nowIso]).then(row => {
+    const count = Number(row?.count || 0);
+    const resetAt = new Date(row?.reset_at || resetAtIso).getTime();
+    return {
+      allowed: count <= limit,
+      remaining: Math.max(0, limit - count),
+      resetAt,
+    };
   });
-
-  return consume;
 }
 
 /**

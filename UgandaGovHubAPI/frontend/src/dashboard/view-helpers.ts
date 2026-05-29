@@ -1,6 +1,6 @@
 export type ViewMode = 'list' | 'grid';
 
-export type DashboardViewTab = 'approvals' | 'accounts' | 'credentials' | 'audit' | 'matrix';
+export type DashboardViewTab = 'approvals' | 'accounts' | 'credentials' | 'audit' | 'matrix' | 'analytics';
 
 export type ViewModePreferenceStorage = {
   getItem(key: string): string | null;
@@ -117,6 +117,19 @@ export function canViewAuditLogsTab(role: string, requests: Array<{
   api_key_expires_at?: string | null;
 }>) {
   return role === 'admin' || role === 'reviewer' || (role === 'developer' && requests.some(hasActiveApprovedApiKey));
+}
+
+export function getVisibleDashboardTabs(role: string, canViewAuditLogs: boolean): DashboardViewTab[] {
+  return [
+    ...(role !== 'developer' && role !== 'reviewer' ? ['approvals' as const] : []),
+    ...(role === 'admin' ? ['accounts' as const] : []),
+    ...(role === 'developer' || role === 'admin' ? ['credentials' as const] : []),
+    ...(canViewAuditLogs ? [
+      'audit' as const,
+      ...(role === 'reviewer' || role === 'admin' ? ['matrix' as const] : []),
+    ] : []),
+    ...(role === 'developer' || role === 'reviewer' || role === 'admin' ? ['analytics' as const] : []),
+  ];
 }
 
 export function filterDashboardAuditLogs(

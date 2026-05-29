@@ -18,7 +18,7 @@ The production deployment should run the Vite frontend and Express API in one Ve
 - The backend is an Express TypeScript app in `backend/`.
 - The backend uses Postgres through `backend/src/db.ts`.
 - Local development starts the backend as a long-running server on port `4000`.
-- OpenAPI specs are still runtime files under `backend/openapi/`.
+- OpenAPI specs are Postgres-backed records served through stable `/openapi/` routes.
 - The frontend reads `VITE_API_BASE_URL` and falls back to `protocol//hostname:4000`.
 
 ## Chosen Approach
@@ -28,7 +28,7 @@ Use a single Vercel project with:
 - `frontend/` built to static assets.
 - a Vercel API function that imports the Express app.
 - Postgres as the only persistent runtime storage.
-- OpenAPI spec text stored in Postgres, not the deployment filesystem.
+- OpenAPI spec text stored in Postgres, not ephemeral deployment storage.
 - Vercel rewrites for `/api/*`, `/openapi/*`, and React Router routes.
 
 This keeps infrastructure simple: Vercel plus Postgres only.
@@ -45,7 +45,7 @@ The local `npm run dev:backend` command should continue to start the local serve
 
 ## OpenAPI Spec Storage
 
-Move mutable OpenAPI spec content from files to Postgres.
+Store mutable OpenAPI spec content in Postgres.
 
 Add spec content columns:
 
@@ -60,7 +60,7 @@ Keep `openapi_spec_path` as a stable public identifier, for example:
 
 That preserves existing frontend links and docs/access-control flows while changing the backing storage.
 
-Replace filesystem operations with database operations:
+Use database operations for every OpenAPI spec mutation:
 
 - API registration stores validated spec text in `apis` and the initial `api_versions` row.
 - Version publishing stores spec text in `api_versions`.
@@ -166,7 +166,7 @@ Local behavior should remain the same from a user perspective:
 - `/openapi/*.yaml` links still download YAML.
 - sandbox endpoints work.
 
-The main local runtime change is that OpenAPI specs are stored in the local Postgres container instead of `backend/openapi/`.
+The main local runtime behavior is that OpenAPI specs are stored in the local Postgres container and served through stable `/openapi/` routes.
 
 ## Testing
 
@@ -185,7 +185,7 @@ Verification should include:
 
 ## Risks
 
-- Some backend modules still use filesystem assumptions for OpenAPI specs and must be fully migrated.
+- OpenAPI specs are database-backed, so migration work should preserve the stable `/openapi/` public route contract.
 - Vercel function cold starts may make first API responses slower than local Express.
 - Large OpenAPI specs stored in Postgres increase database row size, but this is acceptable for the prototype and avoids a second storage service.
 - Existing uncommitted work must not be overwritten during implementation.

@@ -23,10 +23,12 @@
     "test:production-demo-seed": "ts-node src/seed-production-demo-catalog.test.ts",
     "test:versioning": "ts-node src/versioning.test.ts",
     "test:docs-access": "ts-node src/docs-access.test.ts",
+    "test:rate-limit": "ts-node src/rate-limit.test.ts",
     "test:sandbox": "ts-node src/sandbox.test.ts",
+    "test:sandbox-redaction": "ts-node src/sandbox-redaction.test.ts",
     "test:access-audit-logs": "ts-node src/access-control-audit-logs.test.ts",
     "test:sandbox-openapi-response": "ts-node src/sandbox-openapi-response.test.ts",
-    "test": "npm run typecheck && npm run test:db && npm run test:ids && npm run test:catalog-spec-input && npm run test:openapi-store && npm run test:openapi-reconciliation && npm run test:production-demo-seed && npm run test:access-audit-logs && npm run test:sandbox-openapi-response"
+    "test": "npm run typecheck && npm run test:db && npm run test:auth && npm run test:auth-routes && npm run test:access-control && npm run test:access-duplicates && npm run test:ids && npm run test:admin && npm run test:account-verification && npm run test:security-features && npm run test:catalog-spec-input && npm run test:catalog-sql && npm run test:openapi-store && npm run test:openapi-reconciliation && npm run test:production-demo-seed && npm run test:versioning && npm run test:docs-access && npm run test:rate-limit && npm run test:sandbox && npm run test:access-audit-logs && npm run test:sandbox-openapi-response && npm run test:sandbox-redaction"
   },
   "keywords": [],
   "author": "",

@@ -45,5 +45,6 @@ export async function logAuditEvent(
     `, [id, eventType, mdaId, apiId, requestId, JSON.stringify(details)]);
   } catch (err) {
     console.error('Failed to write audit log:', err);
+    throw err;
   }
 }

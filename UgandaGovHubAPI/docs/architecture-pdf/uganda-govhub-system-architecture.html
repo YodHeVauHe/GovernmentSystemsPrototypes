@@ -584,7 +584,7 @@
 
   <section class="page">
     <div class="page-head">
-      <div><div class="kicker">02 / Architecture Diagram</div><h2>System components and communication paths</h2><p class="lead">Users reach the React portal through a browser. The portal calls the Express backend over REST/JSON. PostgreSQL holds application state, OpenAPI files hold machine-readable contracts, and sandbox handlers simulate approved government API calls.</p></div>
+      <div><div class="kicker">02 / Architecture Diagram</div><h2>System components and communication paths</h2><p class="lead">Users reach the React portal through a browser. The portal calls the Express backend over REST/JSON. PostgreSQL holds application state and machine-readable OpenAPI contracts, and sandbox handlers simulate approved government API calls.</p></div>
       <div class="page-num">Page 3 of 18</div>
     </div>
     <div class="diagram">
@@ -594,7 +594,7 @@
       <div class="node"><h3>Backend REST API</h3><p>Node.js + Express + TypeScript. Auth, catalog, docs visibility, approval workflow, sandbox policy, admin actions, audit events.</p></div>
       <div class="arrow">read/write</div>
       <div class="node"><h3>PostgreSQL database</h3><p>Users, sessions, MDAs, APIs, versions, access requests, key hashes, audit logs, verification data, and rate limits.</p></div>
-      <div class="node"><h3>OpenAPI files</h3><p>Machine-readable API contracts stored under backend/openapi with version metadata and controlled visibility.</p></div>
+      <div class="node"><h3>OpenAPI specs</h3><p>Machine-readable API contracts stored in PostgreSQL with version metadata and controlled visibility.</p></div>
       <div class="arrow">scoped key</div>
       <div class="node"><h3>Sandbox APIs</h3><p>NIRA-style identity, URA-style tax status, URSB business lookup, MoWT permit status, and composite eligibility.</p></div>
       <div class="node wide accent"><h3>Production integration boundary</h3><p>Future approved links to live government systems or national integration infrastructure. The prototype does not connect to live NIRA, URA, URSB, MoWT, NITA-U, or other production systems.</p></div>
@@ -842,7 +842,7 @@
       <div class="page-num">Page 17 of 18</div>
     </div>
     <div class="two-col">
-      <div class="card"><h3>Current hosting model</h3><p>Frontend runs as a Vite React application. Backend runs as an Express service, defaulting to localhost. PostgreSQL and OpenAPI files support the repeatable local demonstration.</p></div>
+      <div class="card"><h3>Current hosting model</h3><p>Frontend runs as a Vite React application. Backend runs as an Express service, defaulting to localhost. PostgreSQL stores application data and OpenAPI specs for the repeatable local demonstration.</p></div>
       <div class="card"><h3>Production hardening path</h3><p>Serve static assets behind approved hosting, run backend services in containers or managed application services, use managed PostgreSQL, centralized logs, backups, KMS-backed secrets, and approved integration gateways.</p></div>
     </div>
     <div class="three-col">
@@ -878,7 +878,7 @@
       <tbody>
         <tr><td>Main components</td><td>Architecture diagram, component inventory, and platform screenshots show the frontend, backend, PostgreSQL database, OpenAPI storage, sandbox services, and production boundary.</td></tr>
         <tr><td>Communication and protocols</td><td>Browser access, REST/JSON API calls, scoped sandbox key checks, HTTPS/TLS posture, and correlation IDs are described across the architecture and security sections.</td></tr>
-        <tr><td>Data storage and security</td><td>PostgreSQL categories, OpenAPI files, encrypted fields, key hashing, rate limits, redaction, and audit logging are covered in the component and data-flow sections.</td></tr>
+        <tr><td>Data storage and security</td><td>PostgreSQL categories, OpenAPI spec text, encrypted fields, key hashing, rate limits, redaction, and audit logging are covered in the component and data-flow sections.</td></tr>
         <tr><td>User access</td><td>Public visitors, verified developers, API owners, reviewers, administrators, account settings, and account review states are shown in text and screenshots.</td></tr>
         <tr><td>External integrations</td><td>The integration section identifies NIRA-style, URA-style, URSB-style, MoWT-style, and composite sandbox APIs, and clearly states production systems are not called.</td></tr>
         <tr><td>Hosting and infrastructure</td><td>The current local environment is distinguished from the production hardening path: load-balanced services, managed Postgres, secret storage, backups, logs, and monitoring.</td></tr>

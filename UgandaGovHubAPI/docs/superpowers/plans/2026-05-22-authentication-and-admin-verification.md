@@ -6,7 +6,7 @@
 
 **Architecture:** Add focused backend auth helpers and routes, then wire Express middleware into protected routes. Update the React user context so authenticated server state replaces local role impersonation, with login, sign up, and account-status pages.
 
-**Tech Stack:** Express 5, better-sqlite3, Node crypto, React 19, React Router, TypeScript.
+**Tech Stack:** Express 5, pg/Postgres, Node crypto, React 19, React Router, TypeScript.
 
 ---
 
