@@ -36,7 +36,7 @@ export function AddApiPage() {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [accessLevel, setAccessLevel] = useState<'Public' | 'Restricted' | 'Private'>('Restricted');
-  const [owningMdaId, setOwningMdaId] = useState('mda-01');
+  const [owningMdaId, setOwningMdaId] = useState('mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41');
   const [sector, setSector] = useState('Identity');
   const [description, setDescription] = useState('');
   const [lifecycleStatus, setLifecycleStatus] = useState('Draft');
@@ -56,12 +56,12 @@ export function AddApiPage() {
 
   const getMdaShortName = (id: string) => {
     const mdaMap: Record<string, string> = {
-      'mda-01': 'nira',
-      'mda-02': 'ura',
-      'mda-03': 'ursb',
-      'mda-04': 'mowt',
-      'mda-05': 'moict',
-      'mda-06': 'moh'
+      'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41': 'nira',
+      'mda-ura-2efff0d3-952e-4475-8231-232873a69854': 'ura',
+      'mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5': 'ursb',
+      'mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7': 'mowt',
+      'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3': 'moict',
+      'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543': 'moh'
     };
     return mdaMap[id] || 'mda';
   };
@@ -374,12 +374,12 @@ export function AddApiPage() {
                     onChange={(e) => setOwningMdaId(e.target.value)}
                     className="w-full h-[36px] px-3 bg-[#141414] border border-[#2e2e2e] rounded-md text-[13px] text-white focus:outline-none"
                   >
-                    <option value="mda-01">NIRA (National ID Authority)</option>
-                    <option value="mda-02">URA (Uganda Revenue Authority)</option>
-                    <option value="mda-03">URSB (Business Registry)</option>
-                    <option value="mda-04">MoWT (Ministry of Transport)</option>
-                    <option value="mda-05">MoICT (Ministry of ICT)</option>
-                    <option value="mda-06">MoH (Ministry of Health)</option>
+                    <option value="mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41">NIRA (National ID Authority)</option>
+                    <option value="mda-ura-2efff0d3-952e-4475-8231-232873a69854">URA (Uganda Revenue Authority)</option>
+                    <option value="mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5">URSB (Business Registry)</option>
+                    <option value="mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7">MoWT (Ministry of Transport)</option>
+                    <option value="mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3">MoICT (Ministry of ICT)</option>
+                    <option value="mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543">MoH (Ministry of Health)</option>
                   </select>
                 </div>
 

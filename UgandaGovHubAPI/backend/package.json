@@ -24,7 +24,9 @@
     "test:versioning": "ts-node src/versioning.test.ts",
     "test:docs-access": "ts-node src/docs-access.test.ts",
     "test:sandbox": "ts-node src/sandbox.test.ts",
-    "test": "npm run typecheck && npm run test:db && npm run test:ids && npm run test:catalog-spec-input && npm run test:openapi-store && npm run test:openapi-reconciliation && npm run test:production-demo-seed"
+    "test:access-audit-logs": "ts-node src/access-control-audit-logs.test.ts",
+    "test:sandbox-openapi-response": "ts-node src/sandbox-openapi-response.test.ts",
+    "test": "npm run typecheck && npm run test:db && npm run test:ids && npm run test:catalog-spec-input && npm run test:openapi-store && npm run test:openapi-reconciliation && npm run test:production-demo-seed && npm run test:access-audit-logs && npm run test:sandbox-openapi-response"
   },
   "keywords": [],
   "author": "",

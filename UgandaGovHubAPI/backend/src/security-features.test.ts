@@ -29,9 +29,9 @@ async function startApp() {
     CREATE TABLE mdas (id TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT NOT NULL);
     CREATE TABLE apis (id TEXT PRIMARY KEY, name TEXT NOT NULL, owning_mda_id TEXT NOT NULL);
   `);
-  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-05', 'Ministry of ICT and National Guidance', 'MoICT');
-  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-06', 'Ministry of Health', 'MoH');
-  db.prepare('INSERT INTO apis (id, name, owning_mda_id) VALUES (?, ?, ?)').run('api-nira-01', 'NIRA Identity', 'mda-05');
+  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3', 'Ministry of ICT and National Guidance', 'MoICT');
+  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', 'Ministry of Health', 'MoH');
+  db.prepare('INSERT INTO apis (id, name, owning_mda_id) VALUES (?, ?, ?)').run('api-nira-01', 'NIRA Identity', 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3');
   ensureAuthSchema(db);
   ensureAdminSchema(db);
   process.env.GOVHUB_ADMIN_EMAIL = 'admin@ict.go.ug';

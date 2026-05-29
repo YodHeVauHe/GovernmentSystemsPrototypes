@@ -29,6 +29,7 @@ import { UPDATE_API_SQL } from './catalog-sql';
 import { createDb, hasColumn } from './db';
 import { getCurrentSpecForApi, getSpecByPath, getVersionSpecForApi, normalizeOpenApiPath } from './openapi-store';
 import { syncProductionDemoCatalog } from './seed-production-demo-catalog';
+import { findStoredSandboxOpenApiResponseExample } from './sandbox-openapi-response';
 
 dotenv.config();
 
@@ -833,6 +834,16 @@ app.use('/api/access', accessRouter(db));
 
 // --- SANDBOX APIs ---
 app.use('/api/v1', sandboxMiddleware(db));
+app.use('/api/v1', async (req, res, next) => {
+  const example = await findStoredSandboxOpenApiResponseExample(
+    db,
+    res.locals.sandboxApiId,
+    req.originalUrl,
+    req.method,
+  );
+  if (example !== null) return res.json(example);
+  next();
+});
 app.use('/api/v1/identity', identityRouter);
 app.use('/api/v1/tax', taxRouter);
 app.use('/api/v1/business', businessRouter);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -18,8 +18,16 @@ import { buildPendingAccessRequestNotifications } from '@/lib/access-request-not
 import {
   MATRIX_TARGETS,
   buildMatrixChannelRows,
+  canViewAuditLogsTab,
+  canCopyOneTimeApiKey,
+  filterDashboardAuditLogs,
   getAuditEventTone,
   getRequestStatusLabel,
+  hasActiveApprovedApiKey,
+  hasPendingOneTimeApiKeyReveal,
+  readDashboardViewModePreference,
+  writeDashboardViewModePreference,
+  type DashboardViewTab,
   type ViewMode,
 } from './view-helpers';
 import {
@@ -50,6 +58,7 @@ import {
   IconChevronRight,
   IconCircleCheck,
   IconBan,
+  IconCopy,
   IconDotsVertical,
   IconTrash,
   IconX
@@ -427,14 +436,6 @@ function notificationRoleLabel(role: string) {
   return labels[role] || role;
 }
 
-function hasActiveApprovedApiKey(request: any) {
-  return (
-    request.status === 'APPROVED' &&
-    Boolean(request.api_key_preview) &&
-    (request.api_key_status || 'ACTIVE') === 'ACTIVE'
-  );
-}
-
 function accountActionLabel(account: any, busy: boolean) {
   if (busy) return 'Saving...';
   const verificationStatus = accountVerificationStatus(account);
@@ -476,6 +477,36 @@ function ViewModeToggle({
       </button>
     </div>
   );
+}
+
+function getDashboardViewModeStorage() {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readInitialDashboardViewMode(tab: DashboardViewTab) {
+  const storage = getDashboardViewModeStorage();
+  return storage ? readDashboardViewModePreference(storage, tab) : 'list';
+}
+
+function useDashboardViewModePreference(tab: DashboardViewTab) {
+  const [viewMode, setViewMode] = useState<ViewMode>(() => readInitialDashboardViewMode(tab));
+
+  const setPreferredViewMode = useCallback((nextViewMode: ViewMode) => {
+    setViewMode(nextViewMode);
+
+    const storage = getDashboardViewModeStorage();
+    if (storage) {
+      writeDashboardViewModePreference(storage, tab, nextViewMode);
+    }
+  }, [tab]);
+
+  return [viewMode, setPreferredViewMode] as const;
 }
 
 function AccessRequestStatusBadge({ request }: { request: any }) {
@@ -525,18 +556,70 @@ export default function DashboardPage() {
   const [accountMdaInputs, setAccountMdaInputs] = useState<Record<string, string>>({});
   const [filterMda, setFilterMda] = useState<string>('ALL');
   const [accountStatusFilter, setAccountStatusFilter] = useState<string>('ALL');
-  const [accountViewMode, setAccountViewMode] = useState<'list' | 'grid'>('list');
-  const [approvalViewMode, setApprovalViewMode] = useState<ViewMode>('list');
-  const [credentialViewMode, setCredentialViewMode] = useState<ViewMode>('list');
-  const [auditViewMode, setAuditViewMode] = useState<ViewMode>('list');
-  const [matrixViewMode, setMatrixViewMode] = useState<ViewMode>('list');
+  const [accountViewMode, setAccountViewMode] = useDashboardViewModePreference('accounts');
+  const [approvalViewMode, setApprovalViewMode] = useDashboardViewModePreference('approvals');
+  const [credentialViewMode, setCredentialViewMode] = useDashboardViewModePreference('credentials');
+  const [auditViewMode, setAuditViewMode] = useDashboardViewModePreference('audit');
+  const [matrixViewMode, setMatrixViewMode] = useDashboardViewModePreference('matrix');
   const [timeRange, setTimeRange] = useState('7d');
   const [keyExpiryInputs, setKeyExpiryInputs] = useState<Record<string, string>>({});
   const [keyActionConfirmation, setKeyActionConfirmation] = useState<{ action: 'revoke' | 'delete'; request: any } | null>(null);
   const [keyActionBusy, setKeyActionBusy] = useState(false);
+  const [oneTimeApiKey, setOneTimeApiKey] = useState<{
+    requestId: string;
+    apiName: string;
+    apiKey: string;
+    apiKeyPreview?: string;
+    expiresAt?: string | null;
+  } | null>(null);
+  const [oneTimeApiKeyCopied, setOneTimeApiKeyCopied] = useState(false);
+  const pendingKeyRevealClaims = useRef<Set<string>>(new Set());
+  const oneTimeApiKeyOpenRef = useRef(false);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState('');
   const dashboardSearch = (searchParams.get('q') || '').trim().toLowerCase();
+
+  const isCurrentConsumerRequest = useCallback((request: any) => (
+    mdaId ? request.consumer_mda_id === mdaId : request.consumer_user_id === user?.id
+  ), [mdaId, user?.id]);
+
+  const claimPendingOneTimeApiKey = useCallback((request: any) => {
+    if (role !== 'developer' || !hasPendingOneTimeApiKeyReveal(request) || oneTimeApiKeyOpenRef.current) return;
+
+    const requestId = String(request.id || '');
+    if (!requestId || pendingKeyRevealClaims.current.has(requestId)) return;
+    pendingKeyRevealClaims.current.add(requestId);
+
+    fetch(`${API_BASE}/api/access/${requestId}/reveal-key`, { method: 'POST' })
+      .then(async res => {
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok || result.error) {
+          const error = new Error(result.error || 'Failed to reveal API key') as Error & { code?: string };
+          error.code = result.code;
+          throw error;
+        }
+        return result;
+      })
+      .then(result => {
+        if (!result.api_key) return;
+        oneTimeApiKeyOpenRef.current = true;
+        setOneTimeApiKey({
+          requestId,
+          apiName: request.api_name || 'Approved API',
+          apiKey: result.api_key,
+          apiKeyPreview: result.api_key_preview,
+          expiresAt: result.api_key_expires_at,
+        });
+        setOneTimeApiKeyCopied(false);
+      })
+      .catch(err => {
+        pendingKeyRevealClaims.current.delete(requestId);
+        if ((err as { code?: string }).code === 'ONE_TIME_KEY_UNAVAILABLE') return;
+        toast.error('API key reveal failed', {
+          description: err instanceof Error ? err.message : 'Failed to reveal API key',
+        });
+      });
+  }, [role]);
 
   const fetchDashboardData = useCallback((showLoading = false) => {
     if (showLoading) {
@@ -553,10 +636,13 @@ export default function DashboardPage() {
       role === 'admin' ? fetchDashboardJson('/api/admin/users') : Promise.resolve({ users: [] }),
     ])
       .then(([accessData, auditData, matrixData, userData]) => {
-        setRequests(Array.isArray(accessData) ? accessData : []);
+        const nextRequests = Array.isArray(accessData) ? accessData : [];
+        setRequests(nextRequests);
         setAuditLogs(Array.isArray(auditData) ? auditData : Array.isArray(auditData?.data) ? auditData.data : []);
         setMatrix(Array.isArray(matrixData) ? matrixData : []);
         setAccountRequests(Array.isArray(userData.users) ? userData.users : []);
+        const pendingRevealRequest = nextRequests.find(req => isCurrentConsumerRequest(req) && hasPendingOneTimeApiKeyReveal(req));
+        if (pendingRevealRequest) claimPendingOneTimeApiKey(pendingRevealRequest);
       })
       .catch(err => {
         console.error(err);
@@ -565,7 +651,7 @@ export default function DashboardPage() {
       .finally(() => {
         if (showLoading) setDashboardLoading(false);
       });
-  }, [role]);
+  }, [claimPendingOneTimeApiKey, isCurrentConsumerRequest, role]);
 
   useEffect(() => {
     fetchDashboardData(true);
@@ -578,6 +664,12 @@ export default function DashboardPage() {
       setActiveTab('approvals');
     }
   }, [fetchDashboardData, role, mdaId]);
+
+  useEffect(() => {
+    if (role !== 'developer') return;
+    const intervalId = window.setInterval(() => fetchDashboardData(false), 15000);
+    return () => window.clearInterval(intervalId);
+  }, [fetchDashboardData, role]);
 
   useEffect(() => {
     if (role !== 'admin' && role !== 'api_owner') return;
@@ -610,12 +702,9 @@ export default function DashboardPage() {
         if (!res.ok || result.error) throw new Error(result.error || 'Failed to approve access request');
         return result;
       })
-      .then(result => {
-        if (result.api_key) {
-          window.sessionStorage.setItem(`govhub_api_key:${id}`, result.api_key);
-        }
+      .then(() => {
         toast.success('API key generated', {
-          description: 'The access request was approved and a sandbox key was generated.',
+          description: 'The consumer will see a one-time copy popup in their dashboard.',
         });
         addNotification({
           type: 'key',
@@ -915,23 +1004,36 @@ export default function DashboardPage() {
     }
   };
 
+  const handleCopyOneTimeApiKey = async () => {
+    if (!canCopyOneTimeApiKey(oneTimeApiKey?.apiKey, oneTimeApiKeyCopied)) return;
+    try {
+      await navigator.clipboard.writeText(oneTimeApiKey!.apiKey);
+      setOneTimeApiKeyCopied(true);
+      toast.success('API key copied', {
+        description: 'Store it now. It cannot be copied again after this screen is closed.',
+      });
+    } catch {
+      toast.error('Copy failed', {
+        description: 'Your browser blocked clipboard access.',
+      });
+    }
+  };
+
   // Filter requests depending on role
   // Owner only sees requests for their MDA's APIs
   // Admin sees all
   // Developer sees their own requests
   const currentMda = mdas.find(m => m.id === mdaId);
-  const isCurrentConsumerRequest = (request: any) => (
-    mdaId ? request.consumer_mda_id === mdaId : request.consumer_user_id === user?.id
-  );
   const activeDashboardRequests = requests.filter(req => req.status !== 'APPROVED' || hasActiveApprovedApiKey(req));
   const currentConsumerRequests = requests.filter(isCurrentConsumerRequest);
+  const canViewAuditLogs = canViewAuditLogsTab(role, currentConsumerRequests);
   const visibleRequests = activeDashboardRequests.filter(req => {
     if (role === 'developer') {
       return isCurrentConsumerRequest(req);
     }
     if (role === 'api_owner') {
       // Find APIs that belong to the active owner's MDA
-      // api_owner represents NIRA by default (mda-01) or whatever they select in header
+      // api_owner represents NIRA by default (mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41) or whatever they select in header
       return req.api_id.startsWith(`api-${currentMda?.shortName.toLowerCase()}`);
     }
     return true; // Admin and Reviewer see all
@@ -949,19 +1051,10 @@ export default function DashboardPage() {
     ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
   });
 
-  const visibleLogs = auditLogs.filter(log => {
-    if (filterMda !== 'ALL' && log.mda_id !== filterMda) return false;
-    return true;
-  }).filter(log => {
-    if (!dashboardSearch) return true;
-    return [
-      log.event_type,
-      log.mda_name,
-      log.api_name,
-      log.request_id,
-      log.correlation_id,
-      log.details,
-    ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
+  const visibleLogs = filterDashboardAuditLogs(auditLogs, {
+    role,
+    filterMda,
+    search: dashboardSearch,
   });
 
   const filteredAccountRequests = accountRequests.filter(user => {
@@ -1215,7 +1308,7 @@ export default function DashboardPage() {
           </button>
         )}
 
-        {(role === 'reviewer' || role === 'admin') && (
+        {canViewAuditLogs && (
           <>
             <button
               onClick={() => setActiveTab('audit')}
@@ -1224,17 +1317,19 @@ export default function DashboardPage() {
               }`}
             >
               <IconListDetails className="w-4 h-4" />
-              Audit Trails
+              {role === 'developer' ? 'API Call Logs' : 'Audit Trails'}
             </button>
-            <button
-              onClick={() => setActiveTab('matrix')}
-              className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
-                activeTab === 'matrix' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
-              }`}
-            >
-              <IconGridPattern className="w-4 h-4" />
-              Interoperability Matrix
-            </button>
+            {(role === 'reviewer' || role === 'admin') && (
+              <button
+                onClick={() => setActiveTab('matrix')}
+                className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${
+                  activeTab === 'matrix' ? 'bg-[#2e2e2e] text-white' : 'text-[#8b8b8b] hover:text-white'
+                }`}
+              >
+                <IconGridPattern className="w-4 h-4" />
+                Interoperability Matrix
+              </button>
+            )}
           </>
         )}
 
@@ -1824,14 +1919,20 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Tab 3: Audit Trails (Reviewer View) */}
-        {!dashboardLoading && !dashboardError && activeTab === 'audit' && (
+        {/* Tab 3: Audit Trails and API Call Logs */}
+        {!dashboardLoading && !dashboardError && activeTab === 'audit' && canViewAuditLogs && (
           <div className="flex h-full min-h-0 flex-col gap-4">
             <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
               <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <h2 className="text-[15px] font-semibold text-white">Platform Governance Audit Log</h2>
-                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">Audits compliance actions and records API calls with strict cryptographic correlation IDs.</p>
+                  <h2 className="text-[15px] font-semibold text-white">
+                    {role === 'developer' ? 'My API Call Logs' : 'Platform Governance Audit Log'}
+                  </h2>
+                  <p className="text-[12px] text-[#8b8b8b] mt-0.5">
+                    {role === 'developer'
+                      ? 'Shows sandbox calls made with your approved API keys, including allowed and denied outcomes.'
+                      : 'Audits compliance actions and records API calls with strict cryptographic correlation IDs.'}
+                  </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -1847,17 +1948,19 @@ export default function DashboardPage() {
                       <option value="30d">Last 30 Days</option>
                     </select>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[12px] text-[#8b8b8b] font-mono">Filter Consumer:</span>
-                    <select
-                      value={filterMda}
-                      onChange={e => setFilterMda(e.target.value)}
-                      className="h-[30px] px-2 border border-[#2e2e2e] bg-[#141414] text-white rounded text-[12px] focus:outline-none"
-                    >
-                      <option value="ALL">All MDAs</option>
-                      {mdas.map(m => <option key={m.id} value={m.id}>{m.shortName}</option>)}
-                    </select>
-                  </div>
+                  {role !== 'developer' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] text-[#8b8b8b] font-mono">Filter Consumer:</span>
+                      <select
+                        value={filterMda}
+                        onChange={e => setFilterMda(e.target.value)}
+                        className="h-[30px] px-2 border border-[#2e2e2e] bg-[#141414] text-white rounded text-[12px] focus:outline-none"
+                      >
+                        <option value="ALL">All MDAs</option>
+                        {mdas.map(m => <option key={m.id} value={m.id}>{m.shortName}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <ViewModeToggle
                     value={auditViewMode}
                     onChange={setAuditViewMode}
@@ -1884,7 +1987,7 @@ export default function DashboardPage() {
                       {visibleLogs.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={6} className="h-28 text-center text-[#8b8b8b] text-[13px]">
-                            No compliance audit entries recorded.
+                            {role === 'developer' ? 'No API call logs recorded for your approved keys yet.' : 'No compliance audit entries recorded.'}
                           </TableCell>
                         </TableRow>
                       ) : visibleLogs.map(log => (
@@ -1925,7 +2028,7 @@ export default function DashboardPage() {
                 <div className="min-h-0 flex-1 overflow-y-auto p-4">
                   {visibleLogs.length === 0 ? (
                     <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-dashed border-[#2e2e2e] bg-[#141414] px-4 text-center text-[13px] text-[#8b8b8b]">
-                      No compliance audit entries recorded.
+                      {role === 'developer' ? 'No API call logs recorded for your approved keys yet.' : 'No compliance audit entries recorded.'}
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -2166,8 +2269,55 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-        )}
-      </div>
+      )}
+    </div>
+
+      <AlertDialog
+        open={Boolean(oneTimeApiKey)}
+        onOpenChange={open => {
+          if (!open) {
+            oneTimeApiKeyOpenRef.current = false;
+            setOneTimeApiKey(null);
+            setOneTimeApiKeyCopied(false);
+          }
+        }}
+      >
+        <AlertDialogContent className="border-[#2e2e2e] bg-[#1c1c1c] text-[#ededed]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Copy API Key Now</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#b5b5b5]">
+              This sandbox key is shown once. After this window is closed, the full key cannot be copied again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {oneTimeApiKey && (
+            <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-3 text-[12px]">
+              <div className="font-semibold text-white">{oneTimeApiKey.apiName}</div>
+              <div className="mt-3 break-all rounded-md border border-[#2e2e2e] bg-[#101010] p-3 font-mono text-[#3ecf8e]">
+                {oneTimeApiKeyCopied ? oneTimeApiKey.apiKeyPreview || 'Copied' : oneTimeApiKey.apiKey}
+              </div>
+              {oneTimeApiKey.expiresAt && (
+                <div className="mt-2 text-[#8b8b8b]">
+                  Expires {new Date(oneTimeApiKey.expiresAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-[#2e2e2e] bg-[#141414] text-[#ededed] hover:bg-[#2e2e2e] hover:text-white">
+              Close
+            </AlertDialogCancel>
+            <button
+              type="button"
+              onClick={handleCopyOneTimeApiKey}
+              disabled={!canCopyOneTimeApiKey(oneTimeApiKey?.apiKey, oneTimeApiKeyCopied)}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#3ecf8e] px-4 text-sm font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <IconCopy className="h-4 w-4" />
+              {oneTimeApiKeyCopied ? 'Copied' : 'Copy key'}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={Boolean(keyActionConfirmation)}
@@ -2242,9 +2392,11 @@ export default function DashboardPage() {
 
           <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
             <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5">
-              <span className="mb-1 block text-[10px] font-mono uppercase tracking-wider text-[#8b8b8b]">Requested API</span>
-              <div className="text-[15px] font-semibold text-white">{selectedAccessRequest.api_name}</div>
-              <div className="mt-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="mb-1 block text-[10px] font-mono uppercase tracking-wider text-[#8b8b8b]">Requested API</span>
+                  <div className="text-[15px] font-semibold text-white">{selectedAccessRequest.api_name}</div>
+                </div>
                 <AccessRequestStatusBadge request={selectedAccessRequest} />
               </div>
             </div>

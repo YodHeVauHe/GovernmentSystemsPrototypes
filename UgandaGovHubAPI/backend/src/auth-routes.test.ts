@@ -13,9 +13,9 @@ async function startApp() {
     CREATE TABLE mdas (id TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT NOT NULL);
     CREATE TABLE apis (id TEXT PRIMARY KEY, name TEXT NOT NULL, owning_mda_id TEXT NOT NULL);
   `);
-  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-05', 'Ministry of ICT and National Guidance', 'MoICT');
-  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-06', 'Ministry of Health', 'MoH');
-  db.prepare('INSERT INTO apis (id, name, owning_mda_id) VALUES (?, ?, ?)').run('api-nira-01', 'NIRA Identity', 'mda-05');
+  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3', 'Ministry of ICT and National Guidance', 'MoICT');
+  db.prepare('INSERT INTO mdas (id, name, short_name) VALUES (?, ?, ?)').run('mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', 'Ministry of Health', 'MoH');
+  db.prepare('INSERT INTO apis (id, name, owning_mda_id) VALUES (?, ?, ?)').run('api-nira-01', 'NIRA Identity', 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3');
   ensureAuthSchema(db);
   ensureAdminSchema(db);
   process.env.GOVHUB_ADMIN_EMAIL = 'admin@ict.go.ug';
@@ -70,7 +70,7 @@ async function run() {
         password: 'StrongPass123!',
         account_type: 'government',
         requested_role: 'developer',
-        requested_mda_id: 'mda-06',
+        requested_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
         requested_organization: 'Ministry of Health',
         requested_purpose: 'Build a health service integration',
       }),
@@ -240,7 +240,7 @@ async function run() {
       hashPassword('StrongPass123!'),
       'government_employee',
       'reviewer',
-      'mda-05',
+      'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3',
       'Ministry of ICT and National Guidance',
       'Operate platform administration workflows'
     );
@@ -252,7 +252,7 @@ async function run() {
     const govAdminPromotion = await request(baseUrl, '/api/admin/users/usr_gov_admin_candidate/approve', {
       method: 'POST',
       headers: { cookie: adminCookie },
-      body: JSON.stringify({ role: 'admin', mda_id: 'mda-05' }),
+      body: JSON.stringify({ role: 'admin', mda_id: 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3' }),
     });
     assert.equal(govAdminPromotion.response.status, 200);
     assert.equal(govAdminPromotion.body.user.role, 'admin');
@@ -285,7 +285,7 @@ async function run() {
     const approval = await request(baseUrl, `/api/admin/users/${signup.body.user.id}/approve`, {
       method: 'POST',
       headers: { cookie: adminCookie },
-      body: JSON.stringify({ role: 'developer', mda_id: 'mda-06' }),
+      body: JSON.stringify({ role: 'developer', mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543' }),
     });
     assert.equal(approval.response.status, 200);
     assert.equal(approval.body.user.status, 'APPROVED');

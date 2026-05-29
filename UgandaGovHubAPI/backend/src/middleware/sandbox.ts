@@ -80,6 +80,7 @@ export function sandboxMiddleware(db: Db) {
     // Enforce API Key
     const apiKey = req.headers['x-govhub-api-key'] as string;
     const apiId = await getApiIdFromPath(db, req.originalUrl);
+    res.locals.sandboxApiId = apiId;
 
     if (!apiKey) {
       await logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {

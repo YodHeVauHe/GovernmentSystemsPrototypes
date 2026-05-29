@@ -89,6 +89,68 @@ router.get('/', requireAuth(db, ['admin', 'api_owner', 'reviewer', 'developer'])
   }
 });
 
+router.post('/:id/reveal-key', requireAuth(db, ['developer']), async (req, res) => {
+  const id = String(req.params.id);
+  const consumerColumn = req.user!.mda_id ? 'consumer_mda_id' : 'consumer_user_id';
+  const consumerId = req.user!.mda_id || req.user!.id;
+
+  try {
+    const [claim] = await many(db, `
+      WITH claimed AS (
+        SELECT
+          r.id,
+          r.api_key,
+          r.api_key_preview,
+          r.api_key_expires_at,
+          r.api_id,
+          r.consumer_mda_id,
+          r.consumer_user_id
+        FROM access_requests r
+        WHERE r.id = $1
+          AND r.${consumerColumn} = $2
+          AND r.status = 'APPROVED'
+          AND r.api_key IS NOT NULL
+          AND r.api_key_hash IS NOT NULL
+          AND COALESCE(r.api_key_status, 'ACTIVE') = 'ACTIVE'
+          AND (r.api_key_expires_at IS NULL OR r.api_key_expires_at > $3)
+      ),
+      cleared AS (
+        UPDATE access_requests target
+        SET api_key = NULL
+        FROM claimed
+        WHERE target.id = claimed.id
+          AND target.api_key IS NOT NULL
+        RETURNING target.id
+      )
+      SELECT claimed.*
+      FROM claimed
+      JOIN cleared ON cleared.id = claimed.id
+    `, [id, consumerId, new Date().toISOString()]);
+
+    if (!claim?.api_key) {
+      return res.status(404).json({
+        error: 'No one-time API key is available for this access request.',
+        code: 'ONE_TIME_KEY_UNAVAILABLE',
+      });
+    }
+
+    await logAuditEvent(db, 'API_KEY_REVEALED', claim.consumer_mda_id, claim.api_id, id, {
+      api_key_preview: claim.api_key_preview,
+      consumer_user_id: claim.consumer_user_id || req.user!.id,
+    });
+
+    res.json({
+      id,
+      api_key: claim.api_key,
+      api_key_preview: claim.api_key_preview,
+      api_key_expires_at: claim.api_key_expires_at,
+    });
+  } catch (err: any) {
+    console.error('[key reveal]', err);
+    res.status(500).json({ error: 'Failed to reveal API key. Please try again.' });
+  }
+});
+
 // Approve an access request (Simulates Admin action)
 router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
   const id = String(req.params.id);
@@ -109,9 +171,9 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req,
 
     await run(db, `
       UPDATE access_requests 
-      SET status = 'APPROVED', api_key = NULL, api_key_hash = $1, api_key_preview = $2, api_key_status = 'ACTIVE', api_key_expires_at = $3, api_key_revoked_at = NULL
-      WHERE id = $4
-    `, [computeApiKeyHash(apiKey), getApiKeyPreview(apiKey), expiresAt, id]);
+      SET status = 'APPROVED', api_key = $1, api_key_hash = $2, api_key_preview = $3, api_key_status = 'ACTIVE', api_key_expires_at = $4, api_key_revoked_at = NULL
+      WHERE id = $5
+    `, [apiKey, computeApiKeyHash(apiKey), getApiKeyPreview(apiKey), expiresAt, id]);
     
     // Log audit events
     await logAuditEvent(db, 'ACCESS_APPROVED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
@@ -122,7 +184,14 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req,
       api_key_expires_at: expiresAt
     });
 
-    res.json({ id, status: 'APPROVED', api_key: apiKey, api_key_status: 'ACTIVE', api_key_expires_at: expiresAt });
+    res.json({
+      id,
+      status: 'APPROVED',
+      api_key_preview: getApiKeyPreview(apiKey),
+      api_key_pending_reveal: true,
+      api_key_status: 'ACTIVE',
+      api_key_expires_at: expiresAt,
+    });
   } catch (err: any) {
     console.error('[access approve]', err);
     res.status(500).json({ error: 'Failed to approve request. Please try again.' });

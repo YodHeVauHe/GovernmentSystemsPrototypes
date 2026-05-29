@@ -75,11 +75,11 @@ export type SandboxApiMapping = {
 };
 
 const defaultSandboxMappings: SandboxApiMapping[] = [
-  { id: 'api-nira-01', sandbox_base_path: '/api/v1/identity' },
-  { id: 'api-ura-01', sandbox_base_path: '/api/v1/tax' },
-  { id: 'api-ursb-01', sandbox_base_path: '/api/v1/business' },
-  { id: 'api-mowt-01', sandbox_base_path: '/api/v1/transport/driving-permit' },
-  { id: 'api-moict-01', sandbox_base_path: '/api/v1/service-uganda' },
+  { id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6', sandbox_base_path: '/api/v1/identity' },
+  { id: 'api-ura-13897843-012d-4951-8b06-374fff183c3e', sandbox_base_path: '/api/v1/tax' },
+  { id: 'api-ursb-a75f163c-5df8-4c95-92aa-c21e86502b65', sandbox_base_path: '/api/v1/business' },
+  { id: 'api-mowt-817fd255-079c-44ba-a338-e95d510f56b7', sandbox_base_path: '/api/v1/transport/driving-permit' },
+  { id: 'api-moict-d0de33dc-0e3f-449b-8b9d-6608847cb6ac', sandbox_base_path: '/api/v1/service-uganda' },
 ];
 
 export function resolveSandboxApiId(url: string, mappings: SandboxApiMapping[] = defaultSandboxMappings) {

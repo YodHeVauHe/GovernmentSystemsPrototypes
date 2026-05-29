@@ -63,8 +63,8 @@ test('deleted API keys require admin confirmation and stop counting as approved 
     const accessResponse = await page.request.post(`${backendUrl}/api/access`, {
       headers: await authHeaders(page),
       data: {
-        api_id: 'api-nira-01',
-        consumer_mda_id: 'mda-06',
+        api_id: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6',
+        consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
         purpose,
         requested_fields: 'NIN, Surname',
         volume_tier: 'Low (< 1,000 / month)',

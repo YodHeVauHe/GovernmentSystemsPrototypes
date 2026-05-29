@@ -32,10 +32,10 @@ function createAccessRequestDb(rows: AccessRequestRow[]): DbClient {
 
 async function main() {
   const pendingMdaRequest = await findBlockingAccessRequest(createAccessRequestDb([
-    { id: 'req-pending', api_id: 'api-nira-01', consumer_mda_id: 'mda-06', status: 'PENDING' },
+    { id: 'req-pending', api_id: 'api-nira-01', consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', status: 'PENDING' },
   ]), {
     apiId: 'api-nira-01',
-    consumerMdaId: 'mda-06',
+    consumerMdaId: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
     consumerUserId: 'usr-dev',
   });
   assert.equal(pendingMdaRequest?.id, 'req-pending');
@@ -49,11 +49,11 @@ async function main() {
   assert.equal(activeUserRequest?.id, 'req-active');
 
   const revokedRequest = await findBlockingAccessRequest(createAccessRequestDb([
-    { id: 'req-revoked', api_id: 'api-nira-01', consumer_mda_id: 'mda-06', status: 'APPROVED', api_key_status: 'REVOKED' },
-    { id: 'req-deleted', api_id: 'api-nira-01', consumer_mda_id: 'mda-06', status: 'APPROVED', api_key_status: 'DELETED' },
+    { id: 'req-revoked', api_id: 'api-nira-01', consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', status: 'APPROVED', api_key_status: 'REVOKED' },
+    { id: 'req-deleted', api_id: 'api-nira-01', consumer_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543', status: 'APPROVED', api_key_status: 'DELETED' },
   ]), {
     apiId: 'api-nira-01',
-    consumerMdaId: 'mda-06',
+    consumerMdaId: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
     consumerUserId: 'usr-dev',
   });
   assert.equal(revokedRequest, undefined);
