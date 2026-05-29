@@ -1,6 +1,6 @@
-# Uganda Government Systems Prototype Showcase
+# Uganda GovHub API Prototype Showcase
 
-This workspace contains functional prototypes created for the **Call to Ugandan Innovators: Government Systems Prototype Showcase and National Innovator Registry** issued by the Ministry of ICT and National Guidance.
+This repository contains **Uganda GovHub API**, a functional prototype created for the **Call to Ugandan Innovators: Government Systems Prototype Showcase and National Innovator Registry** issued by the Ministry of ICT and National Guidance.
 
 ## Call Context
 
@@ -12,17 +12,9 @@ The Ministry is seeking Ugandan technology innovators who can build practical di
 
 The core objectives are to identify capable local innovators, establish the Uganda National Innovator Registry, shortlist deployable prototypes, and promote Ugandan-built digital public infrastructure.
 
-## Prototypes
+## Prototype
 
-### 1. [UgCitizen Resolve Portal](./UgCitizenResolvePortal/)
-
-**Thematic Area 11: Citizen Engagement and Service Delivery**
-
-UgCitizen Resolve Portal is a citizen reporting and complaint-management prototype. It lets citizens submit local service issues with location and evidence, while giving government responders a triage dashboard for assignment, status updates, and resolution tracking.
-
-**Progress:** In progress. The core concept and local prototype structure are present, but this project is not yet at the same deployment-readiness level as Uganda GovHub API.
-
-### 2. [Uganda GovHub API](./UgandaGovHubAPI/)
+### [Uganda GovHub API](./UgandaGovHubAPI/)
 
 **Thematic Area 10: Interoperability and Data Exchange**
 
@@ -39,11 +31,10 @@ The GovHub prototype uses sandbox data only. It demonstrates NIRA-style identity
 | Prototype | Status | Notes |
 | --- | --- | --- |
 | Uganda GovHub API | Deployment-ready | Full-stack Vite, Express, and Postgres prototype with Vercel configuration in `UgandaGovHubAPI/vercel.json`. |
-| UgCitizen Resolve Portal | In progress | Functional prototype direction is present, but it still needs final deployment hardening and readiness checks. |
 
 ## Vercel Deployment From This Repository
 
-This GitHub repository is a two-project workspace. Vercel will initially see the repository root, `GovermentSystemsPrototypes`, but Uganda GovHub API must be deployed from the `UgandaGovHubAPI` subdirectory.
+This GitHub repository now contains one prototype. The deployable app lives in the `UgandaGovHubAPI` subdirectory, so Vercel should use that folder as the project root.
 
 In Vercel, import the GitHub repository, then open the project configuration before deploying:
 
@@ -56,9 +47,7 @@ If the import screen does not show the root directory selector, create the Verce
 
 ## How To Run
 
-Each prototype has its own `README.md` with setup, demo accounts, and presenter guidance.
-
-For Uganda GovHub API:
+The Uganda GovHub API project README contains the full setup, demo accounts, security configuration, deployment notes, and presenter path. For local setup:
 
 ```bash
 cd UgandaGovHubAPI
@@ -67,8 +56,6 @@ npm run seed
 npm run dev
 ```
 
-For UgCitizen Resolve Portal, open its project folder and follow the local README instructions.
-
 ## Positioning
 
-These prototypes are showcase systems. They are intended to demonstrate user experience, workflow design, technical architecture, security posture, and practical delivery capability. They do not contain real citizen data and should not be described as connected to live production government systems.
+Uganda GovHub API is a showcase system. It is intended to demonstrate user experience, workflow design, technical architecture, security posture, and practical delivery capability. It does not contain real citizen data and should not be described as connected to live production government systems.
