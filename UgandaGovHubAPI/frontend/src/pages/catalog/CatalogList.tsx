@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { IconGridDots, IconList, IconPlus, IconSearch } from '@tabler/icons-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { API_BASE } from '@/lib/api-base';
 import { useUser } from '../../context/UserContext';
 import { SectorBadge, sensitivityBadgeClass, useCatalogViewModePreference } from './catalog-shared';
@@ -142,14 +143,14 @@ export function Catalog() {
           {Array.from({ length: 6 }).map((_, index) => (
             <div key={index} className="grid grid-cols-[minmax(260px,1.8fr)_repeat(5,minmax(120px,1fr))] items-center gap-4 border-b border-[#2e2e2e] px-4 py-4 last:border-b-0">
               <div>
-                <div className="h-4 w-52 animate-pulse rounded bg-[#2e2e2e]" />
-                <div className="mt-2 h-3 w-28 animate-pulse rounded bg-[#242424]" />
+                <Skeleton className="h-4 w-52 bg-[#2e2e2e]" />
+                <Skeleton className="mt-2 h-3 w-28 bg-[#242424]" />
               </div>
-              <div className="h-5 w-20 animate-pulse rounded-full bg-[#242424]" />
-              <div className="h-3 w-20 animate-pulse rounded bg-[#242424]" />
-              <div className="h-5 w-32 animate-pulse rounded-full bg-[#242424]" />
-              <div className="h-3 w-14 animate-pulse rounded bg-[#242424]" />
-              <div className="h-3 w-12 animate-pulse rounded bg-[#242424]" />
+              <Skeleton className="h-5 w-20 rounded-full bg-[#242424]" />
+              <Skeleton className="h-3 w-20 bg-[#242424]" />
+              <Skeleton className="h-5 w-32 rounded-full bg-[#242424]" />
+              <Skeleton className="h-3 w-14 bg-[#242424]" />
+              <Skeleton className="h-3 w-12 bg-[#242424]" />
             </div>
           ))}
         </div>

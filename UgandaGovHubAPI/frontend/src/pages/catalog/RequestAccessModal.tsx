@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { IconX } from '@tabler/icons-react';
 import { toast } from 'sonner';
+import { Spinner } from '@/components/ui/spinner';
 import { API_BASE } from '@/lib/api-base';
 import { useUser } from '../../context/UserContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -199,7 +200,10 @@ export function RequestAccessModal({ api, onClose, onSubmitted }: { api: any, on
                 Cancel
               </button>
               <button disabled={status === 'submitting'} type="submit" className="flex-1 h-[36px] bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-md text-[13px] transition-colors disabled:opacity-50">
-                {status === 'submitting' ? 'Submitting...' : 'Submit Request'}
+                <span className="inline-flex items-center justify-center gap-2">
+                  {status === 'submitting' && <Spinner className="size-4 text-black" />}
+                  Submit Request
+                </span>
               </button>
             </div>
           </form>
