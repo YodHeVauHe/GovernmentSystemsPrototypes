@@ -39,6 +39,32 @@ const mdas = [
   ['mda-nita-u-b47d8923-86ad-47ad-9992-3167c54f0a12', 'National Information Technology Authority Uganda', 'NITA-U'],
 ];
 
+type LegacyIdMapping = {
+  legacyId: string;
+  currentId: string;
+};
+
+const legacyDemoApiIdMappings: LegacyIdMapping[] = [
+  { legacyId: 'api-nira-01', currentId: 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6' },
+  { legacyId: 'api-ura-01', currentId: 'api-ura-13897843-012d-4951-8b06-374fff183c3e' },
+  { legacyId: 'api-ursb-01', currentId: 'api-ursb-a75f163c-5df8-4c95-92aa-c21e86502b65' },
+  { legacyId: 'api-mowt-01', currentId: 'api-mowt-817fd255-079c-44ba-a338-e95d510f56b7' },
+  { legacyId: 'api-moict-01', currentId: 'api-moict-d0de33dc-0e3f-449b-8b9d-6608847cb6ac' },
+];
+
+const legacyMdaIdMappings: LegacyIdMapping[] = [
+  { legacyId: 'mda-01', currentId: 'mda-nira-45b49ebd-8203-4a75-85d5-64925d201f41' },
+  { legacyId: 'mda-02', currentId: 'mda-ura-2efff0d3-952e-4475-8231-232873a69854' },
+  { legacyId: 'mda-03', currentId: 'mda-ursb-94540e99-0027-4cd7-86ca-664d3776c4f5' },
+  { legacyId: 'mda-04', currentId: 'mda-mowt-800aedbd-9c89-4df5-91d8-4250120003c7' },
+  { legacyId: 'mda-05', currentId: 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3' },
+  { legacyId: 'mda-06', currentId: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543' },
+  { legacyId: 'mda-07', currentId: 'mda-ppda-e122702f-76bd-46e0-b15f-2c2b93d9928b' },
+  { legacyId: 'mda-08', currentId: 'mda-nssf-38be9aa8-edb6-453d-ab9e-5d396ca960bc' },
+  { legacyId: 'mda-09', currentId: 'mda-upf-80e53954-69a8-41d0-818d-01372005684e' },
+  { legacyId: 'mda-10', currentId: 'mda-nita-u-b47d8923-86ad-47ad-9992-3167c54f0a12' },
+];
+
 function operation(summary: string, description: string, tags: string[]) {
   return { summary, description, tags };
 }
@@ -547,6 +573,24 @@ type SyncProductionDemoCatalogOptions = {
   log?: boolean;
 };
 
+async function cleanupLegacyProductionDemoRows(db: Db) {
+  for (const { legacyId, currentId } of legacyDemoApiIdMappings) {
+    await db.prepare('UPDATE access_requests SET api_id = ? WHERE api_id = ?').run(currentId, legacyId);
+    await db.prepare('UPDATE audit_logs SET api_id = ? WHERE api_id = ?').run(currentId, legacyId);
+    await db.prepare('DELETE FROM api_versions WHERE api_id = ?').run(legacyId);
+    await db.prepare('DELETE FROM apis WHERE id = ?').run(legacyId);
+  }
+
+  for (const { legacyId, currentId } of legacyMdaIdMappings) {
+    await db.prepare('UPDATE apis SET owning_mda_id = ? WHERE owning_mda_id = ?').run(currentId, legacyId);
+    await db.prepare('UPDATE access_requests SET consumer_mda_id = ? WHERE consumer_mda_id = ?').run(currentId, legacyId);
+    await db.prepare('UPDATE audit_logs SET mda_id = ? WHERE mda_id = ?').run(currentId, legacyId);
+    await db.prepare('UPDATE users SET mda_id = ? WHERE mda_id = ?').run(currentId, legacyId);
+    await db.prepare('UPDATE users SET requested_mda_id = ? WHERE requested_mda_id = ?').run(currentId, legacyId);
+    await db.prepare('DELETE FROM mdas WHERE id = ?').run(legacyId);
+  }
+}
+
 export async function syncProductionDemoCatalog(db: Db, options: SyncProductionDemoCatalogOptions = {}) {
   const insertMda = db.prepare(`
     INSERT INTO mdas (id, name, short_name)
@@ -651,6 +695,8 @@ export async function syncProductionDemoCatalog(db: Db, options: SyncProductionD
       'Expanded production demo catalog seed'
     );
   }
+
+  await cleanupLegacyProductionDemoRows(db);
 
   const rows = await db.prepare(`
     SELECT a.id, a.name, v.endpoints_count
