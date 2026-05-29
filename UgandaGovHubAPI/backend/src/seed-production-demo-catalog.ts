@@ -711,7 +711,8 @@ export async function syncProductionDemoCatalog(db: Db, options: SyncProductionD
 
 async function upsertDemoCatalog() {
   process.env.GOVHUB_SYNC_DEMO_CATALOG = 'false';
-  const { db, initializeApp } = await import('./app');
+  // Keep this require-based so NodeNext production checks and ts-node scripts both resolve it.
+  const { db, initializeApp } = require('./app') as typeof import('./app.js');
   await initializeApp();
   await syncProductionDemoCatalog(db, { log: true });
   await db.close();
