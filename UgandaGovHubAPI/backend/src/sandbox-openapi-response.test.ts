@@ -11,6 +11,14 @@ assert.deepEqual(
   tinStatusExample
 );
 
+assert.deepEqual(
+  findSandboxOpenApiResponseExample(uraSpec, '/api/v1/tax/tin-status/1000123455', 'GET'),
+  {
+    ...tinStatusExample,
+    tin: '1000123455',
+  }
+);
+
 const clearanceExample = uraSpec.paths['/clearance/{tin}'].get.responses['200'].content['application/json'].example;
 assert.deepEqual(
   findSandboxOpenApiResponseExample(uraSpec, '/api/v1/tax/clearance/1000123456', 'GET'),
