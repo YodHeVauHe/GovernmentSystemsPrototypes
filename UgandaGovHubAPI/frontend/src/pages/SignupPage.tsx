@@ -4,6 +4,7 @@ import { IconInnerShadowTop } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { MDAS_LIST, useUser, type UserRole } from '@/context/UserContext';
 
@@ -219,7 +220,10 @@ export function SignupPage() {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Button type="submit" disabled={submitting}>{submitting ? 'Submitting...' : 'Create account for review'}</Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting && <Spinner className="size-4" />}
+            Create account for review
+          </Button>
           <Link className="text-sm text-[#3ecf8e] hover:text-white" to="/login">Already have an account?</Link>
         </div>
       </form>

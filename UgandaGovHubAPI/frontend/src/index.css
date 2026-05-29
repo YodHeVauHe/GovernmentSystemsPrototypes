@@ -95,7 +95,7 @@
     --radius-control: 6px;
     --card-padding-x: 1rem;
     
-    --font-custom: 'Ubuntu', Circular, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --font-custom: 'Ubuntu', 'JetBrains Mono', Circular, "Helvetica Neue", Helvetica, Arial, sans-serif;
   }
 
   .dark {

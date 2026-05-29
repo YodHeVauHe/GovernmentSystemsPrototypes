@@ -4,6 +4,7 @@ import { IconInnerShadowTop } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { useUser } from '@/context/UserContext';
 
 export function LoginPage() {
@@ -72,7 +73,8 @@ export function LoginPage() {
           </div>
         )}
         <Button type="submit" className="w-full" disabled={submitting}>
-          {submitting ? 'Signing in...' : mfaRequired ? 'Verify and sign in' : 'Sign in'}
+          {submitting && <Spinner className="size-4" />}
+          {mfaRequired ? 'Verify and sign in' : 'Sign in'}
         </Button>
         <p className="text-center text-sm text-[#8b8b8b]">
           Need access? <Link className="text-[#3ecf8e] hover:text-white" to="/signup">Create an account</Link>

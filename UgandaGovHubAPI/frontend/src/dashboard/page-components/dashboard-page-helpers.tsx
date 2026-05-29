@@ -401,7 +401,7 @@ export function notificationRoleLabel(role: string) {
 }
 
 export function accountActionLabel(account: any, busy: boolean) {
-  if (busy) return 'Saving...';
+  if (busy) return 'Approve';
   const verificationStatus = accountVerificationStatus(account);
   if (verificationStatus === 'draft_profile') return 'Waiting on user';
   if (verificationStatus === 'needs_more_information') return 'Needs info';

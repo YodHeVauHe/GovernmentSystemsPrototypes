@@ -15,6 +15,7 @@ import {
   IconTerminal2,
   IconTrash,
 } from '@tabler/icons-react';
+import { Spinner } from '@/components/ui/spinner';
 import { API_BASE } from '@/lib/api-base';
 import { useUser } from '../../context/UserContext';
 import { AdminApiEditorModal } from './AdminApiEditorModal';
@@ -239,8 +240,8 @@ export function ApiDetail() {
                   onClick={() => setIsPublishOpen(true)}
                   className="h-[30px] px-3 flex items-center gap-2 border border-[#2e2e2e] bg-[#1c1c1c] hover:bg-[#2e2e2e] rounded-[6px] text-[12.5px] font-medium text-[#ededed] transition-colors disabled:opacity-50"
                 >
-                  <IconGitBranch className="w-4 h-4 text-[#8b8b8b]" />
-                  {publishingVersion ? 'Publishing...' : 'Publish Version'}
+                  {publishingVersion ? <Spinner className="h-4 w-4 text-[#8b8b8b]" /> : <IconGitBranch className="w-4 h-4 text-[#8b8b8b]" />}
+                  Publish Version
                 </button>
                 <button
                   type="button"

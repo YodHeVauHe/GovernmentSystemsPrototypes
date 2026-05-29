@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { IconCheck, IconFileText, IconLoader, IconUpload } from '@tabler/icons-react';
+import { IconCheck, IconFileText, IconUpload } from '@tabler/icons-react';
+import { Spinner } from '@/components/ui/spinner';
 import type { AccountDocument } from './types';
 
 type DocumentUploaderProps = {
@@ -85,8 +86,8 @@ export function DocumentUploader({
 
       {uploading ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background/50 p-6 text-center">
-          <IconLoader className="mb-2 size-6 animate-spin text-[#3ecf8e]" />
-          <div className="text-xs font-medium text-foreground">Uploading {localFile?.name}...</div>
+          <Spinner className="mb-2 size-6 text-[#3ecf8e]" />
+          <div className="text-xs font-medium text-foreground">{localFile?.name || 'Selected file'}</div>
           <div className="mt-1 text-[10px] text-foreground-light">{localFile?.size}</div>
 
           <div className="mt-3 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
