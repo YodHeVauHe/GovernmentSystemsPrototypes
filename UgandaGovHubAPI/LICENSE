@@ -7,6 +7,21 @@ This repository and all source code, documentation, designs, diagrams, API
 specifications, configuration, tests, assets, and related materials in it are
 proprietary intellectual property.
 
+Uganda Law Notice
+
+This license is intended to preserve all rights available under Ugandan law and
+any other applicable law. Uganda's Copyright and Neighbouring Rights Act,
+Chapter 222, including amendments in force from time to time, protects original
+works reduced to material form without requiring registration formality. The Act
+recognizes computer programmes, electronic data banks, and accompanying
+materials as eligible protected works, while ideas, concepts, procedures, and
+methods are not protected by copyright on their own.
+
+The repository owner reserves the exclusive economic rights available under
+Ugandan copyright law, including the rights to reproduce, publish, distribute,
+make available online, communicate to the public, commercially exploit, and
+authorize derivative works from the protected materials.
+
 No open-source license is granted. Access to this repository does not transfer
 ownership, copyright, patent rights, trade secrets, database rights, trademark
 rights, or any other intellectual property rights.
@@ -17,6 +32,10 @@ If you have been granted explicit read access to this private repository, you
 may view the repository solely for the purpose stated in the written access
 grant, such as evaluation, review, due diligence, security review, procurement
 review, or technical assessment.
+
+This permission is a limited, revocable, non-exclusive, non-transferable,
+non-sublicensable review permission. It is not an assignment, transfer, sale, or
+procurement of copyright or source-code ownership.
 
 Restrictions
 
@@ -53,6 +72,13 @@ institutional reviewer, that access is for inspection and evaluation only unless
 a separate signed written agreement grants broader rights. Review access does
 not grant rights to procure, reproduce, deploy, transfer, adapt, publish, or
 reuse the source code or materials.
+
+For avoidance of doubt, repository access by a government body, public officer,
+committee, agency, consultant, or procurement reviewer does not make this
+repository a public-domain work, a public benefit work, a government-owned work,
+or an assigned work. Any ownership transfer, commissioning arrangement, source
+code escrow, procurement use, production deployment, or broader licence must be
+set out in a separate written agreement.
 
 Third-Party Materials
 

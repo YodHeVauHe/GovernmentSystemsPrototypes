@@ -1,5 +1,59 @@
 # Uganda GovHub API Prototype
 
+<p align="center">
+  <strong>Uganda GovHub API</strong><br />
+  Closed-source government interoperability prototype
+</p>
+
+<p align="center">
+  <a href="UgandaGovHubAPI/README.md">Project</a>
+  ·
+  <a href="LICENSE">License</a>
+  ·
+  <a href="COPYRIGHT.md">Copyright</a>
+  ·
+  <a href="CODE_OF_CONDUCT.md">Code of Conduct</a>
+  ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+  ·
+  <a href="SECURITY.md">Security</a>
+</p>
+
+<p align="center">
+  <img alt="Source access: restricted" src="https://img.shields.io/badge/source%20access-restricted-red" />
+  <img alt="License: proprietary" src="https://img.shields.io/badge/license-proprietary-red" />
+  <img alt="Review only" src="https://img.shields.io/badge/government%20review-evaluation%20only-blue" />
+  <img alt="Uganda law" src="https://img.shields.io/badge/law-Uganda%20Cap.%20222-green" />
+</p>
+
+## Repository Access Notice
+
+This repository is **closed-source proprietary intellectual property**. It is
+made available only to explicitly authorized collaborators or reviewers.
+Cloning, downloading, or viewing this repository does not grant any right to
+copy, redistribute, deploy, publish, modify, commercialize, train AI models on,
+or reuse any part of the source code, documentation, designs, API
+specifications, assets, or related materials.
+
+Access for government, institutional, procurement, security, or technical review
+is for evaluation only unless a separate signed written agreement grants broader
+rights.
+
+Uganda copyright law protects original works reduced to material form, including
+computer programmes, electronic data banks, and accompanying materials. The
+license and notices in this repository are written to preserve those rights and
+to make clear that review access does not transfer ownership or grant production
+use.
+
+Repository governance documents:
+
+- [Proprietary source-available license](LICENSE)
+- [Copyright and intellectual property notice](COPYRIGHT.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Contributing rules](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Detailed GovHub prototype README](UgandaGovHubAPI/README.md)
+
 Uganda GovHub API is a functional prototype submitted for the **Call to Ugandan Innovators: Government Systems Prototype Showcase and National Innovator Registry** issued by the Ministry of ICT and National Guidance.
 
 The repository now contains one focused prototype: a governed API developer portal and sandbox for Ministries, Departments, and Agencies (MDAs). It is aligned to **Thematic Area 10: Interoperability and Data Exchange**.
