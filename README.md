@@ -12,7 +12,7 @@ The Ministry is seeking Ugandan technology innovators who can build practical di
 
 The core objectives are to identify capable local innovators, establish the Uganda National Innovator Registry, shortlist deployable prototypes, and promote Ugandan-built digital public infrastructure.
 
-## Prototypes
+## Prototype
 
 ### [Uganda GovHub API](./UgandaGovHubAPI/)
 
@@ -26,22 +26,13 @@ The GovHub prototype uses sandbox data only. It demonstrates NIRA-style identity
 
 **Progress:** Deployment-ready for Vercel when imported with `UgandaGovHubAPI` as the Vercel project root and a hosted Postgres database configured.
 
-### [BlockChainDemo](./BlockChainDemo/)
-
-**Thematic Area: Digital Public Infrastructure / Government Records Verification**
-
-BlockChainDemo is a browser-based Vite React prototype that teaches blockchain concepts through a Uganda government land-title workflow. It covers hashes, blocks, linked chains, distributed MDA peers, asset tokens, and a concrete land-title verification and transfer use case.
-
-The demo positions blockchain as a permissioned government verification layer rather than cryptocurrency. It shows how Ministries, Departments, and Agencies can hold matching proofs of important actions, detect tampering, sequence approvals, and audit land-title transfer history without replacing source MDA systems.
-
-**Progress:** Browser-only prototype ready for local demonstration from `BlockChainDemo/frontend`.
+The previously included BlockChainDemo prototype has been removed. This repository now focuses on the Uganda GovHub API prototype.
 
 ## Project Progress
 
 | Prototype | Status | Notes |
 | --- | --- | --- |
 | Uganda GovHub API | Deployment-ready | Full-stack Vite, Express, and Postgres prototype with Vercel configuration in `UgandaGovHubAPI/vercel.json`. |
-| BlockChainDemo | Demo-ready | Vite React frontend that demonstrates permissioned blockchain concepts through land-title verification and transfer workflows. |
 
 ## Vercel Deployment From This Repository
 
@@ -67,14 +58,6 @@ npm run seed
 npm run dev
 ```
 
-The BlockChainDemo project README contains the concept walkthrough and local checks. For local setup:
-
-```bash
-cd BlockChainDemo/frontend
-npm install
-npm run dev
-```
-
 ## Positioning
 
-These prototypes are showcase systems. They are intended to demonstrate user experience, workflow design, technical architecture, security posture, and practical delivery capability. They do not contain real citizen data and should not be described as connected to live production government systems.
+This prototype is a showcase system. It is intended to demonstrate user experience, workflow design, technical architecture, security posture, and practical delivery capability. It does not contain real citizen data and should not be described as connected to live production government systems.
