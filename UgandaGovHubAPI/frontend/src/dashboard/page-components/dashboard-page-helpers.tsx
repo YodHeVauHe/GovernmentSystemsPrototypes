@@ -5,6 +5,7 @@ import { IconCalendarTime, IconChevronLeft, IconChevronRight, IconGridDots, Icon
 import {
   getAuditEventTone,
   getRequestStatusLabel,
+  hasActiveApprovedApiKey,
   readDashboardViewModePreference,
   writeDashboardViewModePreference,
   type DashboardViewTab,
@@ -474,7 +475,7 @@ export function useDashboardViewModePreference(tab: DashboardViewTab) {
 }
 
 export function AccessRequestStatusBadge({ request }: { request: any }) {
-  const isActiveKey = request.status === 'APPROVED' && (request.api_key_status || 'ACTIVE') === 'ACTIVE';
+  const isActiveKey = hasActiveApprovedApiKey(request);
   const className = isActiveKey
     ? 'text-[#3ecf8e] border-[#3ecf8e]/20 bg-[#3ecf8e]/5'
     : request.status === 'APPROVED'

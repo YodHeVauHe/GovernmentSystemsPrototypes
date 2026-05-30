@@ -6,6 +6,13 @@ import { authRouter, adminUsersRouter } from './routes/auth';
 import { ensureAccountVerificationSchema, getAccountSnapshot } from './account-verification';
 import { computeApiKeyHash, ensureAdminSchema } from './admin';
 import { openPostgresTestDb } from './postgres-test-db';
+import { TURNSTILE_SITEVERIFY_URL } from './turnstile';
+
+const turnstileTokens = {
+  app_load: 'valid-app-load-turnstile-token',
+  login: 'valid-login-turnstile-token',
+  signup: 'valid-signup-turnstile-token',
+};
 
 async function startApp() {
   const { db, close } = await openPostgresTestDb();
@@ -59,15 +66,65 @@ async function close(server: Server) {
 }
 
 async function run() {
+  const originalFetch = globalThis.fetch;
+  const originalTurnstileSecret = process.env.GOVHUB_TURNSTILE_SECRET_KEY;
+  process.env.GOVHUB_TURNSTILE_SECRET_KEY = 'test-turnstile-secret';
+  globalThis.fetch = (async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url !== TURNSTILE_SITEVERIFY_URL) {
+      return originalFetch(input, init);
+    }
+
+    const body = JSON.parse(String(init?.body || '{}'));
+    const action = Object.entries(turnstileTokens)
+      .find(([, token]) => token === body.response)?.[0];
+    return new Response(JSON.stringify({
+      success: Boolean(action),
+      action,
+      hostname: 'localhost',
+      'error-codes': action ? [] : ['invalid-input-response'],
+    }), { headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+
   const { db, server, closeDb, baseUrl } = await startApp();
 
   try {
+    const missingAppVerification = await request(baseUrl, '/api/auth/human-verification', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    assert.equal(missingAppVerification.response.status, 400);
+    assert.equal(missingAppVerification.body.code, 'TURNSTILE_REQUIRED');
+
+    const appVerification = await request(baseUrl, '/api/auth/human-verification', {
+      method: 'POST',
+      body: JSON.stringify({ turnstile_token: turnstileTokens.app_load }),
+    });
+    assert.equal(appVerification.response.status, 200);
+    assert.equal(appVerification.body.verified, true);
+
+    const signupWithoutTurnstile = await request(baseUrl, '/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({
+        full_name: 'No Challenge',
+        email: 'no.challenge.auth-route@example.com',
+        password: 'StrongPass123!',
+        account_type: 'public_developer',
+        requested_role: 'developer',
+        requested_organization: 'Independent Civic Developer',
+        requested_purpose: 'Attempt account creation without human verification',
+      }),
+    });
+    assert.equal(signupWithoutTurnstile.response.status, 400);
+    assert.equal(signupWithoutTurnstile.body.code, 'TURNSTILE_REQUIRED');
+
     const signup = await request(baseUrl, '/api/auth/signup', {
       method: 'POST',
       body: JSON.stringify({
         full_name: 'Jane Developer',
         email: 'Jane.Auth-Route@Example.go.ug',
         password: 'StrongPass123!',
+        turnstile_token: turnstileTokens.signup,
         account_type: 'government',
         requested_role: 'developer',
         requested_mda_id: 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543',
@@ -86,6 +143,7 @@ async function run() {
         full_name: 'Sam Civic',
         email: 'sam.auth-route@example.com',
         password: 'StrongPass123!',
+        turnstile_token: turnstileTokens.signup,
         account_type: 'public_developer',
         requested_role: 'developer',
         requested_mda_id: null,
@@ -102,6 +160,7 @@ async function run() {
         full_name: 'Mallory Admin',
         email: 'mallory.auth-route@example.com',
         password: 'StrongPass123!',
+        turnstile_token: turnstileTokens.signup,
         account_type: 'public_developer',
         requested_role: 'admin',
         requested_organization: 'Independent Civic Developer',
@@ -112,7 +171,7 @@ async function run() {
 
     const login = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: 'jane.auth-route@example.go.ug', password: 'StrongPass123!' }),
+      body: JSON.stringify({ email: 'jane.auth-route@example.go.ug', password: 'StrongPass123!', turnstile_token: turnstileTokens.login }),
     });
     assert.equal(login.response.status, 200);
     assert.equal(login.body.user.status, 'PENDING_REVIEW');
@@ -183,13 +242,78 @@ async function run() {
 
     const adminLogin = await request(baseUrl, '/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: 'admin.test@ict.go.ug', password: 'AdminPass123!' }),
+      body: JSON.stringify({ email: 'admin.test@ict.go.ug', password: 'AdminPass123!', turnstile_token: turnstileTokens.login }),
     });
     assert.equal(adminLogin.response.status, 200);
     const adminCookie = sessionCookie(adminLogin.response);
     const adminSnapshot = await getAccountSnapshot(db, adminLogin.body.user.id);
     assert.equal(adminSnapshot?.profile.account_category, 'admin');
     assert.equal(adminSnapshot?.profile.verification_status, 'verified');
+
+    await db.prepare(`
+      INSERT INTO users (
+        id, full_name, email, password_hash, account_type, requested_role,
+        requested_mda_id, requested_organization, requested_purpose, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'REJECTED')
+    `).run(
+      'usr_rejected_public',
+      'Rejected Public Developer',
+      'rejected.public.auth-route@example.com',
+      hashPassword('StrongPass123!'),
+      'public_developer',
+      'developer',
+      null,
+      'Rejected Civic Developer',
+      'Attempt to reopen a rejected verification package'
+    );
+    await db.prepare(`
+      INSERT INTO user_profiles (
+        user_id, verification_status, account_category,
+        nin, national_id_number, contact_phone, address, review_notes
+      ) VALUES (?, 'rejected', 'public_developer', ?, ?, ?, ?, ?)
+    `).run(
+      'usr_rejected_public',
+      'CM123456789ABCD',
+      '000000001',
+      '+256700000000',
+      'Kampala',
+      'Application rejected by administrator.'
+    );
+    for (const documentType of ['national_id_front', 'national_id_back', 'nin_confirmation']) {
+      await db.prepare(`
+        INSERT INTO verification_documents (id, user_id, type, label, file_name, mime_type, storage_ref)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        `doc-${documentType}`,
+        'usr_rejected_public',
+        documentType,
+        documentType,
+        `${documentType}.pdf`,
+        'application/pdf',
+        `metadata://usr_rejected_public/${documentType}.pdf`
+      );
+    }
+    const rejectedLogin = await request(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'rejected.public.auth-route@example.com', password: 'StrongPass123!', turnstile_token: turnstileTokens.login }),
+    });
+    assert.equal(rejectedLogin.response.status, 200);
+    const rejectedCookie = sessionCookie(rejectedLogin.response);
+    const rejectedProfileEdit = await request(baseUrl, '/api/auth/account/profile', {
+      method: 'PATCH',
+      headers: { cookie: rejectedCookie },
+      body: JSON.stringify({ contact_phone: '+256711111111' }),
+    });
+    assert.equal(rejectedProfileEdit.response.status, 403);
+    assert.equal(rejectedProfileEdit.body.code, 'VERIFICATION_CLOSED');
+    const rejectedSubmit = await request(baseUrl, '/api/auth/account/submit-verification', {
+      method: 'POST',
+      headers: { cookie: rejectedCookie },
+    });
+    assert.equal(rejectedSubmit.response.status, 400);
+    assert.equal(rejectedSubmit.body.code, 'VERIFICATION_NOT_SUBMITTABLE');
+    const rejectedSnapshot = await getAccountSnapshot(db, 'usr_rejected_public');
+    assert.equal(rejectedSnapshot?.profile.verification_status, 'rejected');
 
     process.env.GOVHUB_REQUIRE_ADMIN_MFA = 'true';
     const mfaBlockedAdminList = await request(baseUrl, '/api/admin/users', {
@@ -260,10 +384,20 @@ async function run() {
     assert.equal(promotedAdminSnapshot?.profile.account_category, 'admin');
     assert.equal(promotedAdminSnapshot?.profile.verification_status, 'verified');
 
+    const overlappingQueryWarnings: string[] = [];
+    const warningListener = (warning: Error) => {
+      if (warning.message.includes('client.query() when the client is already executing a query')) {
+        overlappingQueryWarnings.push(warning.message);
+      }
+    };
+    process.on('warning', warningListener);
     const users = await request(baseUrl, '/api/admin/users?status=PENDING_REVIEW', {
       headers: { cookie: adminCookie },
     });
+    await new Promise(resolve => setImmediate(resolve));
+    process.off('warning', warningListener);
     assert.equal(users.response.status, 200);
+    assert.deepEqual(overlappingQueryWarnings, []);
     const pendingUserIds = users.body.users.map((user: any) => user.id);
     assert.equal(pendingUserIds.includes(signup.body.user.id), true);
     assert.equal(pendingUserIds.includes(publicDeveloperSignup.body.user.id), true);
@@ -379,6 +513,12 @@ async function run() {
     assert.equal(Number((await db.prepare('SELECT COUNT(*) as count FROM sessions WHERE user_id = ?').get<{ count: string }>(publicDeveloperSignup.body.user.id))?.count || 0), 0);
     assert.equal(Number((await db.prepare('SELECT COUNT(*) as count FROM user_profiles WHERE user_id = ?').get<{ count: string }>(publicDeveloperSignup.body.user.id))?.count || 0), 0);
   } finally {
+    globalThis.fetch = originalFetch;
+    if (originalTurnstileSecret === undefined) {
+      delete process.env.GOVHUB_TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.GOVHUB_TURNSTILE_SECRET_KEY = originalTurnstileSecret;
+    }
     await close(server);
     await closeDb();
   }

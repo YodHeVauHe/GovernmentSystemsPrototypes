@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { TurnstileWidget } from '@/components/TurnstileWidget';
@@ -7,10 +8,6 @@ import {
   HUMAN_VERIFICATION_STORAGE_KEY,
   shouldBypassTurnstileServerVerification,
 } from '@/lib/turnstile-config';
-
-function currentHostName() {
-  return window.location.hostname || 'Uganda GovHub API Portal';
-}
 
 function readStoredVerification() {
   try {
@@ -33,7 +30,6 @@ export function HumanVerificationGate({ children }: { children: React.ReactNode 
   const [error, setError] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [resetSignal, setResetSignal] = useState(0);
-  const hostName = currentHostName();
 
   const retry = () => {
     setError('');
@@ -75,59 +71,46 @@ export function HumanVerificationGate({ children }: { children: React.ReactNode 
   if (isVerified) return <>{children}</>;
 
   return (
-    <main className="flex min-h-dvh flex-col bg-black px-6 text-[#ededed] sm:px-10">
-      <section className="mx-auto flex w-full max-w-5xl flex-1 items-center py-16">
-        <div className="w-full max-w-3xl">
-          <div className="flex items-center gap-3 text-[#3ecf8e]">
-            <img src="/favicon.svg" alt="" className="size-10 rounded-md" />
-            <span className="text-sm font-medium uppercase tracking-[0.18em] text-[#8b8b8b]">
-              Uganda GovHub API Portal
-            </span>
+    <main className="flex min-h-dvh items-center justify-center bg-[#181818] px-4 text-[#ededed]">
+      <section className="w-full max-w-sm rounded-lg border border-[#2e2e2e] bg-[#141414] p-6 shadow-2xl shadow-black/20">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
+            <ShieldCheck className="size-5" />
           </div>
-
-          <h1 className="mt-8 text-4xl font-semibold leading-tight text-white sm:text-5xl">{hostName}</h1>
-          <h2 className="mt-4 text-2xl font-semibold text-[#ededed]">Performing security verification</h2>
-          <p className="mt-3 max-w-3xl text-base leading-7 text-[#a3a3a3]">
-            This website uses a security service to protect against malicious bots. This page is displayed while
-            the website verifies you are not a bot.
-          </p>
-
-          <div className="mt-9">
-            <TurnstileWidget
-              action="app_load"
-              resetSignal={resetSignal}
-              onToken={verifyToken}
-              onError={message => setError(message)}
-            />
+          <div>
+            <h1 className="text-lg font-semibold text-white">Verify you are human</h1>
+            <p className="text-sm text-[#8b8b8b]">Uganda GovHub API Portal</p>
           </div>
-
-          {verifying && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-[#a3a3a3]">
-              <Spinner className="size-4 text-[#3ecf8e]" />
-              <span>Verifying challenge</span>
-            </div>
-          )}
-
-          {error && (
-            <div className="mt-5 max-w-lg rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-              {error}
-            </div>
-          )}
-
-          {error && (
-            <Button type="button" variant="outline" className="mt-4 w-full max-w-[300px]" onClick={retry}>
-              Retry verification
-            </Button>
-          )}
         </div>
-      </section>
 
-      <footer className="mx-auto w-full max-w-5xl border-t border-white/70 py-5 text-center text-xs text-[#a3a3a3]">
-        <p>Ray ID: pending verification</p>
-        <p className="mt-1">
-          Performance and security by <span className="text-[#8ab4f8]">Cloudflare</span>
-        </p>
-      </footer>
+        <div className="mt-5">
+          <TurnstileWidget
+            action="app_load"
+            resetSignal={resetSignal}
+            onToken={verifyToken}
+            onError={message => setError(message)}
+          />
+        </div>
+
+        {verifying && (
+          <div className="mt-4 flex items-center gap-2 text-sm text-[#8b8b8b]">
+            <Spinner className="size-4 text-[#3ecf8e]" />
+            <span>Verifying challenge</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+            {error}
+          </div>
+        )}
+
+        {error && (
+          <Button type="button" variant="outline" className="mt-4 w-full" onClick={retry}>
+            Retry verification
+          </Button>
+        )}
+      </section>
     </main>
   );
 }

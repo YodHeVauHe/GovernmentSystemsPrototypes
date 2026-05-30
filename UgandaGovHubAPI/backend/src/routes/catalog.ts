@@ -3,9 +3,9 @@ import { Router } from 'express';
 import yaml from 'js-yaml';
 import type { Db, DbClient } from '../db';
 import { one, run } from '../db';
-import { requireAuth, optionalAuth } from '../auth';
+import { requireAuth, optionalAuth, type AuthUser } from '../auth';
 import { canTransferApiOwnership, requireApiManager } from '../access-control';
-import { canDownloadOpenApiAsset, canViewApiDocs, listVisibleDocsApis } from '../docs-access';
+import { canViewApiDocs, listVisibleDocsApis } from '../docs-access';
 import { generatePublicId } from '../ids';
 import { getSpecSha, parseSpecMetadata, slugifyVersion, validateOpenApiSpec } from '../versioning';
 import { getCurrentSpecForApi, getVersionSpecForApi } from '../openapi-store';
@@ -27,8 +27,112 @@ function isOpenApiValidationError(err: any) {
     || message === 'Specification parsed to an invalid object.';
 }
 
+function catalogUpdateStaleError() {
+  return Object.assign(new Error('This API changed before the update could complete.'), {
+    code: 'API_UPDATE_STALE',
+  });
+}
+
+function catalogRegistrationStaleError() {
+  return Object.assign(new Error('Your account permissions changed before registration could complete.'), {
+    code: 'API_REGISTRATION_STALE',
+  });
+}
+
+const CATALOG_SHORT_TEXT_MAX_LENGTH = 200;
+const CATALOG_LONG_TEXT_MAX_LENGTH = 2000;
+
+const catalogTextFieldLimits = {
+  name: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  owning_mda_id: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  sector: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  description: CATALOG_LONG_TEXT_MAX_LENGTH,
+  lifecycle_status: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  sensitivity_level: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  required_approval_level: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  contact_office: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  technical_owner: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  personal_data_categories: CATALOG_LONG_TEXT_MAX_LENGTH,
+  purpose_limitation: CATALOG_LONG_TEXT_MAX_LENGTH,
+  data_minimization_note: CATALOG_LONG_TEXT_MAX_LENGTH,
+  retention_class: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  statutory_basis: CATALOG_LONG_TEXT_MAX_LENGTH,
+  security_classification: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  sla_target: CATALOG_SHORT_TEXT_MAX_LENGTH,
+  compliance_status: CATALOG_SHORT_TEXT_MAX_LENGTH,
+} as const;
+
+type CatalogTextField = keyof typeof catalogTextFieldLimits;
+type CatalogTextInput = Partial<Record<CatalogTextField, string | null>>;
+type CatalogMetadataValidation =
+  | { ok: true; value: CatalogTextInput }
+  | { ok: false; message: string };
+
+const catalogMetadataFields = Object.keys(catalogTextFieldLimits) as CatalogTextField[];
+
+function validateCatalogMetadataInput(
+  body: any,
+  fields: readonly CatalogTextField[],
+  requiredFields: readonly CatalogTextField[] = [],
+): CatalogMetadataValidation {
+  const sanitized: CatalogTextInput = {};
+  const required = new Set(requiredFields);
+
+  for (const field of fields) {
+    const hasField = Object.prototype.hasOwnProperty.call(body || {}, field);
+    if (!hasField) {
+      if (required.has(field)) return { ok: false, message: `${field} is required.` };
+      continue;
+    }
+
+    const value = body[field];
+    if (value === null || value === undefined) {
+      if (required.has(field)) return { ok: false, message: `${field} is required.` };
+      sanitized[field] = null;
+      continue;
+    }
+    if (typeof value !== 'string') {
+      return { ok: false, message: `${field} must be a string.` };
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed && required.has(field)) {
+      return { ok: false, message: `${field} is required.` };
+    }
+    if (trimmed.length > catalogTextFieldLimits[field]) {
+      return { ok: false, message: `${field} must be ${catalogTextFieldLimits[field]} characters or fewer.` };
+    }
+    sanitized[field] = trimmed;
+  }
+
+  return { ok: true, value: sanitized };
+}
+
+function resolveCatalogPatchValue(patch: CatalogTextInput, field: CatalogTextField, existingValue: unknown) {
+  if (!Object.prototype.hasOwnProperty.call(patch, field)) return existingValue;
+  return patch[field] ?? existingValue;
+}
+
 async function mdaExists(db: DbClient, mdaId: string) {
   return Boolean(await one(db, 'SELECT id FROM mdas WHERE id = $1', [mdaId]));
+}
+
+async function ensureCatalogRegistrationActorCurrent(db: DbClient, user: AuthUser, owningMdaId: string) {
+  if (user.role !== 'admin' && user.role !== 'api_owner') {
+    throw catalogRegistrationStaleError();
+  }
+  const currentActor = await one(db, `
+    SELECT id
+    FROM users
+    WHERE id = $1
+      AND status = 'APPROVED'
+      AND role = $2
+      AND ($3 = TRUE OR mda_id = $4)
+    FOR UPDATE
+  `, [user.id, user.role, user.role === 'admin', owningMdaId]);
+  if (!currentActor) {
+    throw catalogRegistrationStaleError();
+  }
 }
 
 export function catalogRouter(db: Db) {
@@ -64,16 +168,17 @@ export function catalogRouter(db: Db) {
 
   router.get('/:id/spec', optionalAuth(db), async (req, res) => {
     try {
-      const requestedVersion = typeof req.query.version === 'string' ? req.query.version : null;
-      const spec = requestedVersion
-        ? await getVersionSpecForApi(db, String(req.params.id), requestedVersion)
-        : await getCurrentSpecForApi(db, String(req.params.id));
-      if (!spec) {
-        return res.status(404).json({ error: 'API spec not found' });
-      }
-      const decision = await canDownloadOpenApiAsset(db, req.user, spec.openapi_spec_path);
+      const apiId = String(req.params.id);
+      const decision = await canViewApiDocs(db, req.user, apiId);
       if (decision.allowed === false) {
         return res.status(statusForDocsDecision(decision.code)).json({ error: decision.message, code: decision.code });
+      }
+      const requestedVersion = typeof req.query.version === 'string' ? req.query.version : null;
+      const spec = requestedVersion
+        ? await getVersionSpecForApi(db, apiId, requestedVersion)
+        : await getCurrentSpecForApi(db, apiId);
+      if (!spec) {
+        return res.status(404).json({ error: 'API spec not found' });
       }
 
       res.json(yaml.load(spec.openapi_spec_text));
@@ -84,30 +189,19 @@ export function catalogRouter(db: Db) {
   });
 
   router.patch('/:id', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(req.params.id)), async (req, res) => {
-    const {
-      name,
-      owning_mda_id,
-      sector,
-      description,
-      lifecycle_status,
-      sensitivity_level,
-      sandbox_available,
-      openapi_spec,
-      required_approval_level,
-      contact_office,
-      technical_owner,
-      personal_data_categories,
-      purpose_limitation,
-      data_minimization_note,
-      retention_class,
-      statutory_basis,
-      security_classification,
-      sla_target,
-      compliance_status,
-      docs_visibility,
-    } = req.body;
-
     try {
+      const requiredPatchFields: CatalogTextField[] = [];
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'name')) requiredPatchFields.push('name');
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'owning_mda_id')) requiredPatchFields.push('owning_mda_id');
+      const patchValidation = validateCatalogMetadataInput(req.body, catalogMetadataFields, requiredPatchFields);
+      if (patchValidation.ok === false) {
+        return res.status(400).json({ error: patchValidation.message, code: 'INVALID_CATALOG_METADATA' });
+      }
+      const patch = patchValidation.value;
+      const openapi_spec = req.body?.openapi_spec;
+      const sandbox_available = req.body?.sandbox_available;
+      const docs_visibility = req.body?.docs_visibility;
+
       const existing = await one(db, 'SELECT * FROM apis WHERE id = $1', [req.params.id]) as any;
       if (!existing) {
         return res.status(404).json({ error: 'API not found' });
@@ -117,11 +211,14 @@ export function catalogRouter(db: Db) {
         if (ownerTransferDecision.allowed === false) {
           return res.status(403).json({ error: ownerTransferDecision.message, code: ownerTransferDecision.code });
         }
-        if (typeof owning_mda_id !== 'string' || !(await mdaExists(db, owning_mda_id))) {
+        if (!(await mdaExists(db, patch.owning_mda_id!))) {
           return res.status(400).json({ error: 'owning_mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
         }
       }
       const hasDocsVisibilityPatch = Object.prototype.hasOwnProperty.call(req.body, 'docs_visibility');
+      if (hasDocsVisibilityPatch && docs_visibility !== null && docs_visibility !== undefined && docs_visibility !== '' && typeof docs_visibility !== 'string') {
+        return res.status(400).json({ error: 'docs_visibility must be public, authenticated, or restricted.', code: 'INVALID_CATALOG_METADATA' });
+      }
       const normalizedDocsVisibility = typeof docs_visibility === 'string' && docs_visibility.trim()
         ? docs_visibility.trim().toLowerCase()
         : null;
@@ -154,17 +251,34 @@ export function catalogRouter(db: Db) {
       }
 
       const transaction = db.transaction(async client => {
+        const nextName = resolveCatalogPatchValue(patch, 'name', existing.name);
+        const nextOwningMdaId = resolveCatalogPatchValue(patch, 'owning_mda_id', existing.owning_mda_id);
+        const nextSector = resolveCatalogPatchValue(patch, 'sector', existing.sector);
+        const nextDescription = resolveCatalogPatchValue(patch, 'description', existing.description);
+        const nextLifecycleStatus = resolveCatalogPatchValue(patch, 'lifecycle_status', existing.lifecycle_status);
+        const nextSensitivityLevel = resolveCatalogPatchValue(patch, 'sensitivity_level', existing.sensitivity_level);
+        const nextRequiredApprovalLevel = resolveCatalogPatchValue(patch, 'required_approval_level', existing.required_approval_level);
+        const nextContactOffice = resolveCatalogPatchValue(patch, 'contact_office', existing.contact_office);
+        const nextTechnicalOwner = resolveCatalogPatchValue(patch, 'technical_owner', existing.technical_owner);
+        const nextPersonalDataCategories = resolveCatalogPatchValue(patch, 'personal_data_categories', existing.personal_data_categories);
+        const nextPurposeLimitation = resolveCatalogPatchValue(patch, 'purpose_limitation', existing.purpose_limitation);
+        const nextDataMinimizationNote = resolveCatalogPatchValue(patch, 'data_minimization_note', existing.data_minimization_note);
+        const nextRetentionClass = resolveCatalogPatchValue(patch, 'retention_class', existing.retention_class);
+        const nextStatutoryBasis = resolveCatalogPatchValue(patch, 'statutory_basis', existing.statutory_basis);
+        const nextSecurityClassification = resolveCatalogPatchValue(patch, 'security_classification', existing.security_classification);
+        const nextSlaTarget = resolveCatalogPatchValue(patch, 'sla_target', existing.sla_target);
+        const nextComplianceStatus = resolveCatalogPatchValue(patch, 'compliance_status', existing.compliance_status);
         const trackedFields: Array<[string, unknown, unknown]> = [
-          ['name', existing.name, name ?? existing.name],
-          ['owning_mda_id', existing.owning_mda_id, owning_mda_id ?? existing.owning_mda_id],
-          ['sector', existing.sector, sector ?? existing.sector],
-          ['lifecycle_status', existing.lifecycle_status, lifecycle_status ?? existing.lifecycle_status],
-          ['sensitivity_level', existing.sensitivity_level, sensitivity_level ?? existing.sensitivity_level],
+          ['name', existing.name, nextName],
+          ['owning_mda_id', existing.owning_mda_id, nextOwningMdaId],
+          ['sector', existing.sector, nextSector],
+          ['lifecycle_status', existing.lifecycle_status, nextLifecycleStatus],
+          ['sensitivity_level', existing.sensitivity_level, nextSensitivityLevel],
           ['sandbox_available', Boolean(existing.sandbox_available), typeof sandbox_available === 'boolean' ? sandbox_available : Boolean(existing.sandbox_available)],
-          ['required_approval_level', existing.required_approval_level, required_approval_level ?? existing.required_approval_level],
-          ['security_classification', existing.security_classification, security_classification ?? existing.security_classification],
+          ['required_approval_level', existing.required_approval_level, nextRequiredApprovalLevel],
+          ['security_classification', existing.security_classification, nextSecurityClassification],
           ['docs_visibility', existing.docs_visibility, hasDocsVisibilityPatch ? normalizedDocsVisibility : existing.docs_visibility],
-          ['compliance_status', existing.compliance_status, compliance_status ?? existing.compliance_status],
+          ['compliance_status', existing.compliance_status, nextComplianceStatus],
         ];
         const changedFields: Record<string, { from: unknown; to: unknown }> = {};
         for (const [field, from, to] of trackedFields) {
@@ -173,30 +287,36 @@ export function catalogRouter(db: Db) {
           }
         }
 
-        await run(client, UPDATE_API_SQL, [
-          name ?? existing.name,
-          owning_mda_id ?? existing.owning_mda_id,
-          sector ?? existing.sector,
-          description ?? existing.description,
-          lifecycle_status ?? existing.lifecycle_status,
-          sensitivity_level ?? existing.sensitivity_level,
+        const guardedUpdateSql = `${UPDATE_API_SQL.trim()} AND ($23 = TRUE OR owning_mda_id = $24)`;
+        const apiUpdate = await run(client, guardedUpdateSql, [
+          nextName,
+          nextOwningMdaId,
+          nextSector,
+          nextDescription,
+          nextLifecycleStatus,
+          nextSensitivityLevel,
           typeof sandbox_available === 'boolean' ? sandbox_available : existing.sandbox_available,
           specPath,
           specText,
-          required_approval_level ?? existing.required_approval_level,
-          contact_office ?? existing.contact_office,
-          technical_owner ?? existing.technical_owner,
-          personal_data_categories ?? existing.personal_data_categories,
-          purpose_limitation ?? existing.purpose_limitation,
-          data_minimization_note ?? existing.data_minimization_note,
-          retention_class ?? existing.retention_class,
-          statutory_basis ?? existing.statutory_basis,
-          security_classification ?? existing.security_classification,
-          sla_target ?? existing.sla_target,
-          compliance_status ?? existing.compliance_status,
+          nextRequiredApprovalLevel,
+          nextContactOffice,
+          nextTechnicalOwner,
+          nextPersonalDataCategories,
+          nextPurposeLimitation,
+          nextDataMinimizationNote,
+          nextRetentionClass,
+          nextStatutoryBasis,
+          nextSecurityClassification,
+          nextSlaTarget,
+          nextComplianceStatus,
           hasDocsVisibilityPatch ? normalizedDocsVisibility : existing.docs_visibility,
           req.params.id,
+          req.user!.role === 'admin',
+          req.user!.mda_id,
         ]);
+        if (apiUpdate.changes !== 1) {
+          throw catalogUpdateStaleError();
+        }
 
         if (versionPatch) {
           const currentVersion = await one(client, 'SELECT id FROM api_versions WHERE id = $1', [versionPatch.versionId]);
@@ -243,15 +363,18 @@ export function catalogRouter(db: Db) {
         `, [
           generatePublicId('audit'),
           'API_UPDATED',
-          owning_mda_id ?? existing.owning_mda_id,
+          nextOwningMdaId,
           req.params.id,
-          JSON.stringify({ api_name: name ?? existing.name, spec_updated: Boolean(versionPatch), changed_fields: changedFields }),
+          JSON.stringify({ api_name: nextName, spec_updated: Boolean(versionPatch), changed_fields: changedFields }),
         ]);
       });
 
       await transaction;
       res.json({ success: true, apiId: req.params.id });
     } catch (err: any) {
+      if (err?.code === 'API_UPDATE_STALE') {
+        return res.status(409).json({ error: err.message, code: err.code });
+      }
       console.error('[api update]', err);
       if (isOpenApiValidationError(err)) {
         return res.status(400).json({ error: err.message });
@@ -293,6 +416,13 @@ export function catalogRouter(db: Db) {
 
   router.post('/validate-spec', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
     const { specText, specUrl } = req.body;
+    if (specText !== undefined && specText !== null && specText !== '' && typeof specText !== 'string') {
+      return res.status(400).json({ valid: false, error: 'specText must be a string.' });
+    }
+    if (specUrl !== undefined && specUrl !== null && specUrl !== '' && typeof specUrl !== 'string') {
+      return res.status(400).json({ valid: false, error: 'specUrl must be a string.' });
+    }
+
     try {
       let content = specText || '';
       if (specUrl) {
@@ -330,30 +460,18 @@ export function catalogRouter(db: Db) {
   });
 
   router.post('/', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
-    const {
-      name,
-      owning_mda_id,
-      sector,
-      description,
-      lifecycle_status,
-      sensitivity_level,
-      sandbox_available,
-      required_approval_level,
-      contact_office,
-      technical_owner,
-      personal_data_categories,
-      purpose_limitation,
-      data_minimization_note,
-      retention_class,
-      statutory_basis,
-      security_classification,
-      sla_target,
-      compliance_status,
-    } = req.body;
-
-    if (!name || !owning_mda_id) {
-      return res.status(400).json({ error: 'Missing mandatory fields: name and owning_mda_id are required.' });
+    const metadataValidation = validateCatalogMetadataInput(req.body, catalogMetadataFields, ['name', 'owning_mda_id']);
+    if (metadataValidation.ok === false) {
+      return res.status(400).json({ error: metadataValidation.message, code: 'INVALID_CATALOG_METADATA' });
     }
+    const catalogMetadata = metadataValidation.value;
+    const name = catalogMetadata.name!;
+    const owning_mda_id = catalogMetadata.owning_mda_id!;
+    const sandboxAvailable = req.body?.sandbox_available;
+    if (sandboxAvailable !== undefined && sandboxAvailable !== null && typeof sandboxAvailable !== 'boolean') {
+      return res.status(400).json({ error: 'sandbox_available must be a boolean.', code: 'INVALID_CATALOG_METADATA' });
+    }
+
     if (!(await mdaExists(db, owning_mda_id))) {
       return res.status(400).json({ error: 'owning_mda_id must reference an existing MDA.', code: 'MDA_NOT_FOUND' });
     }
@@ -367,9 +485,11 @@ export function catalogRouter(db: Db) {
 
     try {
       const openapiSpec = await resolveCatalogSpecInput(req.body, fetchSpecFromUrl);
-      const metadata = parseSpecMetadata(openapiSpec);
+      const specMetadata = parseSpecMetadata(openapiSpec);
 
       const transaction = db.transaction(async client => {
+        await ensureCatalogRegistrationActorCurrent(client, req.user!, owning_mda_id);
+
         await run(client, `
           INSERT INTO apis (
             id, name, owning_mda_id, sector, description, lifecycle_status,
@@ -381,27 +501,27 @@ export function catalogRouter(db: Db) {
           id,
           name,
           owning_mda_id,
-          sector || 'General',
-          description || '',
-          lifecycle_status || 'Draft',
-          sensitivity_level || 'Medium',
-          Boolean(sandbox_available),
+          catalogMetadata.sector || 'General',
+          catalogMetadata.description || '',
+          catalogMetadata.lifecycle_status || 'Draft',
+          catalogMetadata.sensitivity_level || 'Medium',
+          sandboxAvailable === true,
           relativeSpecPath,
           openapiSpec,
-          required_approval_level || 'General Public',
-          contact_office || 'info@govhub.go.ug',
-          technical_owner || 'GovHub Systems',
-          personal_data_categories || '',
-          purpose_limitation || '',
-          data_minimization_note || '',
-          retention_class || 'Default',
-          statutory_basis || 'None',
-          security_classification || 'Official',
-          sla_target || '99.5%',
-          compliance_status || 'Draft',
+          catalogMetadata.required_approval_level || 'General Public',
+          catalogMetadata.contact_office || 'info@govhub.go.ug',
+          catalogMetadata.technical_owner || 'GovHub Systems',
+          catalogMetadata.personal_data_categories || '',
+          catalogMetadata.purpose_limitation || '',
+          catalogMetadata.data_minimization_note || '',
+          catalogMetadata.retention_class || 'Default',
+          catalogMetadata.statutory_basis || 'None',
+          catalogMetadata.security_classification || 'Official',
+          catalogMetadata.sla_target || '99.5%',
+          catalogMetadata.compliance_status || 'Draft',
         ]);
 
-        const versionId = `${id}-${slugifyVersion(metadata.version)}`;
+        const versionId = `${id}-${slugifyVersion(specMetadata.version)}`;
         await run(client, `
           INSERT INTO api_versions (
             id, api_id, version, openapi_spec_path, openapi_spec_text, spec_sha, endpoints_count,
@@ -410,12 +530,12 @@ export function catalogRouter(db: Db) {
         `, [
           versionId,
           id,
-          metadata.version,
+          specMetadata.version,
           relativeSpecPath,
           openapiSpec,
           getSpecSha(openapiSpec),
-          metadata.endpointsCount,
-          metadata.openapiVersion,
+          specMetadata.endpointsCount,
+          specMetadata.openapiVersion,
           'Published',
           true,
           'Initial registry version',
@@ -434,8 +554,8 @@ export function catalogRouter(db: Db) {
             api_name: name,
             registered_by_role: req.user?.role || 'unknown',
             registered_by_user_id: req.user?.id || null,
-            sector,
-            sensitivity_level,
+            sector: catalogMetadata.sector || 'General',
+            sensitivity_level: catalogMetadata.sensitivity_level || 'Medium',
           }),
         ]);
       });
@@ -443,13 +563,16 @@ export function catalogRouter(db: Db) {
 
       res.status(201).json({ success: true, apiId: id });
     } catch (err: any) {
-      console.error('[api register]', err);
+      if (err?.code === 'API_REGISTRATION_STALE') {
+        return res.status(409).json({ error: err.message, code: err.code });
+      }
       if (err?.code === 'SPEC_INPUT_REQUIRED' || err?.code === 'SPEC_URL_FETCH_FAILED') {
         return res.status(400).json({ error: err.message });
       }
       if (isOpenApiValidationError(err)) {
         return res.status(400).json({ error: err.message });
       }
+      console.error('[api register]', err);
       res.status(500).json({ error: 'Failed to register API. Please try again.' });
     }
   });

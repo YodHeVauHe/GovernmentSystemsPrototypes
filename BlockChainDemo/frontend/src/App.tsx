@@ -3,6 +3,7 @@ import { AppShell } from "@/components/layout/AppShell"
 import type { ConceptPage } from "@/components/layout/ConceptNav"
 import { BlockchainPage } from "@/pages/BlockchainPage"
 import { BlockPage } from "@/pages/BlockPage"
+import { CashflowPage } from "@/pages/CashflowPage"
 import { DistributedPage } from "@/pages/DistributedPage"
 import { HashPage } from "@/pages/HashPage"
 import { LandTitleUseCasePage } from "@/pages/LandTitleUseCasePage"
@@ -24,6 +25,8 @@ function renderConceptPage(page: ConceptPage) {
       return <TokensPage />
     case "land-title":
       return <LandTitleUseCasePage />
+    case "cashflow":
+      return <CashflowPage />
   }
 }
 

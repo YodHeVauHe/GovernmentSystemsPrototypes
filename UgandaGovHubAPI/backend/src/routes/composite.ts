@@ -1,15 +1,28 @@
 import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
+import { optionalSandboxString, requiredSandboxString } from '../sandbox-input';
 
 export const compositeRouter = Router();
 
 // POST /api/v1/service-uganda/eligibility-check
 compositeRouter.post('/eligibility-check', (req, res) => {
-  const { nin, tin, permit_number } = req.body;
+  const { nin: rawNin, tin: rawTin, permit_number: rawPermitNumber } = req.body || {};
 
-  if (!nin || !tin) {
-    return sendSandboxError(res, 'MISSING_PARAMS', 'Both "nin" and "tin" are required for eligibility checks.');
+  const ninInput = requiredSandboxString(rawNin, 'nin', 'MISSING_PARAMS', 'Both "nin" and "tin" are required for eligibility checks.');
+  if (!ninInput.ok) {
+    return sendSandboxError(res, ninInput.code, ninInput.message);
   }
+  const tinInput = requiredSandboxString(rawTin, 'tin', 'MISSING_PARAMS', 'Both "nin" and "tin" are required for eligibility checks.');
+  if (!tinInput.ok) {
+    return sendSandboxError(res, tinInput.code, tinInput.message);
+  }
+  const permitInput = optionalSandboxString(rawPermitNumber, 'permit_number', 'INVALID_PERMIT_NUMBER');
+  if (!permitInput.ok) {
+    return sendSandboxError(res, permitInput.code, permitInput.message);
+  }
+  const nin = ninInput.value;
+  const tin = tinInput.value;
+  const permitNumber = permitInput.value;
 
   // 1. Identity Check Mock
   let identityStatus = 'PARTIAL_MATCH';
@@ -41,8 +54,8 @@ compositeRouter.post('/eligibility-check', (req, res) => {
   let permitRemarks: string | null = null;
   let permitEligible = true;
 
-  if (permit_number) {
-    const pNum = permit_number.toLowerCase();
+  if (permitNumber) {
+    const pNum = permitNumber.toLowerCase();
     if (pNum.endsWith('susp')) {
       permitStatus = 'SUSPENDED';
       permitRemarks = 'Driving permit is suspended.';

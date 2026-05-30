@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
+import { requiredSandboxString } from '../sandbox-input';
 
 export const drivingPermitRouter = Router();
 
@@ -42,13 +43,20 @@ drivingPermitRouter.get('/status/:permitNumber', (req, res) => {
 
 // POST /api/v1/transport/driving-permit/verify
 drivingPermitRouter.post('/verify', (req, res) => {
-  const { permit_number, surname, class: permitClass } = req.body;
+  const { permit_number: rawPermitNumber } = req.body || {};
 
-  if (!permit_number) {
-    return sendSandboxError(res, 'MISSING_PERMIT_NUMBER', 'The "permit_number" field is required.');
+  const permitInput = requiredSandboxString(
+    rawPermitNumber,
+    'permit_number',
+    'MISSING_PERMIT_NUMBER',
+    'The "permit_number" field is required.',
+    'INVALID_PERMIT_NUMBER',
+  );
+  if (!permitInput.ok) {
+    return sendSandboxError(res, permitInput.code, permitInput.message);
   }
 
-  const pNum = permit_number.toLowerCase();
+  const pNum = permitInput.value.toLowerCase();
 
   if (pNum === 'wp30219' || pNum.endsWith('valid') || pNum.startsWith('wp')) {
     return res.json({

@@ -1,6 +1,7 @@
 import type { AuthUser } from './auth';
 import type { DbClient } from './db';
 import { exec, hasColumn, many, one } from './db';
+import { getSpecByPath } from './openapi-store';
 
 export type DocsVisibility = 'public' | 'authenticated' | 'restricted';
 
@@ -47,6 +48,7 @@ async function hasApprovedConsumerAccess(db: DbClient, user: DocsAccessUser, api
           AND status = 'APPROVED'
           AND (api_key_hash IS NOT NULL OR api_key IS NOT NULL)
           AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
+          AND api_key_revoked_at IS NULL
           AND (api_key_expires_at IS NULL OR api_key_expires_at > $3)
         LIMIT 1
       `, [user.mda_id, apiId, now])
@@ -60,6 +62,7 @@ async function hasApprovedConsumerAccess(db: DbClient, user: DocsAccessUser, api
         AND status = 'APPROVED'
         AND (api_key_hash IS NOT NULL OR api_key IS NOT NULL)
         AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
+        AND api_key_revoked_at IS NULL
         AND (api_key_expires_at IS NULL OR api_key_expires_at > $3)
       LIMIT 1
     `, [user.id, apiId, now])
@@ -105,30 +108,12 @@ export async function canViewApiDocs(db: DbClient, user: DocsAccessUser | null |
   };
 }
 
-function normalizedOpenApiPath(assetPath: string) {
-  const normalized = assetPath.startsWith('/openapi/') ? assetPath : `/openapi/${assetPath.replace(/^\/+/, '')}`;
-  if (!normalized.startsWith('/openapi/') || normalized.includes('..')) return null;
-  return normalized;
-}
-
 export async function canDownloadOpenApiAsset(db: DbClient, user: DocsAccessUser | null | undefined, assetPath: string): Promise<DocsDecision> {
-  const openapiPath = normalizedOpenApiPath(assetPath);
-  if (!openapiPath) {
+  const spec = await getSpecByPath(db, assetPath);
+  if (!spec) {
     return { allowed: false, code: 'NOT_FOUND', message: 'API documentation was not found.' };
   }
-
-  let api: { id: string } | undefined = await one<{ id: string }>(db, 'SELECT id FROM apis WHERE openapi_spec_path = $1', [openapiPath]);
-  if (!api) {
-    try {
-      api = await one<{ id: string }>(db, 'SELECT api_id as id FROM api_versions WHERE openapi_spec_path = $1', [openapiPath]);
-    } catch {
-      api = undefined as { id: string } | undefined;
-    }
-  }
-  if (!api) {
-    return { allowed: false, code: 'NOT_FOUND', message: 'API documentation was not found.' };
-  }
-  return canViewApiDocs(db, user, api.id);
+  return canViewApiDocs(db, user, spec.api_id);
 }
 
 export type DocsApiListItem = ApiVisibilityRow & Record<string, unknown> & { docs_visibility: DocsVisibility };

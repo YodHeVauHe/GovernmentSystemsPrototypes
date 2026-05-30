@@ -11,6 +11,7 @@ import {
   hasActiveApprovedApiKey,
   hasPendingOneTimeApiKeyReveal,
   isMatrixChannelActive,
+  formatAuditLogDetails,
   readDashboardViewModePreference,
   writeDashboardViewModePreference,
 } from './view-helpers.ts';
@@ -55,12 +56,19 @@ assert.equal(getAuditEventTone('SANDBOX_CALL_DENIED'), 'denied');
 assert.equal(getAuditEventTone('SANDBOX_CALL_ALLOWED'), 'allowed');
 assert.equal(getAuditEventTone('ACCESS_APPROVED'), 'neutral');
 
+assert.equal(formatAuditLogDetails('{"path":"/api/v1/status","status":200}'), '{\n  "path": "/api/v1/status",\n  "status": 200\n}');
+assert.equal(formatAuditLogDetails('{not-json'), '{not-json');
+assert.equal(formatAuditLogDetails(null), '{}');
+assert.equal(formatAuditLogDetails({ method: 'GET', status: 403 }), '{\n  "method": "GET",\n  "status": 403\n}');
+
 assert.equal(getRequestStatusLabel({ status: 'PENDING' }), 'PENDING');
 assert.equal(getRequestStatusLabel({ status: 'APPROVED', api_key_status: 'ACTIVE' }), 'ACTIVE');
 assert.equal(getRequestStatusLabel({ status: 'APPROVED', api_key_status: 'REVOKED' }), 'REVOKED');
+assert.equal(getRequestStatusLabel({ status: 'APPROVED', api_key_status: 'ACTIVE', api_key_revoked_at: '2026-05-22T10:00:00.000Z' }), 'REVOKED');
 
 assert.equal(hasActiveApprovedApiKey({ status: 'APPROVED', api_key_preview: 'ghk_1234...', api_key_status: 'ACTIVE' }), true);
 assert.equal(hasActiveApprovedApiKey({ status: 'APPROVED', api_key_preview: 'ghk_1234...', api_key_status: 'REVOKED' }), false);
+assert.equal(hasActiveApprovedApiKey({ status: 'APPROVED', api_key_preview: 'ghk_1234...', api_key_status: 'ACTIVE', api_key_revoked_at: '2026-05-22T10:00:00.000Z' }), false);
 assert.equal(hasActiveApprovedApiKey({ status: 'PENDING', api_key_preview: 'ghk_1234...', api_key_status: 'ACTIVE' }), false);
 
 assert.equal(hasPendingOneTimeApiKeyReveal({ status: 'APPROVED', api_key_preview: 'ghk_1234...', api_key_status: 'ACTIVE', api_key_pending_reveal: true }), true);
@@ -73,6 +81,7 @@ assert.equal(canCopyOneTimeApiKey('ghk_full_key', true), false);
 assert.equal(canCopyOneTimeApiKey('', false), false);
 
 assert.equal(canViewAuditLogsTab('developer', [{ status: 'APPROVED', api_key_preview: 'ghk_1234...', api_key_status: 'ACTIVE' }]), true);
+assert.equal(canViewAuditLogsTab('developer', [{ status: 'APPROVED', api_key_preview: 'ghk_1234...', api_key_status: 'ACTIVE', api_key_revoked_at: '2026-05-22T10:00:00.000Z' }]), false);
 assert.equal(canViewAuditLogsTab('developer', [{ status: 'PENDING', api_key_preview: null }]), false);
 assert.equal(canViewAuditLogsTab('reviewer', []), true);
 assert.equal(canViewAuditLogsTab('admin', []), true);

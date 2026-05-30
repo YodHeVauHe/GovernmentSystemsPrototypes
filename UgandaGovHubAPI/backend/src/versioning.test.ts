@@ -33,7 +33,7 @@ async function main() {
   );
   assert.throws(
     () => validateOpenApiSpec('openapi: 3.0.3\ninfo:\n  version: 1.0.0\npaths: {}'),
-    /missing "info.title"/
+    /"info.title" must be a non-empty string/
   );
 
   assert.equal(computeVersionStatus({ currentSha: 'abc', versionSha: 'abc' }), 'current');

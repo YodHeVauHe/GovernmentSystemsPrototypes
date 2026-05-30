@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
+import { requiredSandboxString } from '../sandbox-input';
 
 export const businessRouter = Router();
 
@@ -30,11 +31,18 @@ businessRouter.get('/registration/:brn', (req, res) => {
 
 // POST /api/v1/business/beneficial-ownership/verify
 businessRouter.post('/beneficial-ownership/verify', (req, res) => {
-  const { brn, nin } = req.body;
+  const { brn: rawBrn, nin: rawNin } = req.body || {};
 
-  if (!brn || !nin) {
-    return sendSandboxError(res, 'MISSING_PARAMS', 'Both "brn" and "nin" are required to verify ownership.');
+  const brnInput = requiredSandboxString(rawBrn, 'brn', 'MISSING_PARAMS', 'Both "brn" and "nin" are required to verify ownership.');
+  if (!brnInput.ok) {
+    return sendSandboxError(res, brnInput.code, brnInput.message);
   }
+  const ninInput = requiredSandboxString(rawNin, 'nin', 'MISSING_PARAMS', 'Both "brn" and "nin" are required to verify ownership.');
+  if (!ninInput.ok) {
+    return sendSandboxError(res, ninInput.code, ninInput.message);
+  }
+  const brn = brnInput.value;
+  const nin = ninInput.value;
 
   if (brn === 'BRN12345' && nin === 'CM99021234567X') {
     return res.json({

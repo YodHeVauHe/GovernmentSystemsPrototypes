@@ -12,6 +12,7 @@ type TurnstileAction = 'app_load' | 'login' | 'signup';
 interface SiteverifyResponse {
   success?: boolean;
   action?: string;
+  hostname?: string;
   'error-codes'?: string[];
 }
 
@@ -35,6 +36,13 @@ interface ValidateTurnstileTokenInput {
 
 export function configuredTurnstileSecret() {
   return process.env.GOVHUB_TURNSTILE_SECRET_KEY || process.env.TURNSTILE_SECRET_KEY || null;
+}
+
+function configuredTurnstileAllowedHostnames() {
+  return (process.env.GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES || '')
+    .split(',')
+    .map(hostname => hostname.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export async function validateTurnstileToken({
@@ -106,12 +114,24 @@ export async function validateTurnstileToken({
     };
   }
 
-  if (!CLOUDFLARE_TEST_SECRET_KEYS.has(secret) && result.action !== action) {
+  const isCloudflareTestSecret = CLOUDFLARE_TEST_SECRET_KEYS.has(secret);
+  if (!isCloudflareTestSecret && result.action !== action) {
     return {
       ok: false,
       status: 400,
       code: 'TURNSTILE_ACTION_MISMATCH',
       message: 'Human verification could not be matched to this request. Please retry the challenge.',
+    };
+  }
+
+  const allowedHostnames = configuredTurnstileAllowedHostnames();
+  const verifiedHostname = String(result.hostname || '').trim().toLowerCase();
+  if (!isCloudflareTestSecret && allowedHostnames.length && !allowedHostnames.includes(verifiedHostname)) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'TURNSTILE_HOSTNAME_MISMATCH',
+      message: 'Human verification could not be matched to this site. Please retry the challenge.',
     };
   }
 

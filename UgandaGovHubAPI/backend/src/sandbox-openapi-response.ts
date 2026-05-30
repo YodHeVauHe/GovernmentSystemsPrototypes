@@ -7,6 +7,8 @@ type OpenApiSpec = {
   components?: { schemas?: Record<string, any> };
 };
 
+const MAX_SCHEMA_EXAMPLE_DEPTH = 25;
+
 function normalizePathname(pathname: string) {
   if (!pathname || pathname === '/') return '/';
   return pathname.replace(/\/+$/, '') || '/';
@@ -72,27 +74,49 @@ function candidatePaths(serverBasePath: string, operationPath: string) {
   ];
 }
 
-function resolveSchema(spec: OpenApiSpec, schema: any): any {
-  if (!schema?.$ref || typeof schema.$ref !== 'string') return schema;
+function schemaRefName(schema: any) {
+  if (!schema?.$ref || typeof schema.$ref !== 'string') return null;
   const prefix = '#/components/schemas/';
-  if (!schema.$ref.startsWith(prefix)) return schema;
-  return spec.components?.schemas?.[schema.$ref.slice(prefix.length)] || schema;
+  return schema.$ref.startsWith(prefix) ? schema.$ref.slice(prefix.length) : null;
 }
 
-function schemaExample(spec: OpenApiSpec, schema: any): unknown {
-  const resolved = resolveSchema(spec, schema);
+function resolveSchema(spec: OpenApiSpec, schema: any, visitedRefs: Set<string>): any {
+  const refName = schemaRefName(schema);
+  if (!refName) return schema;
+  if (visitedRefs.has(refName)) return undefined;
+  visitedRefs.add(refName);
+  return spec.components?.schemas?.[refName] || schema;
+}
+
+function schemaExample(spec: OpenApiSpec, schema: any, visitedRefs = new Set<string>(), depth = 0): unknown {
+  if (depth > MAX_SCHEMA_EXAMPLE_DEPTH) return undefined;
+  const nextVisitedRefs = new Set(visitedRefs);
+  const resolved = resolveSchema(spec, schema, nextVisitedRefs);
   if (!resolved) return undefined;
   if (resolved.example !== undefined) return resolved.example;
   if (resolved.default !== undefined) return resolved.default;
   if (resolved.enum?.length) return resolved.enum[0];
-  if (resolved.type === 'array') return [schemaExample(spec, resolved.items)];
+  if (resolved.type === 'array') return [schemaExample(spec, resolved.items, nextVisitedRefs, depth + 1)];
   if (resolved.type === 'object' || resolved.properties) {
+    const entries = Object.entries(resolved.properties || {}).map(([name, childSchema]) => [
+      name,
+      schemaExample(spec, childSchema, nextVisitedRefs, depth + 1),
+    ]);
+    if (entries.some(([, value]) => value === undefined)) return undefined;
     return Object.fromEntries(
-      Object.entries(resolved.properties || {}).map(([name, childSchema]) => [
-        name,
-        schemaExample(spec, childSchema),
-      ]),
+      entries,
     );
+  }
+  if (resolved.anyOf || resolved.oneOf) {
+    return schemaExample(spec, (resolved.anyOf || resolved.oneOf)[0], nextVisitedRefs, depth + 1);
+  }
+  if (resolved.allOf) {
+    const merged = Object.assign(
+      {},
+      ...resolved.allOf.map((childSchema: any) => schemaExample(spec, childSchema, nextVisitedRefs, depth + 1))
+        .filter((value: unknown) => value && typeof value === 'object' && !Array.isArray(value)),
+    );
+    return Object.keys(merged).length ? merged : undefined;
   }
   if (resolved.type === 'boolean') return true;
   if (resolved.type === 'integer' || resolved.type === 'number') return 1;

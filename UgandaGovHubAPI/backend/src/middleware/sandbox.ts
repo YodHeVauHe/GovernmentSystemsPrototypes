@@ -5,6 +5,7 @@ import { logAuditEvent } from '../audit';
 import { consumeRateLimit } from '../rate-limit';
 import type { Db } from '../db';
 import { many, one } from '../db';
+import { positiveIntegerEnv } from '../env';
 
 async function getDynamicSandboxMappings(db: Db): Promise<SandboxApiMapping[]> {
   const rows = await many(db, 'SELECT id, sandbox_available FROM apis WHERE sandbox_available = TRUE');
@@ -15,11 +16,42 @@ async function getApiIdFromPath(db: Db, url: string): Promise<string | null> {
   return resolveSandboxApiId(url) || resolveSandboxApiId(url, await getDynamicSandboxMappings(db));
 }
 
-const SANDBOX_RATE_LIMIT = Number(process.env.GOVHUB_SANDBOX_RATE_LIMIT || 100);
-const INVALID_SANDBOX_RATE_LIMIT = Number(process.env.GOVHUB_INVALID_SANDBOX_RATE_LIMIT || 30);
+const SANDBOX_RATE_LIMIT = positiveIntegerEnv('GOVHUB_SANDBOX_RATE_LIMIT', 100);
+const INVALID_SANDBOX_RATE_LIMIT = positiveIntegerEnv('GOVHUB_INVALID_SANDBOX_RATE_LIMIT', 30);
 const SANDBOX_RATE_WINDOW_MS = 60 * 1000;
 
-const sensitiveLogKeys = new Set(['nin', 'tin', 'password', 'token', 'api_key', 'x-govhub-api-key', 'authorization', 'cookie']);
+const identifierLogKeys = new Set([
+  'nin',
+  'tin',
+  'brn',
+  'permitnumber',
+  'permitno',
+  'drivingpermitnumber',
+  'nationalidnumber',
+  'cardnumber',
+  'ursbnumber',
+]);
+const sensitiveExactLogKeys = new Set([
+  'authorization',
+  'cookie',
+  'password',
+  'passwd',
+  'apikey',
+  'xgovhubapikey',
+]);
+
+function normalizeLogKey(key: string) {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isSensitiveLogKey(key: string) {
+  const normalizedKey = normalizeLogKey(key);
+  return identifierLogKeys.has(normalizedKey)
+    || sensitiveExactLogKeys.has(normalizedKey)
+    || normalizedKey.endsWith('token')
+    || normalizedKey.endsWith('secret')
+    || (normalizedKey.length > 'key'.length && normalizedKey.endsWith('key'));
+}
 
 const sensitivePathSegmentPatterns = [
   /^\/api\/v1\/identity\/(?:status|card-status|death-status)\/[^/?#]+/,
@@ -33,14 +65,17 @@ export function redactSandboxLogValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(item => redactSandboxLogValue(item));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => {
-    const normalizedKey = key.toLowerCase();
+    const normalizedKey = normalizeLogKey(key);
     if (normalizedKey === 'nin' && typeof nestedValue === 'string') {
       return [key, nestedValue.replace(/^(.{4}).*(.{2})$/, '$1******$2')];
     }
     if (normalizedKey === 'tin' && typeof nestedValue === 'string') {
       return [key, nestedValue.replace(/^(.{2}).*(.{2})$/, '$1****$2')];
     }
-    if (sensitiveLogKeys.has(normalizedKey)) {
+    if (identifierLogKeys.has(normalizedKey)) {
+      return [key, '[REDACTED]'];
+    }
+    if (isSensitiveLogKey(key)) {
       return [key, '[REDACTED]'];
     }
     return [key, redactSandboxLogValue(nestedValue)];
@@ -63,7 +98,7 @@ export function normalizeSandboxLogPath(pathWithQuery: string) {
   if (!query) return redactedPathname;
   const params = new URLSearchParams(query);
   for (const key of Array.from(params.keys())) {
-    if (sensitiveLogKeys.has(key.toLowerCase())) {
+    if (isSensitiveLogKey(key)) {
       params.set(key, '[REDACTED]');
     }
   }
@@ -72,6 +107,31 @@ export function normalizeSandboxLogPath(pathWithQuery: string) {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type SandboxApiKeyHeader =
+  | { ok: true; apiKey: string }
+  | { ok: false; code: 'MISSING_API_KEY' | 'INVALID_API_KEY'; message: string };
+
+function parseSandboxApiKeyHeader(header: string | string[] | undefined): SandboxApiKeyHeader {
+  if (typeof header === 'string') {
+    if (header.trim().length === 0) {
+      return { ok: false, code: 'MISSING_API_KEY', message: 'The X-GovHub-API-Key header is missing.' };
+    }
+    return { ok: true, apiKey: header };
+  }
+  if (Array.isArray(header)) {
+    return { ok: false, code: 'INVALID_API_KEY', message: 'The X-GovHub-API-Key header must be a single value.' };
+  }
+  return { ok: false, code: 'MISSING_API_KEY', message: 'The X-GovHub-API-Key header is missing.' };
+}
+
+async function consumeInvalidSandboxQuota(db: Db, req: Request, res: Response) {
+  const invalidQuota = await consumeRateLimit(db, 'sandbox_invalid', req.ip || req.socket.remoteAddress || 'unknown', INVALID_SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
+  res.setHeader('X-RateLimit-Limit', String(INVALID_SANDBOX_RATE_LIMIT));
+  res.setHeader('X-RateLimit-Remaining', String(Math.max(0, invalidQuota.remaining)));
+  res.setHeader('X-RateLimit-Reset', Math.floor(invalidQuota.resetAt / 1000));
+  return invalidQuota;
+}
 
 export function sandboxMiddleware(db: Db) {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -92,19 +152,24 @@ export function sandboxMiddleware(db: Db) {
     const auditPath = normalizeSandboxLogPath(req.originalUrl);
 
     // Enforce API Key
-    const apiKey = req.headers['x-govhub-api-key'] as string;
+    const apiKeyHeader = parseSandboxApiKeyHeader(req.headers['x-govhub-api-key']);
     const apiId = await getApiIdFromPath(db, req.originalUrl);
     res.locals.sandboxApiId = apiId;
 
-    if (!apiKey) {
+    if (!apiKeyHeader.ok) {
+      const invalidQuota = await consumeInvalidSandboxQuota(db, req, res);
+      if (!invalidQuota.allowed) {
+        return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'Too many invalid sandbox API key attempts.', 429);
+      }
       await logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
-        reason: 'The X-GovHub-API-Key header is missing.',
+        reason: apiKeyHeader.message,
         path: auditPath,
         method: req.method
       });
-      return sendSandboxError(res, 'MISSING_API_KEY', 'The X-GovHub-API-Key header is missing.', 401);
+      return sendSandboxError(res, apiKeyHeader.code, apiKeyHeader.message, 401);
     }
 
+    const apiKey = apiKeyHeader.apiKey;
     const apiKeyHash = computeApiKeyHash(apiKey);
     const requestRecord = await one(db, `
       SELECT
@@ -122,10 +187,7 @@ export function sandboxMiddleware(db: Db) {
     `, [apiKeyHash]);
     const accessDecision = computeApiKeyAccess(requestRecord, apiId);
     if (!requestRecord) {
-      const invalidQuota = await consumeRateLimit(db, 'sandbox_invalid', req.ip || req.socket.remoteAddress || 'unknown', INVALID_SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
-      res.setHeader('X-RateLimit-Limit', String(INVALID_SANDBOX_RATE_LIMIT));
-      res.setHeader('X-RateLimit-Remaining', String(Math.max(0, invalidQuota.remaining)));
-      res.setHeader('X-RateLimit-Reset', Math.floor(invalidQuota.resetAt / 1000));
+      const invalidQuota = await consumeInvalidSandboxQuota(db, req, res);
       if (!invalidQuota.allowed) {
         return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'Too many invalid sandbox API key attempts.', 429);
       }
@@ -182,4 +244,13 @@ export function sendSandboxError(res: Response, code: string, message: string, s
       timestamp: new Date().toISOString()
     }
   });
+}
+
+export function sandboxNotFoundHandler(_req: Request, res: Response) {
+  return sendSandboxError(
+    res,
+    'SANDBOX_ENDPOINT_NOT_FOUND',
+    'The requested sandbox endpoint is not implemented for this API.',
+    404,
+  );
 }

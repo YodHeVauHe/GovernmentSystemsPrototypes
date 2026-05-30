@@ -12,6 +12,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 async function run() {
+  const originalAllowedHostnames = process.env.GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES;
   let capturedBody: any = null;
   const fetchImpl: typeof fetch = async (input, init) => {
     capturedBody = JSON.parse(String(init?.body || '{}'));
@@ -73,6 +74,25 @@ async function run() {
   assert.equal(missingAction.ok, false);
   assert.equal(missingAction.status, 400);
   assert.equal(missingAction.code, 'TURNSTILE_ACTION_MISMATCH');
+
+  process.env.GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES = 'govhub.go.ug,localhost';
+  try {
+    const hostnameMismatch = await validateTurnstileToken({
+      token: 'valid-turnstile-token',
+      action: 'login',
+      secret: 'secret-key',
+      fetchImpl: async () => jsonResponse({ success: true, action: 'login', hostname: 'evil.example' }),
+    });
+    assert.equal(hostnameMismatch.ok, false);
+    assert.equal(hostnameMismatch.status, 400);
+    assert.equal(hostnameMismatch.code, 'TURNSTILE_HOSTNAME_MISMATCH');
+  } finally {
+    if (originalAllowedHostnames === undefined) {
+      delete process.env.GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES;
+    } else {
+      process.env.GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES = originalAllowedHostnames;
+    }
+  }
 
   const testSecretAction = await validateTurnstileToken({
     token: 'dummy-turnstile-token',

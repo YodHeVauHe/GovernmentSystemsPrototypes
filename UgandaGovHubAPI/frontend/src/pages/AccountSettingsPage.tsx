@@ -149,10 +149,15 @@ export function AccountSettingsPage() {
 
   const startMfaSetup = () => {
     setMfaBusy(true);
-    accountRequest<MfaSetupResponse>('/api/auth/mfa/setup', { method: 'POST' })
+    accountRequest<MfaSetupResponse>('/api/auth/mfa/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: mfaPassword }),
+    })
       .then(body => {
         setMfaSetup(body);
         setMfaCode('');
+        setMfaPassword('');
       })
       .catch(error => toast.error('MFA setup failed', { description: error.message }))
       .finally(() => setMfaBusy(false));

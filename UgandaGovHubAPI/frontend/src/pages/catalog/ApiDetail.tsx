@@ -145,6 +145,7 @@ export function ApiDetail() {
     request.status === 'APPROVED' &&
     request.api_key_preview &&
     (request.api_key_status || 'ACTIVE') === 'ACTIVE' &&
+    !request.api_key_revoked_at &&
     (!request.api_key_expires_at || new Date(request.api_key_expires_at).getTime() > Date.now())
   );
   const canViewSensitiveApi = !isHighSensitivityApi || role === 'admin' || role === 'reviewer' || canManageCurrentApi || hasActiveApprovedAccess;

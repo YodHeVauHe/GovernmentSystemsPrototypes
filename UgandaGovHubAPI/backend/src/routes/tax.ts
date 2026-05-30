@@ -1,16 +1,19 @@
 import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
 import { generatePublicId } from '../ids';
+import { requiredSandboxString } from '../sandbox-input';
 
 export const taxRouter = Router();
 
 // POST /api/v1/tax/tin-status
 taxRouter.post('/tin-status', (req, res) => {
-  const { tin } = req.body;
+  const { tin: rawTin } = req.body || {};
 
-  if (!tin) {
-    return sendSandboxError(res, 'MISSING_TIN', 'The "tin" field is required.');
+  const tinInput = requiredSandboxString(rawTin, 'tin', 'MISSING_TIN', 'The "tin" field is required.');
+  if (!tinInput.ok) {
+    return sendSandboxError(res, tinInput.code, tinInput.message);
   }
+  const tin = tinInput.value;
 
   if (tin === '1000123456') {
     return res.json({

@@ -10,6 +10,27 @@ type VersionStatusInput = {
 
 export type ApiVersionStatus = 'current' | 'available';
 
+const OPENAPI_HTTP_METHODS = new Set(['get', 'post', 'put', 'delete', 'patch', 'options', 'head']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readRequiredText(value: unknown, fieldName: string) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`Invalid specification: "${fieldName}" must be a non-empty string.`);
+  }
+  return value.trim();
+}
+
+function readOptionalText(value: unknown, fieldName: string) {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') {
+    throw new Error(`Invalid specification: "${fieldName}" must be a string.`);
+  }
+  return value;
+}
+
 export function slugifyVersion(version: string) {
   return version
     .trim()
@@ -32,31 +53,53 @@ export function parseSpecMetadata(specText: string) {
 }
 
 export function validateOpenApiSpec(specText: string) {
-  const parsed = yaml.load(specText) as any;
-  if (!parsed || typeof parsed !== 'object') {
+  const parsed = yaml.load(specText);
+  if (!isRecord(parsed)) {
     throw new Error('Specification parsed to an invalid object.');
   }
-  const openapiVersion = parsed.openapi || parsed.swagger;
-  if (!openapiVersion) {
+  const hasOpenApiVersion = Object.prototype.hasOwnProperty.call(parsed, 'openapi');
+  const rawOpenApiVersion = hasOpenApiVersion ? parsed.openapi : parsed.swagger;
+  if (rawOpenApiVersion === undefined || rawOpenApiVersion === null || rawOpenApiVersion === '') {
     throw new Error('Invalid specification: missing "openapi" or "swagger" version declaration.');
   }
-  if (!parsed.info || !parsed.info.title) {
-    throw new Error('Invalid specification: missing "info.title" metadata.');
+  const openapiVersion = readRequiredText(rawOpenApiVersion, hasOpenApiVersion ? 'openapi' : 'swagger');
+  const info = parsed.info;
+  if (!isRecord(info)) {
+    throw new Error('Invalid specification: "info" must be an object.');
   }
-  const paths = parsed?.paths || {};
-  const endpointsCount = Object.keys(paths).reduce((count, route) => {
-    const methods = Object.keys(paths[route] || {}).filter(method =>
-      ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'].includes(method.toLowerCase())
-    );
+  const title = readRequiredText(info.title, 'info.title');
+  const version = readRequiredText(info.version, 'info.version');
+  if (!/[a-z0-9]/i.test(version)) {
+    throw new Error('Invalid specification: "info.version" must contain at least one ASCII letter or number.');
+  }
+  const description = readOptionalText(info.description, 'info.description');
+  if (!Object.prototype.hasOwnProperty.call(parsed, 'paths')) {
+    throw new Error('Invalid specification: missing "paths" object.');
+  }
+  const paths = parsed.paths;
+  if (!isRecord(paths)) {
+    throw new Error('Invalid specification: "paths" must be an object.');
+  }
+  const endpointsCount = Object.entries(paths).reduce((count, [route, pathItem]) => {
+    if (!isRecord(pathItem)) {
+      throw new Error(`Invalid specification: path item "${route}" must be an object.`);
+    }
+    const methods = Object.entries(pathItem).filter(([method, operation]) => {
+      if (!OPENAPI_HTTP_METHODS.has(method.toLowerCase())) return false;
+      if (!isRecord(operation)) {
+        throw new Error(`Invalid specification: operation "${method} ${route}" must be an object.`);
+      }
+      return true;
+    });
     return count + methods.length;
   }, 0);
 
   return {
     parsed,
     metadata: {
-      title: parsed.info.title,
-      version: parsed.info.version || '1.0.0',
-      description: parsed.info.description || '',
+      title,
+      version,
+      description,
       openapiVersion,
       endpointsCount,
     },

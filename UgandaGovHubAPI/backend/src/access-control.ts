@@ -9,9 +9,34 @@ type AccessUser = {
   mda_id: string | null;
 };
 
+type AccessRequestListRow = {
+  consumer_mda_id?: string | null;
+  consumer_user_id?: string | null;
+  api_key_preview?: string | null;
+  api_key_pending_reveal?: boolean | number | null;
+  [key: string]: any;
+};
+
 type GuardDecision =
   | { allowed: true }
   | { allowed: false; code: string; message: string };
+
+function canViewOneTimeApiKeyState(user: AccessUser, request: AccessRequestListRow) {
+  if (user.role !== 'developer') return true;
+  if (request.consumer_user_id) return request.consumer_user_id === user.id;
+  return Boolean(user.mda_id && request.consumer_mda_id === user.mda_id);
+}
+
+function maskHiddenOneTimeApiKeyState(user: AccessUser, requests: AccessRequestListRow[]) {
+  return requests.map(request => {
+    if (canViewOneTimeApiKeyState(user, request)) return request;
+    return {
+      ...request,
+      api_key_preview: null,
+      api_key_pending_reveal: false,
+    };
+  });
+}
 
 export function resolveConsumerMdaForRequest(user: AccessUser, requestedMdaId?: string | null): GuardDecision & { mdaId?: string; userId?: string; consumerType?: 'mda' | 'user' } {
   if (user.role === 'admin') {
@@ -65,9 +90,11 @@ export async function buildAccessRequestList(db: DbClient, user: AccessUser) {
     return many(db, `${baseSelect} WHERE a.owning_mda_id = $1 ORDER BY r.created_at DESC`, [user.mda_id]);
   }
   if (user.mda_id) {
-    return many(db, `${baseSelect} WHERE r.consumer_mda_id = $1 ORDER BY r.created_at DESC`, [user.mda_id]);
+    const requests = await many(db, `${baseSelect} WHERE r.consumer_mda_id = $1 ORDER BY r.created_at DESC`, [user.mda_id]);
+    return maskHiddenOneTimeApiKeyState(user, requests);
   }
-  return many(db, `${baseSelect} WHERE r.consumer_user_id = $1 ORDER BY r.created_at DESC`, [user.id]);
+  const requests = await many(db, `${baseSelect} WHERE r.consumer_user_id = $1 ORDER BY r.created_at DESC`, [user.id]);
+  return maskHiddenOneTimeApiKeyState(user, requests);
 }
 
 export async function canSubmitAccessRequest(db: DbClient, apiId: string): Promise<GuardDecision> {
@@ -105,12 +132,15 @@ export async function findBlockingAccessRequest(
         status = 'PENDING'
         OR (
           status = 'APPROVED'
-          AND COALESCE(api_key_status, 'ACTIVE') NOT IN ('REVOKED', 'DELETED')
+          AND api_key_hash IS NOT NULL
+          AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
+          AND api_key_revoked_at IS NULL
+          AND (api_key_expires_at IS NULL OR api_key_expires_at > $3)
         )
       )
     ORDER BY created_at DESC
     LIMIT 1
-  `, [input.apiId, identityValue]);
+  `, [input.apiId, identityValue, new Date().toISOString()]);
 }
 
 export interface AuditLogPage {
@@ -118,6 +148,18 @@ export interface AuditLogPage {
   total: number;
   limit: number;
   offset: number;
+}
+
+function boundedPositiveInteger(value: number, fallback: number, max: number) {
+  if (!Number.isFinite(value)) return fallback;
+  const integer = Math.trunc(value);
+  if (integer < 1) return fallback;
+  return Math.min(integer, max);
+}
+
+function nonNegativeInteger(value: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.trunc(value));
 }
 
 export async function listAuditLogs(db: DbClient, user?: AccessUser, limit = 100, offset = 0): Promise<AuditLogPage> {
@@ -132,15 +174,22 @@ export async function listAuditLogs(db: DbClient, user?: AccessUser, limit = 100
     LEFT JOIN users consumer ON l.consumer_user_id = consumer.id
   `;
 
-  const safeLimit = Math.min(Math.max(1, limit), 500);
-  const safeOffset = Math.max(0, offset);
+  const safeLimit = boundedPositiveInteger(limit, 100, 500);
+  const safeOffset = nonNegativeInteger(offset, 0);
 
   if (user?.role === 'developer') {
-    const whereClause = "WHERE l.consumer_user_id = $1 AND l.event_type LIKE 'SANDBOX_CALL%'";
-    const param = user.id;
+    const hasMdaScope = Boolean(user.mda_id);
+    const whereClause = hasMdaScope
+      ? "WHERE (l.consumer_user_id = $1 OR (l.consumer_user_id IS NULL AND l.mda_id = $2)) AND l.event_type LIKE 'SANDBOX_CALL%'"
+      : "WHERE l.consumer_user_id = $1 AND l.event_type LIKE 'SANDBOX_CALL%'";
+    const params = hasMdaScope ? [user.id, user.mda_id] : [user.id];
 
-    const total = Number((await one<{ count: string }>(db, `SELECT COUNT(*) as count FROM audit_logs l ${whereClause}`, [param]))?.count || 0);
-    const data = await many(db, `${baseSelect} ${whereClause} ORDER BY l.created_at DESC LIMIT $2 OFFSET $3`, [param, safeLimit, safeOffset]);
+    const total = Number((await one<{ count: string }>(db, `SELECT COUNT(*) as count FROM audit_logs l ${whereClause}`, params))?.count || 0);
+    const data = await many(
+      db,
+      `${baseSelect} ${whereClause} ORDER BY l.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, safeLimit, safeOffset]
+    );
     return { data, total, limit: safeLimit, offset: safeOffset };
   }
 
@@ -163,6 +212,30 @@ export async function canReviewAccessRequest(db: DbClient, user: AccessUser, req
     return { allowed: false, code: 'NOT_FOUND', message: 'Access request not found.' };
   }
 
+  if (user.role === 'admin') {
+    if (
+      record.status !== 'PENDING' ||
+      record.api_key ||
+      record.api_key_hash ||
+      ['REVOKED', 'DELETED'].includes(record.api_key_status || '')
+    ) {
+      return {
+        allowed: false,
+        code: 'REQUEST_ALREADY_FINALIZED',
+        message: 'This access request already has a finalized API key lifecycle.',
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (user.role !== 'api_owner' || !user.mda_id) {
+    return { allowed: false, code: 'FORBIDDEN', message: 'Only admins and owning MDA API owners can approve this request.' };
+  }
+
+  if (record.owning_mda_id !== user.mda_id) {
+    return { allowed: false, code: 'NOT_FOUND', message: 'Access request not found.' };
+  }
+
   if (
     record.status !== 'PENDING' ||
     record.api_key ||
@@ -174,16 +247,6 @@ export async function canReviewAccessRequest(db: DbClient, user: AccessUser, req
       code: 'REQUEST_ALREADY_FINALIZED',
       message: 'This access request already has a finalized API key lifecycle.',
     };
-  }
-
-  if (user.role === 'admin') return { allowed: true };
-
-  if (user.role !== 'api_owner' || !user.mda_id) {
-    return { allowed: false, code: 'FORBIDDEN', message: 'Only admins and owning MDA API owners can approve this request.' };
-  }
-
-  if (record.owning_mda_id !== user.mda_id) {
-    return { allowed: false, code: 'FORBIDDEN', message: 'API owners can only approve requests for APIs owned by their MDA.' };
   }
 
   return { allowed: true };

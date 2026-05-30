@@ -1,9 +1,39 @@
 import dns from 'dns/promises';
 import net from 'net';
+import { positiveIntegerEnv } from './env';
 
 function normalizeIpAddress(address: string) {
   const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-  return mappedIpv4 ? mappedIpv4[1] : address;
+  if (mappedIpv4) return mappedIpv4[1];
+
+  const mappedIpv4Hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address);
+  if (mappedIpv4Hex) {
+    return ipv4FromHexWords(mappedIpv4Hex[1], mappedIpv4Hex[2]);
+  }
+
+  const expandedMappedIpv4 = /^0{1,4}:0{1,4}:0{1,4}:0{1,4}:0{1,4}:ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  if (expandedMappedIpv4) return expandedMappedIpv4[1];
+
+  const expandedMappedIpv4Hex = /^0{1,4}:0{1,4}:0{1,4}:0{1,4}:0{1,4}:ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address);
+  if (expandedMappedIpv4Hex) {
+    return ipv4FromHexWords(expandedMappedIpv4Hex[1], expandedMappedIpv4Hex[2]);
+  }
+
+  const nat64Ipv4 = /^64:ff9b::(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  if (nat64Ipv4) return nat64Ipv4[1];
+
+  const nat64Ipv4Hex = /^64:ff9b::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address);
+  if (nat64Ipv4Hex) {
+    return ipv4FromHexWords(nat64Ipv4Hex[1], nat64Ipv4Hex[2]);
+  }
+
+  return address;
+}
+
+function ipv4FromHexWords(highWord: string, lowWord: string) {
+  const high = Number.parseInt(highWord, 16);
+  const low = Number.parseInt(lowWord, 16);
+  return `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
 }
 
 function isBlockedIp(address: string) {
@@ -30,12 +60,13 @@ function isBlockedIp(address: string) {
 
   if (family === 6) {
     const normalized = address.toLowerCase();
+    const firstHextet = Number.parseInt(normalized.split(':')[0] || '0', 16);
     return (
       normalized === '::' ||
       normalized === '::1' ||
       normalized.startsWith('fc') ||
       normalized.startsWith('fd') ||
-      normalized.startsWith('fe80:') ||
+      (firstHextet >= 0xfe80 && firstHextet <= 0xfebf) ||
       normalized.startsWith('ff') ||
       normalized.startsWith('2001:db8') ||
       normalized.startsWith('2001:2') ||
@@ -80,7 +111,7 @@ export async function fetchSpecFromUrl(specUrl: string): Promise<string> {
   }
 
   const controller = new AbortController();
-  const timeoutMs = Number(process.env.GOVHUB_SPEC_FETCH_TIMEOUT_MS || 5000);
+  const timeoutMs = positiveIntegerEnv('GOVHUB_SPEC_FETCH_TIMEOUT_MS', 5000);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -92,7 +123,7 @@ export async function fetchSpecFromUrl(specUrl: string): Promise<string> {
       throw new Error(`Failed to fetch spec from URL: ${response.statusText}`);
     }
 
-    const maxBytes = Number(process.env.GOVHUB_SPEC_MAX_BYTES || 1024 * 1024);
+    const maxBytes = positiveIntegerEnv('GOVHUB_SPEC_MAX_BYTES', 1024 * 1024);
     const contentLength = response.headers.get('content-length');
     if (contentLength && Number(contentLength) > maxBytes) {
       throw new Error('Specification content is too large.');

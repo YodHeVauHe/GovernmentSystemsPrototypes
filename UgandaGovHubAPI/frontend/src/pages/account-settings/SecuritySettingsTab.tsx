@@ -50,10 +50,20 @@ export function SecuritySettingsTab({
           </div>
 
           {!user?.mfa_enabled && !mfaSetup && (
-            <Button onClick={onStartMfaSetup} disabled={mfaBusy} className="bg-[#3ecf8e] text-black hover:bg-[#3ecf8e]/95">
-              {mfaBusy && <Spinner className="size-4" />}
-              Start MFA Setup
-            </Button>
+            <div className="w-full max-w-xs space-y-2 md:text-right">
+              <Label htmlFor="mfa_setup_password" className="md:justify-end">Confirm password</Label>
+              <Input
+                id="mfa_setup_password"
+                type="password"
+                value={mfaPassword}
+                onChange={event => onSetMfaPassword(event.target.value)}
+                autoComplete="current-password"
+              />
+              <Button onClick={onStartMfaSetup} disabled={mfaBusy || !mfaPassword} className="w-full bg-[#3ecf8e] text-black hover:bg-[#3ecf8e]/95">
+                {mfaBusy && <Spinner className="size-4" />}
+                Start MFA Setup
+              </Button>
+            </div>
           )}
         </div>
 

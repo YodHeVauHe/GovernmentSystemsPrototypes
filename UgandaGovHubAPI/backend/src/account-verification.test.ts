@@ -113,6 +113,17 @@ async function main() {
     assert.equal(snapshot?.verification_progress.completed_requirements, snapshot?.verification_progress.total_requirements);
     assert.equal(snapshot?.verification_progress.next_action, 'submit_for_review');
 
+    await db.prepare(`
+      UPDATE user_profiles
+      SET verification_status = 'rejected', review_notes = ?
+      WHERE user_id = ?
+    `).run('Application rejected by administrator.', 'usr_test_public');
+
+    snapshot = await getAccountSnapshot(db, 'usr_test_public');
+    assert.equal(snapshot?.verification_progress.can_submit, false);
+    assert.equal(canSubmitVerification(snapshot!).allowed, false);
+    assert.match(canSubmitVerification(snapshot!).message || '', /cannot be submitted/i);
+
     const privileges = getPrivilegeSummary((await getAccountSnapshot(db, 'usr_test_gov'))!.user);
     assert.equal(privileges.accessGroup, 'Verified API Owner');
     assert.equal(privileges.permissions.includes('Review API access requests for APIs owned by your MDA'), true);
