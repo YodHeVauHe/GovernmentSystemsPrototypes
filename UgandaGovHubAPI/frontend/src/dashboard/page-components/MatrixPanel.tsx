@@ -69,7 +69,7 @@ export function MatrixPanel({ mdas, matrix, matrixViewMode, setMatrixViewMode }:
                                   <h3 className="truncate text-[15px] font-semibold text-white" title={consumer.name}>{consumer.name}</h3>
                                   <div className="mt-1 font-mono text-[12px] text-[#8b8b8b]">{consumer.shortName}</div>
                                 </div>
-                                <span className="shrink-0 rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 px-2.5 py-0.5 font-mono text-[11px] text-[#3ecf8e]">
+                                <span className="inline-flex h-7 shrink-0 items-center rounded-full border border-[#3ecf8e]/25 bg-[#3ecf8e]/10 px-3.5 font-mono text-[12.5px] text-[#3ecf8e]">
                                   {activeCount}/{channels.length} active
                                 </span>
                               </div>
@@ -78,8 +78,8 @@ export function MatrixPanel({ mdas, matrix, matrixViewMode, setMatrixViewMode }:
                                   <div key={channel.apiId} className="flex min-h-10 items-center justify-between gap-3 rounded-md border border-[#2e2e2e] bg-[#141414] px-3 py-2">
                                     <span className="min-w-0 truncate text-[12.5px] text-[#ededed]">{channel.label}</span>
                                     {channel.active ? (
-                                      <span className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 px-2.5 font-mono text-[12px] uppercase text-[#3ecf8e]">
-                                        <IconCircleCheck className="h-4.5 w-4.5" stroke={1.8} />
+                                      <span className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase text-[#3ecf8e]">
+                                        <IconCircleCheck className="h-4 w-4" stroke={1.8} />
                                         Active
                                       </span>
                                     ) : (
