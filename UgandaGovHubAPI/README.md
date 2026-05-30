@@ -28,23 +28,65 @@ GovHub API models a secure interoperability layer around government APIs:
 
 ## Platform Screenshots
 
-### Interoperability Catalog
+### API Catalog
 
-![Uganda GovHub API catalog showing seeded MDA API products](docs/architecture-pdf/assets/apiCatalog.png)
+![Uganda GovHub API catalog showing seeded MDA API products](readme-assets/screenshots/apiCatalog.png)
 
 The catalog lets users discover government API products by agency, sector, lifecycle, compliance status, and sensitivity level.
 
-### Governed Access Review
+### API Details
 
-![GovHub dashboard showing access approval workflow](docs/architecture-pdf/assets/apiApproval.png)
+![GovHub API details page showing governance metadata and endpoint contracts](readme-assets/screenshots/apiDetails.png)
 
-The dashboard shows pending and active access requests, including consumer MDA, requested API, lawful basis, field tier, status, expiry, and approval actions.
+API detail pages show service ownership, sensitivity, access requirements, endpoint summaries, examples, and code samples.
+
+### API Documentation
+
+![GovHub API documentation page showing OpenAPI-backed endpoint reference](readme-assets/screenshots/apiDocs.png)
+
+Custom documentation pages expose OpenAPI-backed schemas, request bodies, response models, security requirements, and access notes.
 
 ### Sandbox Execution
 
-![GovHub sandbox console showing approved-key request and mock API response](docs/architecture-pdf/assets/apiSandbox.png)
+![GovHub sandbox console showing approved-key request and mock API response](readme-assets/screenshots/apiSandbox.png)
 
 The sandbox console demonstrates scoped API-key use, request parameters, response headers, rate-limit metadata, and correlation IDs with deterministic mock data.
+
+### Access Request
+
+![GovHub access request modal showing purpose, legal basis, and requested fields](readme-assets/screenshots/apiAccessRequest.png)
+
+The access request flow captures purpose, statutory basis, environment, data fields, and expected request volume before review.
+
+### Governed Access Review
+
+![GovHub dashboard showing access approval workflow](readme-assets/screenshots/apiApproval.png)
+
+The dashboard shows pending and active access requests, including consumer MDA, requested API, lawful basis, field tier, status, expiry, and approval actions.
+
+### Interoperability Matrix
+
+![GovHub interoperability matrix showing approved MDA data-sharing channels](readme-assets/screenshots/apiAccessMatrix.png)
+
+The matrix summarizes which agencies can consume which services and where approval, compliance, or review gaps remain.
+
+### Account Settings
+
+![GovHub account settings page showing profile, organization, documents, and privileges](readme-assets/screenshots/apiAccountSettings.png)
+
+Account settings centralize profile, organization, document, security, privilege, notification, and setup-flow information.
+
+### API Registration Import
+
+![GovHub Add API page showing OpenAPI import methods](readme-assets/screenshots/apiAdd1.png)
+
+The first registration screen supports OpenAPI URL, file upload, and raw specification entry before validation.
+
+### API Registration Metadata
+
+![GovHub Add API metadata page showing governance fields before publication](readme-assets/screenshots/apiAdd2.png)
+
+The second registration screen collects ownership, namespace, access control, sector, SLA, and governance metadata before catalog activation.
 
 ## Current Implementation
 
@@ -105,8 +147,6 @@ npm run db:logs
 npm run lint
 npm run build
 npm test
-npm run test:e2e
-npm run test:a11y
 ```
 
 ## Full Vercel Deployment
