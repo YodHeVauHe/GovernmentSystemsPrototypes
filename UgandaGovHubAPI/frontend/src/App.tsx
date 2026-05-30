@@ -57,7 +57,13 @@ function RouteLoadingBar() {
 
 function SessionLoadingState({ fullScreen = false }: { fullScreen?: boolean }) {
   return (
-    <div className={`flex items-center justify-center bg-[#181818] ${fullScreen ? 'min-h-dvh' : 'h-full p-6'}`}>
+    <div className={`flex flex-col items-center justify-center gap-3 bg-[#181818] ${fullScreen ? 'min-h-dvh' : 'h-full p-6'}`}>
+      <img
+        src="/favicon.svg"
+        alt=""
+        aria-hidden="true"
+        className="size-12 rounded-lg shadow-[0_0_24px_rgba(62,207,142,0.18)]"
+      />
       <Spinner className="size-5 text-[#3ecf8e]" />
       <span className="sr-only">Loading session</span>
     </div>
