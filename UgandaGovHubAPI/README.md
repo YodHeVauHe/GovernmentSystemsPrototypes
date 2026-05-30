@@ -118,9 +118,11 @@ cp frontend/.env.example frontend/.env
 The backend is Postgres-only. For local testing, the example env uses:
 
 ```bash
-DATABASE_URL=postgresql://govhub_admin:GovHubAdmin%23PV3ycqEB@localhost:5432/govhub
+DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>
 DATABASE_SSL=false
 ```
+
+Set local `.env` values before running the demo. The checked-in `.env.example` files intentionally use placeholders and public test keys rather than reusable passwords.
 
 Start the local demo:
 
@@ -195,14 +197,14 @@ Do not set `DATABASE_SSL=false` in Vercel. The backend defaults to SSL for hoste
 
 ## Demo Accounts
 
-Demo accounts are seeded automatically:
+Demo accounts are seeded automatically in demo mode. Configure their passwords through local environment variables before sharing or presenting the app.
 
-| Role | Email | Password |
+| Role | Email variable | Password variable |
 | --- | --- | --- |
-| Platform admin | `admin@ict.go.ug` | `AdminPass123!` |
-| MDA developer | `demo.developer@govhub.go.ug` | `DemoDeveloper123!` |
-| NIRA API owner | `demo.api.owner@nira.go.ug` | `DemoApiOwner123!` |
-| Compliance reviewer | `demo.reviewer@govhub.go.ug` | `DemoReviewer123!` |
+| Platform admin | `GOVHUB_ADMIN_EMAIL` | `GOVHUB_ADMIN_PASSWORD` |
+| MDA developer | `GOVHUB_DEMO_DEVELOPER_EMAIL` | `GOVHUB_DEMO_DEVELOPER_PASSWORD` |
+| NIRA API owner | `GOVHUB_DEMO_API_OWNER_EMAIL` | `GOVHUB_DEMO_API_OWNER_PASSWORD` |
+| Compliance reviewer | `GOVHUB_DEMO_REVIEWER_EMAIL` | `GOVHUB_DEMO_REVIEWER_PASSWORD` |
 
 ## Key Routes
 
