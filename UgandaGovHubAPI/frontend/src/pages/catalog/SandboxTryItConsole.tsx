@@ -41,6 +41,7 @@ export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoi
           r.status === 'APPROVED' &&
           r.api_key_preview &&
           (r.api_key_status || 'ACTIVE') === 'ACTIVE' &&
+          !r.api_key_revoked_at &&
           (!r.api_key_expires_at || new Date(r.api_key_expires_at).getTime() > Date.now())
         );
         setApprovedRequests(approved);

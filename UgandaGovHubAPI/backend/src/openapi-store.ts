@@ -44,12 +44,16 @@ export async function getSpecByPath(db: DbClient, openapiPath: string): Promise<
   `, [normalized]);
   if (apiSpec) return apiSpec;
 
-  return one<StoredOpenApiSpec>(db, `
-    SELECT api_id, openapi_spec_path, openapi_spec_text
-    FROM api_versions
-    WHERE openapi_spec_path = $1
-      AND openapi_spec_text IS NOT NULL
-  `, [normalized]);
+  try {
+    return await one<StoredOpenApiSpec>(db, `
+      SELECT api_id, openapi_spec_path, openapi_spec_text
+      FROM api_versions
+      WHERE openapi_spec_path = $1
+        AND openapi_spec_text IS NOT NULL
+    `, [normalized]);
+  } catch {
+    return undefined;
+  }
 }
 
 export async function getCurrentSpecForApi(db: DbClient, apiId: string): Promise<StoredOpenApiSpec | undefined> {

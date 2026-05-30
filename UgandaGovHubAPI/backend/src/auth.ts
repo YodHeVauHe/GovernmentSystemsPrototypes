@@ -49,6 +49,7 @@ declare global {
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 export const SESSION_COOKIE_NAME = 'govhub_session';
+const MAX_SESSION_TOKEN_LENGTH = 256;
 
 function hashToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -140,7 +141,8 @@ export function hashPassword(password: string) {
   return `scrypt:${salt}:${hash}`;
 }
 
-export function verifyPassword(password: string, storedHash: string) {
+export function verifyPassword(password: unknown, storedHash: unknown) {
+  if (typeof password !== 'string' || typeof storedHash !== 'string') return false;
   const [algorithm, salt, hash] = storedHash.split(':');
   if (algorithm !== 'scrypt' || !salt || !hash) return false;
 
@@ -411,18 +413,28 @@ export async function getSessionUser(db: DbClient, token: string, now = new Date
 }
 
 export function getBearerToken(req: Request) {
+  const normalizeToken = (value: string | null | undefined) => {
+    if (!value) return null;
+    return value.length <= MAX_SESSION_TOKEN_LENGTH ? value : null;
+  };
+
   const header = req.headers.authorization || '';
   if (header.startsWith('Bearer ')) {
     const bearerToken = header.slice('Bearer '.length).trim();
-    if (bearerToken) return bearerToken;
+    if (bearerToken) return normalizeToken(bearerToken);
   }
   const cookieHeader = req.headers.cookie || '';
   const cookies = Object.fromEntries(cookieHeader.split(';').map(cookie => {
     const [name, ...valueParts] = cookie.trim().split('=');
-    return [name, decodeURIComponent(valueParts.join('='))];
+    const rawValue = valueParts.join('=');
+    try {
+      return [name, decodeURIComponent(rawValue)];
+    } catch {
+      return [name, ''];
+    }
   }).filter(([name]) => Boolean(name)));
   const token = cookies[SESSION_COOKIE_NAME];
-  return token || null;
+  return normalizeToken(token);
 }
 
 export function setSessionCookie(res: Response, token: string) {

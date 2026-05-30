@@ -24,8 +24,9 @@ async function main() {
   assert.equal(calls.length, 2);
   for (const call of calls) {
     assert.match(call.sql, /l\.consumer_user_id = \$1/);
+    assert.match(call.sql, /l\.consumer_user_id IS NULL AND l\.mda_id = \$2/);
     assert.match(call.sql, /l\.event_type LIKE 'SANDBOX_CALL%'/);
-    assert.deepEqual(call.params?.slice(0, 1), ['usr-dev']);
+    assert.deepEqual(call.params?.slice(0, 2), ['usr-dev', 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543']);
   }
 }
 

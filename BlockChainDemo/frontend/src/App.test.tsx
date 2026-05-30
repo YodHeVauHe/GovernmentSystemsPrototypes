@@ -31,15 +31,21 @@ vi.mock("@/pages/LandTitleUseCasePage", () => ({
   ),
 }))
 
+vi.mock("@/pages/CashflowPage", () => ({
+  CashflowPage: () => <div>MDA cashflow audit trail</div>,
+}))
+
 describe("BlockChainDemo app", () => {
-  it("renders sidebar navigation and switches to the land-title use case", async () => {
+  it("renders sidebar navigation and switches to concept pages", async () => {
     const { container } = render(<App />)
 
     const conceptNav = screen.getByRole("navigation", { name: "Concepts" })
     const navigationButtons = within(conceptNav).getAllByRole("button")
     const navigationLabels = navigationButtons.map((button) => button.textContent)
     const [hashButton] = navigationButtons
-    const landTitleButton = navigationButtons.at(-1)
+    const landTitleButton = within(conceptNav).getByRole("button", {
+      name: "Land Title Use Case",
+    })
 
     expect(navigationLabels).toEqual([
       "Hash",
@@ -48,18 +54,26 @@ describe("BlockChainDemo app", () => {
       "Distributed MDAs",
       "Tokens / Assets",
       "Land Title Use Case",
+      "MDA Cashflow",
     ])
     expect(hashButton).toHaveAttribute("aria-current", "page")
     expect(container.querySelector('[role="tab"]')).not.toBeInTheDocument()
     expect(screen.getByText("Hash a land-title record")).toBeInTheDocument()
 
-    expect(landTitleButton).toBeDefined()
-    fireEvent.click(landTitleButton!)
+    fireEvent.click(landTitleButton)
 
     expect(
       await screen.findByText("Land title verification and transfer")
     ).toBeInTheDocument()
     expect(screen.getByText("Smart-contract check failed")).toBeInTheDocument()
     expect(landTitleButton).toHaveAttribute("aria-current", "page")
-  })
+
+    const cashflowButton = within(conceptNav).getByRole("button", {
+      name: "MDA Cashflow",
+    })
+    fireEvent.click(cashflowButton)
+
+    expect(await screen.findByText("MDA cashflow audit trail")).toBeInTheDocument()
+    expect(cashflowButton).toHaveAttribute("aria-current", "page")
+  }, 10_000)
 })

@@ -12,12 +12,16 @@ import {
 import { canonicalize, sha256Hex } from "./crypto"
 import {
   DEMO_DIFFICULTY,
+  LAND_TITLE_ASSET_ID,
   MAX_MINING_NONCE,
+  MDA_PEER_IDS,
   initialLandTitleEvents,
   requiredTransferApprovals,
 } from "./demo-data"
 import type { DemoBlock, MdaPeer } from "./types"
 import type { LandTitleEvent } from "./types"
+
+const CRYPTOGRAPHIC_ID_PATTERN = /^[a-f0-9]{64}$/
 
 describe("crypto helpers", () => {
   it("canonicalizes object keys deterministically", () => {
@@ -36,11 +40,12 @@ describe("crypto helpers", () => {
   it("produces different hashes when land-title data changes", async () => {
     const original = await sha256Hex({
       titleNumber: "TITLE-KLA-2026-000184",
-      parcelId: "PARCEL-KCCA-CEN-12-0441",
+      parcelId: LAND_TITLE_ASSET_ID,
     })
     const edited = await sha256Hex({
       titleNumber: "TITLE-KLA-2026-000184",
-      parcelId: "PARCEL-KCCA-CEN-12-0999",
+      parcelId:
+        "64caa9eeb8318cfe9ff7171526e48dfdbd5690968746434428d8c7f2dfe24737",
     })
 
     expect(original).not.toBe(edited)
@@ -137,15 +142,35 @@ describe("blockchain core", () => {
         : block
     )
     const peers: MdaPeer[] = [
-      { id: "molhud", name: "Ministry of Lands", role: "Title authority", chain },
-      { id: "nira", name: "NIRA", role: "Identity verifier", chain },
-      { id: "ura", name: "URA", role: "Stamp duty authority", chain: tampered },
+      {
+        id: MDA_PEER_IDS.molhud,
+        name: "Ministry of Lands",
+        role: "Title authority",
+        chain,
+      },
+      { id: MDA_PEER_IDS.nira, name: "NIRA", role: "Identity verifier", chain },
+      {
+        id: MDA_PEER_IDS.ura,
+        name: "URA",
+        role: "Stamp duty authority",
+        chain: tampered,
+      },
     ]
 
     const consensus = await findConsensus(peers, DEMO_DIFFICULTY)
 
     expect(consensus.majorityHash).toBe(chain.at(-1)?.hash)
-    expect(consensus.outOfSyncPeerIds).toEqual(["ura"])
+    expect(consensus.outOfSyncPeerIds).toEqual([MDA_PEER_IDS.ura])
+  })
+
+  it("uses cryptographic identifiers for approval and MDA peer IDs", () => {
+    expect(requiredTransferApprovals.map((approval) => approval.id)).toSatisfy(
+      (ids: string[]) => ids.every((id) => CRYPTOGRAPHIC_ID_PATTERN.test(id))
+    )
+    expect(Object.values(MDA_PEER_IDS)).toSatisfy((ids: string[]) =>
+      ids.every((id) => CRYPTOGRAPHIC_ID_PATTERN.test(id))
+    )
+    expect(LAND_TITLE_ASSET_ID).toMatch(CRYPTOGRAPHIC_ID_PATTERN)
   })
 
   it("reports missing transfer approvals before a title transfer can be mined", () => {

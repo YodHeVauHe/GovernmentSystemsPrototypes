@@ -21,8 +21,55 @@ function isOpenApiValidationError(err: any) {
     || message === 'Specification parsed to an invalid object.';
 }
 
+type OptionalVersionTextResult =
+  | { ok: true; value: string | null }
+  | { ok: false; message: string };
+
+function optionalVersionText(value: unknown, fieldName: string, maxLength: number): OptionalVersionTextResult {
+  if (value === undefined || value === null || value === '') {
+    return { ok: true, value: null };
+  }
+  if (typeof value !== 'string') {
+    return { ok: false, message: `${fieldName} must be a string.` };
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { ok: true, value: null };
+  }
+  if (trimmed.length > maxLength) {
+    return { ok: false, message: `${fieldName} must be ${maxLength} characters or fewer.` };
+  }
+
+  return { ok: true, value: trimmed };
+}
+
 function catalogParams(req: { params: unknown }) {
   return req.params as { id: string; version?: string };
+}
+
+function versionPromotionStaleError() {
+  return Object.assign(new Error('The API version changed before promotion could complete.'), {
+    code: 'VERSION_PROMOTION_STALE',
+  });
+}
+
+function versionDeleteStaleError() {
+  return Object.assign(new Error('The API version changed before deletion could complete.'), {
+    code: 'VERSION_DELETE_STALE',
+  });
+}
+
+function versionPublishStaleError() {
+  return Object.assign(new Error('The API version changed before publishing could complete.'), {
+    code: 'VERSION_PUBLISH_STALE',
+  });
+}
+
+function isVersionPublishStaleError(err: any) {
+  return err?.code === 'VERSION_PUBLISH_STALE'
+    || err?.code === '23503'
+    || err?.code === '23505';
 }
 
 export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../docs-access').canViewApiDocs) {
@@ -60,6 +107,18 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
   router.post('/', requireAuth(db, ['admin', 'api_owner']), requireApiManager(db, req => String(catalogParams(req).id)), async (req, res) => {
     const { status, notes, make_current } = req.body;
     const apiId = String(catalogParams(req).id);
+    if (make_current !== undefined && make_current !== null && typeof make_current !== 'boolean') {
+      return res.status(400).json({ error: 'make_current must be a boolean.' });
+    }
+
+    const statusInput = optionalVersionText(status, 'status', 100);
+    if (!statusInput.ok) {
+      return res.status(400).json({ error: statusInput.message });
+    }
+    const notesInput = optionalVersionText(notes, 'notes', 2000);
+    if (!notesInput.ok) {
+      return res.status(400).json({ error: notesInput.message });
+    }
 
     try {
       const openapiSpec = await resolveCatalogSpecInput(req.body, fetchSpecFromUrl);
@@ -78,18 +137,22 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
 
       const specFilename = `${versionId}.yaml`;
       const relativeSpecPath = `/openapi/${specFilename}`;
-      const shouldMakeCurrent = Boolean(make_current);
+      const shouldMakeCurrent = make_current === true;
       const transaction = db.transaction(async client => {
         if (shouldMakeCurrent) {
           await run(client, 'UPDATE api_versions SET is_current = FALSE WHERE api_id = $1', [apiId]);
-          await run(client, 'UPDATE apis SET openapi_spec_path = $1, openapi_spec_text = $2 WHERE id = $3', [relativeSpecPath, openapiSpec, apiId]);
+          const apiUpdate = await run(client, 'UPDATE apis SET openapi_spec_path = $1, openapi_spec_text = $2 WHERE id = $3', [relativeSpecPath, openapiSpec, apiId]);
+          if (apiUpdate.changes !== 1) {
+            throw versionPublishStaleError();
+          }
         }
 
-        await run(client, `
+        const versionInsert = await run(client, `
           INSERT INTO api_versions (
             id, api_id, version, openapi_spec_path, openapi_spec_text, spec_sha, endpoints_count,
             openapi_version, status, is_current, notes
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          ON CONFLICT DO NOTHING
         `, [
           versionId,
           apiId,
@@ -99,10 +162,13 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
           getSpecSha(openapiSpec),
           metadata.endpointsCount,
           metadata.openapiVersion,
-          status || 'Published',
+          statusInput.value || 'Published',
           shouldMakeCurrent,
-          notes || null,
+          notesInput.value,
         ]);
+        if (versionInsert.changes !== 1) {
+          throw versionPublishStaleError();
+        }
 
         await run(client, `
           INSERT INTO audit_logs (id, event_type, api_id, details)
@@ -118,13 +184,17 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
       await transaction;
       res.status(201).json({ success: true, versionId, version, is_current: shouldMakeCurrent });
     } catch (err: any) {
-      console.error('[version publish]', err);
+      if (isVersionPublishStaleError(err)) {
+        const staleError = versionPublishStaleError();
+        return res.status(409).json({ error: staleError.message, code: staleError.code });
+      }
       if (err?.code === 'SPEC_INPUT_REQUIRED' || err?.code === 'SPEC_URL_FETCH_FAILED') {
         return res.status(400).json({ error: err.message });
       }
       if (isOpenApiValidationError(err)) {
         return res.status(400).json({ error: err.message });
       }
+      console.error('[version publish]', err);
       res.status(500).json({ error: 'Failed to publish version. Please try again.' });
     }
   });
@@ -140,8 +210,19 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
 
       const transaction = db.transaction(async client => {
         await run(client, 'UPDATE api_versions SET is_current = FALSE WHERE api_id = $1', [apiId]);
-        await run(client, 'UPDATE api_versions SET is_current = TRUE WHERE id = $1', [version.id]);
-        await run(client, 'UPDATE apis SET openapi_spec_path = $1, openapi_spec_text = $2 WHERE id = $3', [version.openapi_spec_path, version.openapi_spec_text, apiId]);
+        const promoteUpdate = await run(client, `
+          UPDATE api_versions
+          SET is_current = TRUE
+          WHERE id = $1
+            AND api_id = $2
+        `, [version.id, apiId]);
+        if (promoteUpdate.changes !== 1) {
+          throw versionPromotionStaleError();
+        }
+        const apiUpdate = await run(client, 'UPDATE apis SET openapi_spec_path = $1, openapi_spec_text = $2 WHERE id = $3', [version.openapi_spec_path, version.openapi_spec_text, apiId]);
+        if (apiUpdate.changes !== 1) {
+          throw versionPromotionStaleError();
+        }
         await run(client, `
           INSERT INTO audit_logs (id, event_type, api_id, details)
           VALUES ($1, $2, $3, $4)
@@ -151,6 +232,9 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
       await transaction;
       res.json({ success: true, version: requestedVersion });
     } catch (err: any) {
+      if (err?.code === 'VERSION_PROMOTION_STALE') {
+        return res.status(409).json({ error: err.message, code: err.code });
+      }
       console.error('[version promote]', err);
       res.status(500).json({ error: 'Failed to promote version. Please try again.' });
     }
@@ -168,14 +252,27 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
         return res.status(409).json({ error: 'Cannot delete the current version. Promote another version first.' });
       }
 
-      await run(db, 'DELETE FROM api_versions WHERE id = $1', [version.id]);
-      await run(db, `
-        INSERT INTO audit_logs (id, event_type, api_id, details)
-        VALUES ($1, $2, $3, $4)
-      `, [generatePublicId('audit'), 'API_VERSION_DELETED', apiId, JSON.stringify({ version: requestedVersion })]);
+      await db.transaction(async client => {
+        const deleteUpdate = await run(client, `
+          DELETE FROM api_versions
+          WHERE id = $1
+            AND api_id = $2
+            AND COALESCE(is_current, FALSE) = FALSE
+        `, [version.id, apiId]);
+        if (deleteUpdate.changes !== 1) {
+          throw versionDeleteStaleError();
+        }
+        await run(client, `
+          INSERT INTO audit_logs (id, event_type, api_id, details)
+          VALUES ($1, $2, $3, $4)
+        `, [generatePublicId('audit'), 'API_VERSION_DELETED', apiId, JSON.stringify({ version: requestedVersion })]);
+      });
 
       res.json({ success: true, version: requestedVersion });
     } catch (err: any) {
+      if (err?.code === 'VERSION_DELETE_STALE') {
+        return res.status(409).json({ error: err.message, code: err.code });
+      }
       console.error('[version delete]', err);
       res.status(500).json({ error: 'Failed to delete version. Please try again.' });
     }

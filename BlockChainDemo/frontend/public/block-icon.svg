@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="BlockChainDemo block icon">
+  <rect width="64" height="64" rx="14" fill="#0c0c0e"/>
+  <path d="M50 21.2a4 4 0 0 0-2-3.46L34 9.78a4 4 0 0 0-4 0l-14 7.96a4 4 0 0 0-2 3.46v16a4 4 0 0 0 2 3.46l14 7.96a4 4 0 0 0 4 0l14-7.96a4 4 0 0 0 2-3.46Z" fill="none" stroke="#6ee7b7" stroke-width="4" stroke-linejoin="round"/>
+  <path d="m16 20.5 16 9.2 16-9.2M32 50V29.7" fill="none" stroke="#93c5fd" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

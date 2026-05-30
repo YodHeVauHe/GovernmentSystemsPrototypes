@@ -7,6 +7,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
+import { Info } from "lucide-react"
 
 type AppShellProps = {
   activePage: ConceptPage
@@ -19,38 +20,37 @@ export function AppShell({ activePage, children, onPageChange }: AppShellProps) 
     <SidebarProvider>
       <ConceptNav activePage={activePage} onPageChange={onPageChange} />
       <SidebarInset className="min-h-screen bg-background text-foreground">
-        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-          <header className="flex flex-col gap-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <SidebarTrigger className="-ml-1" />
+        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-4 px-4 py-4 sm:px-5 lg:px-6">
+          <header className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <SidebarTrigger className="-ml-1 size-7 cursor-pointer hover:bg-accent" />
               <Separator
                 orientation="vertical"
-                className="data-[orientation=vertical]:h-4"
+                className="data-[orientation=vertical]:h-4 bg-border"
               />
-              <span>Concept navigation</span>
-            </div>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex max-w-3xl flex-col gap-2">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase text-muted-foreground">
+                  Uganda Government Blockchain Foundation
+                </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">Permissioned MDA Network</Badge>
-                  <Badge variant="outline">Land Title Prototype</Badge>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Uganda Government Blockchain Foundation
-                  </p>
-                  <h1 className="text-3xl font-semibold tracking-normal">
-                    BlockChainDemo
+                  <h1 className="truncate text-base font-medium tracking-normal text-foreground">
+                    Secure Trust Layer
                   </h1>
+                  <Badge variant="secondary">MDA network</Badge>
+                  <Badge variant="outline">Land registry</Badge>
                 </div>
-              </div>
-              <div className="rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground">
-                Browser-only demo. No live government records.
               </div>
             </div>
-            <Separator />
+            <div className="flex max-w-md items-center gap-2 text-[11px] leading-relaxed text-muted-foreground">
+              <Info className="size-3.5 shrink-0 text-primary" />
+              <span>
+                <strong className="font-medium text-foreground">Sandbox:</strong> local nodes only; no real government records are mutated.
+              </span>
+            </div>
           </header>
-          {children}
+          <main className="flex-1 w-full">
+            {children}
+          </main>
         </div>
       </SidebarInset>
     </SidebarProvider>

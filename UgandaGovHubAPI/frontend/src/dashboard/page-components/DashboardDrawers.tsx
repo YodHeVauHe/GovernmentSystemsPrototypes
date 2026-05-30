@@ -1,5 +1,6 @@
 import { IconX } from '@tabler/icons-react';
 import { AccessRequestStatusBadge } from './dashboard-page-helpers';
+import { formatAuditLogDetails } from '../view-helpers';
 
 export function DashboardDrawers({ selectedAccessRequest, setSelectedAccessRequest, selectedLog, setSelectedLog }: any) {
   return (
@@ -138,7 +139,7 @@ export function DashboardDrawers({ selectedAccessRequest, setSelectedAccessReque
                   <div className="flex-1 flex flex-col gap-2 mt-2">
                     <span className="text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Captured Logs payload (metadata)</span>
                     <div className="bg-[#0a0a0a] rounded-lg p-4 font-mono text-[12.5px] border border-[#2e2e2e] overflow-auto flex-1 leading-relaxed text-[#3ecf8e]">
-                      <pre>{JSON.stringify(JSON.parse(selectedLog.details || '{}'), null, 2)}</pre>
+                      <pre>{formatAuditLogDetails(selectedLog.details)}</pre>
                     </div>
                   </div>
                 </div>

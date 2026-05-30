@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react"
+import { Network } from "lucide-react"
 import { PeerChain } from "@/components/blockchain/PeerChain"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { findConsensus, createDemoChain, validateChain } from "@/lib/blockchain"
 import {
   DEMO_DIFFICULTY,
+  MDA_PEER_IDS,
   initialLandTitleEvents,
   mdaPeerTemplates,
 } from "@/lib/demo-data"
@@ -62,7 +64,7 @@ export function DistributedPage() {
   const tamperUra = () => {
     setPeers((currentPeers) =>
       currentPeers.map((peer) => {
-        if (peer.id !== "ura") return peer
+        if (peer.id !== MDA_PEER_IDS.ura) return peer
         const chain = cloneChain(peer.chain)
         const target = chain[4]
         chain[4] = {
@@ -80,7 +82,11 @@ export function DistributedPage() {
     )
   }
 
-  const resyncPeer = (peerId: string) => {
+  const [resyncingPeerId, setResyncingPeerId] = useState<string | null>(null)
+
+  const resyncPeer = async (peerId: string) => {
+    setResyncingPeerId(peerId)
+    await new Promise((resolve) => setTimeout(resolve, 1200))
     setPeers((currentPeers) => {
       const source =
         currentPeers.find((peer) => consensus?.majorityPeerIds.includes(peer.id)) ??
@@ -89,17 +95,21 @@ export function DistributedPage() {
         peer.id === peerId ? { ...peer, chain: cloneChain(source.chain) } : peer
       )
     })
+    setResyncingPeerId(null)
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <Alert>
-        <AlertTitle>MDA peers hold matching chain copies</AlertTitle>
-        <AlertDescription>
-          Tamper with the URA peer to show how one altered copy falls out of
-          consensus while the other MDA nodes retain the valid chain.
-        </AlertDescription>
-      </Alert>
+      <div className="rounded-md border border-border bg-card px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+        <div className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+          <Network className="size-4 text-primary" />
+          <span>P2P Network & Byzantium Consensus</span>
+        </div>
+        <p>
+          In a distributed government network, Ministry nodes maintain exact matching copies of the blockchain state. <strong>Try tampering with URA node records</strong> below: the network instantly isolates URA due to state mismatch. Click <strong>"Resync Node"</strong> to pull consensus records from Ministry majority and restore symmetry.
+        </p>
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-2">
         {peers.map((peer) => (
           <PeerChain
@@ -107,7 +117,8 @@ export function DistributedPage() {
             peer={peer}
             validation={validations[peer.id] ?? null}
             outOfSync={consensus?.outOfSyncPeerIds.includes(peer.id) ?? false}
-            onTamper={peer.id === "ura" ? tamperUra : undefined}
+            isResyncing={resyncingPeerId === peer.id}
+            onTamper={peer.id === MDA_PEER_IDS.ura ? tamperUra : undefined}
             onResync={
               consensus?.outOfSyncPeerIds.includes(peer.id)
                 ? () => resyncPeer(peer.id)

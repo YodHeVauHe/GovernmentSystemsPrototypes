@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { sandboxMiddleware } from './middleware/sandbox';
+import { sandboxMiddleware, sandboxNotFoundHandler } from './middleware/sandbox';
 import { identityRouter } from './routes/identity';
 import { taxRouter } from './routes/tax';
 import { businessRouter } from './routes/business';
@@ -23,11 +23,13 @@ import { findStoredSandboxOpenApiResponseExample } from './sandbox-openapi-respo
 import { ensureCatalogSchema } from './catalog-schema';
 import { openApiAssetsRouter } from './routes/openapi-assets';
 import { catalogRouter } from './routes/catalog';
+import { apiErrorHandler, jsonBodyErrorHandler } from './http-errors';
+import { positiveIntegerEnv } from './env';
 
 dotenv.config();
 
 export const app = express();
-const port = Number(process.env.PORT || 4000);
+const port = positiveIntegerEnv('PORT', 4000);
 const host = process.env.HOST || '127.0.0.1';
 
 const allowedOrigins = (process.env.GOVHUB_ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
@@ -56,6 +58,7 @@ app.use(async (req, res, next) => {
   next();
 });
 app.use(express.json({ limit: process.env.GOVHUB_JSON_LIMIT || '1mb' }));
+app.use(jsonBodyErrorHandler);
 
 export const db = createDb();
 
@@ -86,16 +89,8 @@ app.use('/api/v1/tax', taxRouter);
 app.use('/api/v1/business', businessRouter);
 app.use('/api/v1/transport/driving-permit', drivingPermitRouter);
 app.use('/api/v1/service-uganda', compositeRouter);
-app.use('/api/v1', async (req, res) => {
-  res.json({
-    requestId: res.getHeader('X-Correlation-ID'),
-    status: 'ok',
-    sandbox: true,
-    message: 'Dynamic sandbox mock response generated from a registered OpenAPI server path.',
-    path: req.originalUrl,
-    method: req.method,
-  });
-});
+app.use('/api/v1', sandboxNotFoundHandler);
+app.use(apiErrorHandler);
 
 export let server: ReturnType<typeof createTransportServer>;
 let initialized: Promise<void> | null = null;

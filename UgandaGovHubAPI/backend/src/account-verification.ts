@@ -44,6 +44,124 @@ function decryptDocumentFromStorage(document: VerificationDocument): Verificatio
   return decryptFields(document, ENCRYPTED_DOCUMENT_FIELDS as string[]) as VerificationDocument;
 }
 
+type VerificationDocumentUploadInput = {
+  type?: unknown;
+  label?: unknown;
+  file_name?: unknown;
+  mime_type?: unknown;
+  storage_ref?: unknown;
+};
+
+type ValidVerificationDocumentInput = {
+  type: string;
+  label: string;
+  file_name: string;
+  mime_type: string;
+  storage_ref?: string;
+};
+
+type VerificationDocumentInputValidation =
+  | { ok: true; value: ValidVerificationDocumentInput }
+  | { ok: false; code: string; message: string };
+
+const DOCUMENT_FILE_NAME_MAX_LENGTH = 255;
+const DOCUMENT_STORAGE_REF_MAX_LENGTH = 2048;
+const MIME_TYPE_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i;
+const ALLOWED_STORAGE_REF_PREFIXES = ['s3://govhub-vault/docs/', 'metadata://', 'local/'];
+
+function trimmedString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function hasControlCharacters(value: string) {
+  return /[\u0000-\u001F\u007F]/.test(value);
+}
+
+function acceptsMimeType(accepts: string, mimeType: string) {
+  return accepts
+    .split(',')
+    .map(value => value.trim().toLowerCase())
+    .some(accept => {
+      if (!accept) return false;
+      if (accept.endsWith('/*')) {
+        return mimeType.startsWith(`${accept.slice(0, -1)}`);
+      }
+      return accept === mimeType;
+    });
+}
+
+function isSafeDocumentFileName(fileName: string) {
+  if (!fileName || fileName.length > DOCUMENT_FILE_NAME_MAX_LENGTH) return false;
+  if (hasControlCharacters(fileName)) return false;
+  if (fileName === '.' || fileName === '..') return false;
+  return !/[\\/]/.test(fileName);
+}
+
+function isAllowedStorageRef(storageRef: string) {
+  if (!storageRef || storageRef.length > DOCUMENT_STORAGE_REF_MAX_LENGTH) return false;
+  if (hasControlCharacters(storageRef)) return false;
+  return ALLOWED_STORAGE_REF_PREFIXES.some(prefix => {
+    if (!storageRef.startsWith(prefix)) return false;
+    const relativePath = storageRef.slice(prefix.length);
+    if (!relativePath) return false;
+    return relativePath
+      .split('/')
+      .every(segment => segment && segment !== '.' && segment !== '..' && !segment.includes('\\'));
+  });
+}
+
+export function validateVerificationDocumentInput(
+  accountType: AccountType,
+  input: VerificationDocumentUploadInput,
+): VerificationDocumentInputValidation {
+  const requirements = ACCOUNT_TYPE_REQUIREMENTS[normalizeAccountType(accountType)];
+  const type = trimmedString(input.type);
+  const fileName = trimmedString(input.file_name);
+  const mimeType = trimmedString(input.mime_type).toLowerCase();
+  const storageRef = typeof input.storage_ref === 'string' ? input.storage_ref.trim() : undefined;
+  const documentRequirement = requirements.requiredDocuments.find(document => document.type === type);
+
+  if (!documentRequirement) {
+    return {
+      ok: false,
+      code: 'INVALID_DOCUMENT_TYPE',
+      message: 'Document type is not required for this account category.',
+    };
+  }
+  if (!isSafeDocumentFileName(fileName)) {
+    return {
+      ok: false,
+      code: 'INVALID_DOCUMENT_FILE_NAME',
+      message: 'Document file_name must be a plain file name with no path separators and 255 characters or fewer.',
+    };
+  }
+  if (!MIME_TYPE_RE.test(mimeType) || !acceptsMimeType(documentRequirement.accepts, mimeType)) {
+    return {
+      ok: false,
+      code: 'INVALID_DOCUMENT_MIME',
+      message: `Document mime_type must match ${documentRequirement.accepts}.`,
+    };
+  }
+  if (storageRef !== undefined && !isAllowedStorageRef(storageRef)) {
+    return {
+      ok: false,
+      code: 'INVALID_DOCUMENT_STORAGE_REF',
+      message: 'Document storage_ref must point to GovHub document storage metadata.',
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      type,
+      label: documentRequirement.label,
+      file_name: fileName,
+      mime_type: mimeType,
+      ...(storageRef ? { storage_ref: storageRef } : {}),
+    },
+  };
+}
+
 function initialAccountCategory(user: { account_type: string; requested_role?: string | null; role?: string | null; status?: string | null }): AccountType {
   if (user.status === 'APPROVED' && (user.role === 'admin' || user.requested_role === 'admin')) {
     return 'admin';
@@ -255,7 +373,9 @@ export function getVerificationProgress(
   const missingFields = requirements.requiredFields
     .filter(field => !profile[field.key])
     .map(field => field.label);
-  const submittedTypes = new Set(documents.map(document => document.type));
+  const submittedTypes = new Set(documents
+    .filter(document => document.status === 'submitted')
+    .map(document => document.type));
   const missingDocuments = requirements.requiredDocuments
     .filter(document => !submittedTypes.has(document.type))
     .map(document => document.type);
@@ -382,7 +502,7 @@ export async function getAccountSnapshot(db: DbClient, userId: string): Promise<
   };
 }
 
-export function canSubmitVerification(snapshot: AccountSnapshot): { allowed: boolean; message?: string } {
+export function canSubmitVerification(snapshot: AccountSnapshot): { allowed: boolean; message?: string; code?: string } {
   const missingFields = snapshot.verification_progress.missing_fields;
   const missingDocuments = snapshot.verification_progress.missing_documents;
 
@@ -390,6 +510,13 @@ export function canSubmitVerification(snapshot: AccountSnapshot): { allowed: boo
     return {
       allowed: false,
       message: `Missing required verification data: ${[...missingFields, ...missingDocuments].join(', ')}`,
+    };
+  }
+  if (!snapshot.verification_progress.can_submit) {
+    return {
+      allowed: false,
+      code: 'VERIFICATION_NOT_SUBMITTABLE',
+      message: 'This verification package cannot be submitted in its current status.',
     };
   }
   return { allowed: true };

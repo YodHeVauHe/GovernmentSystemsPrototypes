@@ -3,8 +3,10 @@ import {
   canAccess,
   createSession,
   ensureAuthSchema,
+  getBearerToken,
   getSessionUser,
   hashPassword,
+  SESSION_COOKIE_NAME,
   sanitizeUser,
   verifyPassword,
 } from './auth';
@@ -71,6 +73,11 @@ async function main() {
     assert.equal('password_hash' in publicUser, false);
     assert.equal(publicUser.role, 'developer');
     assert.equal(publicUser.mda_id, 'mda-moh-50d232f1-d559-4a3c-b922-6b3a7eb70543');
+
+    assert.equal(
+      getBearerToken({ headers: { cookie: `${SESSION_COOKIE_NAME}=%E0%A4%A` } } as any),
+      null
+    );
   });
 }
 

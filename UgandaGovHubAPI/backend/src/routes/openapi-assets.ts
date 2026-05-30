@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Db } from '../db';
 import { optionalAuth } from '../auth';
-import { canDownloadOpenApiAsset } from '../docs-access';
+import { canViewApiDocs } from '../docs-access';
 import { getSpecByPath, normalizeOpenApiPath } from '../openapi-store';
 
 function statusForDownloadDecision(code: string) {
@@ -19,14 +19,14 @@ export function openApiAssetsRouter(db: Db) {
       return res.status(404).json({ error: 'API documentation was not found.', code: 'NOT_FOUND' });
     }
 
-    const decision = await canDownloadOpenApiAsset(db, req.user, openapiPath);
-    if (decision.allowed === false) {
-      return res.status(statusForDownloadDecision(decision.code)).json({ error: decision.message, code: decision.code });
-    }
-
     const spec = await getSpecByPath(db, openapiPath);
     if (!spec) {
       return res.status(404).json({ error: 'Spec not found', code: 'SPEC_NOT_FOUND' });
+    }
+
+    const decision = await canViewApiDocs(db, req.user, spec.api_id);
+    if (decision.allowed === false) {
+      return res.status(statusForDownloadDecision(decision.code)).json({ error: decision.message, code: decision.code });
     }
 
     res.type('yaml').send(spec.openapi_spec_text);

@@ -36,4 +36,38 @@ assert.equal(
   null
 );
 
+const cyclicSchemaSpec = {
+  openapi: '3.1.0',
+  paths: {
+    '/cycle': {
+      get: {
+        responses: {
+          '200': {
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Node' },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  components: {
+    schemas: {
+      Node: {
+        type: 'object',
+        properties: {
+          child: { $ref: '#/components/schemas/Node' },
+        },
+      },
+    },
+  },
+};
+
+assert.equal(
+  findSandboxOpenApiResponseExample(cyclicSchemaSpec, '/cycle', 'GET'),
+  null
+);
+
 console.log('sandbox openapi response tests passed');

@@ -65,6 +65,10 @@ function escapeShell(value: string) {
   return value.replace(/'/g, "'\\''");
 }
 
+function shellSingleQuoted(value: string) {
+  return `'${escapeShell(value)}'`;
+}
+
 function escapeJava(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
 }
@@ -82,8 +86,8 @@ export function buildCodeSamples(input: CodeSampleInput): CodeSample[] {
   const javaBody = javaBodyLiteral(input.body);
   const headerEntries = Object.entries(headers);
 
-  const curlHeaders = headerEntries.map(([key, value]) => `  -H '${key}: ${escapeShell(value)}' \\`).join('\n');
-  const curlBody = jsonBody ? `\n  -d '${escapeShell(jsonBody)}'` : '';
+  const curlHeaders = headerEntries.map(([key, value]) => `  -H ${shellSingleQuoted(`${key}: ${value}`)} \\`).join('\n');
+  const curlBody = jsonBody ? `\n  -d ${shellSingleQuoted(jsonBody)}` : '';
 
   const javascriptBody = jsonBody ? `,\n  body: JSON.stringify(${jsonLiteral(input.body)})` : '';
   const pythonJsonBody = pythonBody ? `,\n    json=${pythonBody}` : '';
@@ -91,20 +95,20 @@ export function buildCodeSamples(input: CodeSampleInput): CodeSample[] {
     ? `.POST(HttpRequest.BodyPublishers.ofString("${escapeJava(javaBody)}"))`
     : method === 'GET'
       ? '.GET()'
-      : `.method("${method}", HttpRequest.BodyPublishers.noBody())`;
+      : `.method("${escapeJava(method)}", HttpRequest.BodyPublishers.noBody())`;
 
   return [
     {
       language: 'cURL',
-      value: `curl -X ${method} '${escapeShell(input.url)}' \\\n${curlHeaders}${curlBody}`,
+      value: `curl -X ${shellSingleQuoted(method)} ${shellSingleQuoted(input.url)} \\\n${curlHeaders}${curlBody}`,
     },
     {
       language: 'JavaScript',
-      value: `const response = await fetch(${jsonLiteral(input.url)}, {\n  method: '${method}',\n  headers: ${JSON.stringify(headers, null, 2)}${javascriptBody}\n});\n\nconst data = await response.json();\nconsole.log(data);`,
+      value: `const response = await fetch(${jsonLiteral(input.url)}, {\n  method: ${jsonLiteral(method)},\n  headers: ${JSON.stringify(headers, null, 2)}${javascriptBody}\n});\n\nconst data = await response.json();\nconsole.log(data);`,
     },
     {
       language: 'Python',
-      value: `import requests\n\nresponse = requests.request(\n    '${method}',\n    ${pythonLiteral(input.url)},\n    headers=${pythonLiteral(headers)}${pythonJsonBody}\n)\n\nprint(response.json())`,
+      value: `import requests\n\nresponse = requests.request(\n    ${pythonLiteral(method)},\n    ${pythonLiteral(input.url)},\n    headers=${pythonLiteral(headers)}${pythonJsonBody}\n)\n\nprint(response.json())`,
     },
     {
       language: 'Java',

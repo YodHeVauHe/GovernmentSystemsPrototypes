@@ -1,16 +1,19 @@
 import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
 import { generatePublicId } from '../ids';
+import { requiredSandboxString } from '../sandbox-input';
 
 export const identityRouter = Router();
 
 // POST /api/v1/identity/verify-nin
 identityRouter.post('/verify-nin', (req, res) => {
-  const { nin, given_name, surname } = req.body;
+  const { nin: rawNin } = req.body || {};
 
-  if (!nin) {
-    return sendSandboxError(res, 'MISSING_NIN', 'The "nin" field is required.');
+  const ninInput = requiredSandboxString(rawNin, 'nin', 'MISSING_NIN', 'The "nin" field is required.');
+  if (!ninInput.ok) {
+    return sendSandboxError(res, ninInput.code, ninInput.message);
   }
+  const nin = ninInput.value;
 
   // Deterministic Mock Responses based on NIN
   if (nin === 'CM99021234567X') {
@@ -44,11 +47,13 @@ identityRouter.post('/verify-nin', (req, res) => {
 // Accepts { nin } in the request body to avoid NIN appearing in server access logs and browser history.
 // The former GET /api/v1/identity/status/:nin is retained as a deprecated redirect for compatibility.
 identityRouter.post('/status', (req, res) => {
-  const { nin } = req.body || {};
+  const { nin: rawNin } = req.body || {};
 
-  if (!nin) {
-    return sendSandboxError(res, 'MISSING_NIN', 'The "nin" field is required.');
+  const ninInput = requiredSandboxString(rawNin, 'nin', 'MISSING_NIN', 'The "nin" field is required.');
+  if (!ninInput.ok) {
+    return sendSandboxError(res, ninInput.code, ninInput.message);
   }
+  const nin = ninInput.value;
 
   if (nin.endsWith('E')) {
     return res.json({

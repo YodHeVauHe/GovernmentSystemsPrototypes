@@ -33,8 +33,13 @@ export function getApiKeyPreview(apiKey: string) {
   return `${apiKey.slice(0, 8)}...${apiKey.slice(-4)}`;
 }
 
-export function normalizeExpiryInput(input?: string | null, now = new Date()) {
-  const expiry = input ? new Date(input) : getDefaultApiKeyExpiry(now);
+export function normalizeExpiryInput(input?: unknown, now = new Date()) {
+  if (input !== undefined && input !== null && typeof input !== 'string') {
+    throw new Error('API key expiry must be a valid ISO date.');
+  }
+
+  const normalizedInput = typeof input === 'string' ? input.trim() : '';
+  const expiry = normalizedInput ? new Date(normalizedInput) : getDefaultApiKeyExpiry(now);
   if (Number.isNaN(expiry.getTime())) {
     throw new Error('API key expiry must be a valid ISO date.');
   }
@@ -50,14 +55,23 @@ export function computeApiKeyAccess(record: ApiKeyRecord | undefined | null, api
   }
 
   const keyStatus = record.api_key_status || 'ACTIVE';
+  if (!['ACTIVE', 'REVOKED', 'DELETED'].includes(keyStatus)) {
+    return { allowed: false, code: 'INVALID_API_KEY', message: 'The provided API key status is invalid.' };
+  }
   if (keyStatus === 'REVOKED' || record.api_key_revoked_at) {
     return { allowed: false, code: 'REVOKED_API_KEY', message: 'The provided API key has been revoked.' };
   }
   if (keyStatus === 'DELETED') {
     return { allowed: false, code: 'INVALID_API_KEY', message: 'The provided API key is invalid or not approved.' };
   }
-  if (record.api_key_expires_at && new Date(record.api_key_expires_at).getTime() <= now.getTime()) {
-    return { allowed: false, code: 'EXPIRED_API_KEY', message: 'The provided API key has expired.' };
+  if (record.api_key_expires_at) {
+    const expiresAt = new Date(record.api_key_expires_at).getTime();
+    if (Number.isNaN(expiresAt)) {
+      return { allowed: false, code: 'INVALID_API_KEY', message: 'The provided API key expiry is invalid.' };
+    }
+    if (expiresAt <= now.getTime()) {
+      return { allowed: false, code: 'EXPIRED_API_KEY', message: 'The provided API key has expired.' };
+    }
   }
   if (record.consumer_user_id && record.consumer_user_status !== 'APPROVED') {
     return { allowed: false, code: 'ACCOUNT_NOT_APPROVED', message: 'The API key owner account is not approved.' };

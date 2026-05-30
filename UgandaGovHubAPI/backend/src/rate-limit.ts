@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import type { Db, DbClient } from './db';
 import { exec, one, run } from './db';
 
@@ -27,6 +28,10 @@ export interface RateLimitResult {
   resetAt: number; // unix ms
 }
 
+function rateLimitBucketKey(key: string) {
+  return `rl_${crypto.createHash('sha256').update(String(key || '')).digest('hex')}`;
+}
+
 /**
  * Atomically consume one unit from a rate-limit bucket.
  *
@@ -47,6 +52,7 @@ export function consumeRateLimit(
 ): Promise<RateLimitResult> {
   const nowIso = new Date(now).toISOString();
   const resetAtIso = new Date(now + windowMs).toISOString();
+  const bucketKey = rateLimitBucketKey(key);
 
   return one<{ count: number; reset_at: string }>(db, `
     INSERT INTO rate_limits (bucket_key, limit_group, count, reset_at)
@@ -61,7 +67,7 @@ export function consumeRateLimit(
         ELSE rate_limits.reset_at
       END
     RETURNING count, reset_at
-  `, [key, group, resetAtIso, nowIso]).then(row => {
+  `, [bucketKey, group, resetAtIso, nowIso]).then(row => {
     const count = Number(row?.count || 0);
     const resetAt = new Date(row?.reset_at || resetAtIso).getTime();
     return {
@@ -76,7 +82,7 @@ export function consumeRateLimit(
  * Remove a rate-limit record entirely (e.g. after a successful login).
  */
 export async function clearRateLimit(db: DbClient, group: string, key: string) {
-  await run(db, 'DELETE FROM rate_limits WHERE bucket_key = $1 AND limit_group = $2', [key, group]);
+  await run(db, 'DELETE FROM rate_limits WHERE bucket_key = $1 AND limit_group = $2', [rateLimitBucketKey(key), group]);
 }
 
 /**

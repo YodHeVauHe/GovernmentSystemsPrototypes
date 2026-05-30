@@ -34,7 +34,6 @@ export function docsRouter(db: DbClient) {
         return res.status(statusForCode(decision.code)).json({
           error: decision.message,
           code: decision.code,
-          docs_visibility: decision.visibility,
         });
       }
 
@@ -69,7 +68,6 @@ export function docsRouter(db: DbClient) {
         return res.status(statusForCode(decision.code)).json({
           error: decision.message,
           code: decision.code,
-          docs_visibility: decision.visibility,
         });
       }
 
@@ -86,7 +84,10 @@ export function docsRouter(db: DbClient) {
   });
 
   router.patch('/:id/visibility', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
-    const docsVisibility = String(req.body?.docs_visibility || '').toLowerCase() as DocsVisibility;
+    if (typeof req.body?.docs_visibility !== 'string') {
+      return res.status(400).json({ error: 'docs_visibility must be public, authenticated, or restricted.' });
+    }
+    const docsVisibility = req.body.docs_visibility.trim().toLowerCase() as DocsVisibility;
     if (!visibilityValues.has(docsVisibility)) {
       return res.status(400).json({ error: 'docs_visibility must be public, authenticated, or restricted.' });
     }
@@ -97,8 +98,19 @@ export function docsRouter(db: DbClient) {
     }
 
     try {
-      const result = await run(db, 'UPDATE apis SET docs_visibility = $1 WHERE id = $2', [docsVisibility, req.params.id]);
+      const result = await run(db, `
+        UPDATE apis
+        SET docs_visibility = $1
+        WHERE id = $2
+          AND ($3 = TRUE OR owning_mda_id = $4)
+      `, [docsVisibility, req.params.id, req.user!.role === 'admin', req.user!.mda_id]);
       if (result.changes === 0) {
+        if (req.user!.role !== 'admin') {
+          return res.status(409).json({
+            error: 'This API changed before docs visibility could be updated.',
+            code: 'DOCS_VISIBILITY_UPDATE_STALE',
+          });
+        }
         return res.status(404).json({ error: 'API not found', code: 'NOT_FOUND' });
       }
       res.json({ id: req.params.id, docs_visibility: docsVisibility });

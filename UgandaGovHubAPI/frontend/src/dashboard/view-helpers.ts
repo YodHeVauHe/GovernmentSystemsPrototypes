@@ -75,7 +75,28 @@ export function getAuditEventTone(eventType: string): AuditEventTone {
   return 'neutral';
 }
 
-export function getRequestStatusLabel(request: { status?: string; api_key_status?: string | null }) {
+export function formatAuditLogDetails(details: unknown) {
+  if (details === null || details === undefined || details === '') {
+    return '{}';
+  }
+
+  if (typeof details === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(details), null, 2);
+    } catch {
+      return details;
+    }
+  }
+
+  try {
+    return JSON.stringify(details, null, 2) || '{}';
+  } catch {
+    return String(details);
+  }
+}
+
+export function getRequestStatusLabel(request: { status?: string; api_key_status?: string | null; api_key_revoked_at?: string | null }) {
+  if (request.status === 'APPROVED' && request.api_key_revoked_at) return 'REVOKED';
   return request.status === 'APPROVED'
     ? request.api_key_status || 'ACTIVE'
     : request.status || 'PENDING';
@@ -87,11 +108,13 @@ export function hasActiveApprovedApiKey(request: {
   api_key?: string | null;
   api_key_status?: string | null;
   api_key_expires_at?: string | null;
+  api_key_revoked_at?: string | null;
 }) {
   return (
     request.status === 'APPROVED' &&
     Boolean(request.api_key_preview) &&
     (request.api_key_status || 'ACTIVE') === 'ACTIVE' &&
+    !request.api_key_revoked_at &&
     (!request.api_key_expires_at || new Date(request.api_key_expires_at).getTime() > Date.now())
   );
 }
@@ -101,6 +124,7 @@ export function hasPendingOneTimeApiKeyReveal(request: {
   api_key_preview?: string | null;
   api_key_status?: string | null;
   api_key_expires_at?: string | null;
+  api_key_revoked_at?: string | null;
   api_key_pending_reveal?: boolean | number | null;
 }) {
   return hasActiveApprovedApiKey(request) && Boolean(request.api_key_pending_reveal);
@@ -115,6 +139,7 @@ export function canViewAuditLogsTab(role: string, requests: Array<{
   api_key_preview?: string | null;
   api_key_status?: string | null;
   api_key_expires_at?: string | null;
+  api_key_revoked_at?: string | null;
 }>) {
   return role === 'admin' || role === 'reviewer' || (role === 'developer' && requests.some(hasActiveApprovedApiKey));
 }
