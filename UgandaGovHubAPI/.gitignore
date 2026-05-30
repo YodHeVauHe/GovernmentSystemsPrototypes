@@ -5,6 +5,8 @@ backend/.env
 frontend/.env
 playwright-report/
 test-results/
+docs/
+tests/
 doc/superpowers/
 
 # Generated knowledge graph output

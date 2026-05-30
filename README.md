@@ -23,7 +23,7 @@ Many government systems operate in silos, which makes it difficult for one MDA t
 
 The prototype uses sandbox data only. It does not connect to live NIRA, URA, URSB, NITA-U, or other production government systems.
 
-![Uganda GovHub API interoperability catalog](./UgandaGovHubAPI/docs/architecture-pdf/assets/apiCatalog.png)
+![Uganda GovHub API interoperability catalog](./UgandaGovHubAPI/readme-assets/screenshots/apiCatalog.png)
 
 ## Functional Scope
 
@@ -90,7 +90,7 @@ Penetration testing and formal security certification have not been completed. T
 UgandaGovHubAPI/
   backend/       Express API, database access, auth, sandbox, catalog, audit, and governance routes
   frontend/      React/Vite portal, catalog, docs, dashboard, settings, and sandbox UI
-  docs/          Architecture notes, design records, screenshots, and sample OpenAPI material
+  readme-assets/ Screenshots used by the repository README files
   vercel.json    Vercel deployment configuration for the full-stack prototype
 ```
 
@@ -113,8 +113,6 @@ Useful project checks that remain aligned with the current repository contents:
 ```bash
 npm run lint
 npm run build
-npm run test:e2e
-npm run test:a11y
 ```
 
 Demo accounts, environment variables, security configuration, and the presenter path are documented in [`UgandaGovHubAPI/README.md`](./UgandaGovHubAPI/README.md).
