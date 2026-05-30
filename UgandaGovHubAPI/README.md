@@ -1,5 +1,31 @@
 # Uganda GovHub API: Interoperability and Data Exchange
 
+<p align="center">
+  <strong>Uganda GovHub API</strong><br />
+  Closed-source government interoperability prototype
+</p>
+
+<p align="center">
+  <a href="../README.md">Main Repo</a>
+  ·
+  <a href="LICENSE">License</a>
+  ·
+  <a href="COPYRIGHT.md">Copyright</a>
+  ·
+  <a href="CODE_OF_CONDUCT.md">Code of Conduct</a>
+  ·
+  <a href="../CONTRIBUTING.md">Contributing</a>
+  ·
+  <a href="../SECURITY.md">Security</a>
+</p>
+
+<p align="center">
+  <img alt="Source access: restricted" src="https://img.shields.io/badge/source%20access-restricted-red" />
+  <img alt="License: proprietary" src="https://img.shields.io/badge/license-proprietary-red" />
+  <img alt="Review only" src="https://img.shields.io/badge/government%20review-evaluation%20only-blue" />
+  <img alt="Uganda law" src="https://img.shields.io/badge/law-Uganda%20Cap.%20222-green" />
+</p>
+
 ## Repository Access Notice
 
 This repository is **closed-source proprietary intellectual property**. It is
@@ -13,11 +39,19 @@ Access for government, institutional, procurement, security, or technical review
 is for evaluation only unless a separate signed written agreement grants broader
 rights.
 
+Uganda copyright law protects original works reduced to material form, including
+computer programmes, electronic data banks, and accompanying materials. The
+license and notices in this repository are written to preserve those rights and
+to make clear that review access does not transfer ownership or grant production
+use.
+
 Repository governance documents:
 
 - [Proprietary source-available license](LICENSE)
 - [Copyright and intellectual property notice](COPYRIGHT.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
+- [Main repository contributing rules](../CONTRIBUTING.md)
+- [Main repository security policy](../SECURITY.md)
 
 ## Thematic Area
 
