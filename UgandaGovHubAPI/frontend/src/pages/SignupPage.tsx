@@ -2,11 +2,14 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconInnerShadowTop } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
+import { FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { TurnstileWidget } from '@/components/TurnstileWidget';
 import { MDAS_LIST, useUser, type UserRole } from '@/context/UserContext';
+import { hasValidationErrors, validateSignupForm, type SignupValidationErrors } from '@/lib/auth-validation';
 
 type AccountType =
   | 'government_employee'
@@ -97,15 +100,30 @@ export function SignupPage() {
     requested_purpose: '',
   });
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<SignupValidationErrors>({});
   const [submitting, setSubmitting] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
 
   const selectedType = useMemo(
     () => accountTypes.find(type => type.value === form.account_type) || accountTypes[0],
     [form.account_type]
   );
 
+  const clearFieldError = (field: keyof SignupValidationErrors) => {
+    setFieldErrors(current => ({ ...current, [field]: undefined }));
+  };
+
   const update = (key: keyof typeof form, value: string) => {
     setForm(current => ({ ...current, [key]: value }));
+    if (key in fieldErrors) {
+      clearFieldError(key as keyof SignupValidationErrors);
+    }
+  };
+
+  const resetTurnstile = () => {
+    setTurnstileToken('');
+    setTurnstileResetSignal(signal => signal + 1);
   };
 
   const updateAccountType = (value: AccountType) => {
@@ -116,20 +134,27 @@ export function SignupPage() {
       requested_role: nextType.roleOptions[0],
       requested_mda_id: nextType.requiresMda ? current.requested_mda_id || 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3' : '',
     }));
+    clearFieldError('requested_mda_id');
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
+    const nextFieldErrors = validateSignupForm({ ...form, turnstileToken }, { requiresMda: selectedType.requiresMda });
+    setFieldErrors(nextFieldErrors);
+    if (hasValidationErrors(nextFieldErrors)) return;
+
     setSubmitting(true);
     try {
       await signup({
         ...form,
         requested_mda_id: selectedType.requiresMda ? form.requested_mda_id : '',
+        turnstileToken,
       });
       navigate('/login');
     } catch (err: any) {
       setError(err.message || 'Unable to create account.');
+      resetTurnstile();
     } finally {
       setSubmitting(false);
     }
@@ -137,7 +162,7 @@ export function SignupPage() {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-[#181818] px-4 py-8 text-[#ededed]">
-      <form onSubmit={submit} className="w-full max-w-3xl space-y-5 rounded-lg border border-[#2e2e2e] bg-[#141414] p-6">
+      <form onSubmit={submit} noValidate className="w-full max-w-3xl space-y-5 rounded-lg border border-[#2e2e2e] bg-[#141414] p-6">
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
             <IconInnerShadowTop className="size-5" />
@@ -166,15 +191,42 @@ export function SignupPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="full_name">Full legal name</Label>
-            <Input id="full_name" value={form.full_name} onChange={event => update('full_name', event.target.value)} required />
+            <Input
+              id="full_name"
+              value={form.full_name}
+              aria-invalid={Boolean(fieldErrors.full_name)}
+              aria-describedby={fieldErrors.full_name ? 'full-name-error' : undefined}
+              onChange={event => update('full_name', event.target.value)}
+              required
+            />
+            <FieldError id="full-name-error">{fieldErrors.full_name}</FieldError>
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" value={form.email} onChange={event => update('email', event.target.value)} required />
+            <Input
+              id="email"
+              type="email"
+              value={form.email}
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+              onChange={event => update('email', event.target.value)}
+              required
+            />
+            <FieldError id="email-error">{fieldErrors.email}</FieldError>
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
-            <Input id="password" type="password" minLength={10} value={form.password} onChange={event => update('password', event.target.value)} required />
+            <Input
+              id="password"
+              type="password"
+              minLength={10}
+              value={form.password}
+              aria-invalid={Boolean(fieldErrors.password)}
+              aria-describedby={fieldErrors.password ? 'password-error' : undefined}
+              onChange={event => update('password', event.target.value)}
+              required
+            />
+            <FieldError id="password-error">{fieldErrors.password}</FieldError>
           </div>
           <div className="space-y-2">
             <Label htmlFor="requested_role">Requested privilege</Label>
@@ -199,14 +251,25 @@ export function SignupPage() {
                 value={form.requested_mda_id || 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3'}
                 onChange={event => update('requested_mda_id', event.target.value)}
                 className="h-9 w-full rounded-md border border-[#2e2e2e] bg-[#181818] px-3 text-sm"
+                aria-invalid={Boolean(fieldErrors.requested_mda_id)}
+                aria-describedby={fieldErrors.requested_mda_id ? 'requested-mda-error' : undefined}
               >
                 {MDAS_LIST.map(mda => <option key={mda.id} value={mda.id}>{mda.name} ({mda.shortName})</option>)}
               </select>
+              <FieldError id="requested-mda-error">{fieldErrors.requested_mda_id}</FieldError>
             </div>
           )}
           <div className="space-y-2">
             <Label htmlFor="requested_organization">{selectedType.organizationLabel}</Label>
-            <Input id="requested_organization" value={form.requested_organization} onChange={event => update('requested_organization', event.target.value)} required />
+            <Input
+              id="requested_organization"
+              value={form.requested_organization}
+              aria-invalid={Boolean(fieldErrors.requested_organization)}
+              aria-describedby={fieldErrors.requested_organization ? 'requested-organization-error' : undefined}
+              onChange={event => update('requested_organization', event.target.value)}
+              required
+            />
+            <FieldError id="requested-organization-error">{fieldErrors.requested_organization}</FieldError>
           </div>
         </div>
 
@@ -216,7 +279,29 @@ export function SignupPage() {
 
         <div className="space-y-2">
           <Label htmlFor="requested_purpose">Access purpose</Label>
-          <Textarea id="requested_purpose" value={form.requested_purpose} onChange={event => update('requested_purpose', event.target.value)} required />
+          <Textarea
+            id="requested_purpose"
+            value={form.requested_purpose}
+            aria-invalid={Boolean(fieldErrors.requested_purpose)}
+            aria-describedby={fieldErrors.requested_purpose ? 'requested-purpose-error' : undefined}
+            onChange={event => update('requested_purpose', event.target.value)}
+            required
+          />
+          <FieldError id="requested-purpose-error">{fieldErrors.requested_purpose}</FieldError>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Human verification</Label>
+          <TurnstileWidget
+            action="signup"
+            resetSignal={turnstileResetSignal}
+            onToken={token => {
+              setTurnstileToken(token);
+              if (token) clearFieldError('turnstileToken');
+            }}
+            onError={message => setFieldErrors(current => ({ ...current, turnstileToken: message }))}
+          />
+          <FieldError>{fieldErrors.turnstileToken}</FieldError>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

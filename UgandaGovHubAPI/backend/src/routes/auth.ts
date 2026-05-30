@@ -31,6 +31,7 @@ import {
 import { clearRateLimit, consumeRateLimit } from '../rate-limit';
 import type { Db, DbClient } from '../db';
 import { many, one, run, tableExists } from '../db';
+import { validateTurnstileToken } from '../turnstile';
 
 async function getUserByEmail(db: DbClient, email: string) {
   return one(db, 'SELECT * FROM users WHERE email = $1', [normalizeEmail(email)]);
@@ -123,6 +124,28 @@ function validateSignup(body: any) {
 const LOGIN_LIMIT = Number(process.env.GOVHUB_LOGIN_RATE_LIMIT || 10);
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
+function turnstileTokenFromBody(body: any) {
+  return body?.turnstile_token || body?.cf_turnstile_response || body?.['cf-turnstile-response'];
+}
+
+async function verifyHumanRequest(req: any, action: 'app_load' | 'login' | 'signup') {
+  return validateTurnstileToken({
+    token: turnstileTokenFromBody(req.body || {}),
+    action,
+    remoteIp: req.ip,
+  });
+}
+
+function sendTurnstileError(res: any, result: Awaited<ReturnType<typeof validateTurnstileToken>>) {
+  if (result.ok) return false;
+  res.status(result.status).json({
+    error: result.message,
+    code: result.code,
+    errors: result.errors,
+  });
+  return true;
+}
+
 async function markVerificationChanged(db: DbClient, userId: string, currentStatus?: string | null) {
   if (!['submitted_for_review', 'verified'].includes(currentStatus || '')) return false;
   await run(db, `
@@ -172,7 +195,16 @@ async function rejectSelfAdminVerificationMutation(db: DbClient, actorId: string
 export function authRouter(db: Db) {
   const router = Router();
 
+  router.post('/human-verification', async (req, res) => {
+    const turnstile = await verifyHumanRequest(req, 'app_load');
+    if (sendTurnstileError(res, turnstile)) return;
+    res.json({ verified: true });
+  });
+
   router.post('/signup', async (req, res) => {
+    const turnstile = await verifyHumanRequest(req, 'signup');
+    if (sendTurnstileError(res, turnstile)) return;
+
     const error = validateSignup(req.body || {});
     if (error) return res.status(400).json({ error });
 
@@ -205,6 +237,9 @@ export function authRouter(db: Db) {
   });
 
   router.post('/login', async (req, res) => {
+    const turnstile = await verifyHumanRequest(req, 'login');
+    if (sendTurnstileError(res, turnstile)) return;
+
     const { email, password, mfa_code } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
