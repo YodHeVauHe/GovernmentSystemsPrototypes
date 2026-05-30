@@ -60,7 +60,14 @@ export function TurnstileWidget({ action, className, resetSignal = 0, onToken, o
   const previousResetSignal = useRef(resetSignal);
   const [isReady, setIsReady] = useState(Boolean(window.turnstile));
   const [loadError, setLoadError] = useState('');
-  const siteKey = getTurnstileSiteKey();
+  let siteKey = '';
+  let configError = '';
+
+  try {
+    siteKey = getTurnstileSiteKey();
+  } catch (err) {
+    configError = err instanceof Error ? err.message : 'Human verification is not configured.';
+  }
 
   useEffect(() => {
     onTokenRef.current = onToken;
@@ -68,6 +75,12 @@ export function TurnstileWidget({ action, className, resetSignal = 0, onToken, o
   }, [onToken, onError]);
 
   useEffect(() => {
+    if (configError) {
+      setLoadError(configError);
+      onErrorRef.current?.(configError);
+      return;
+    }
+
     let mounted = true;
     loadTurnstileScript()
       .then(() => {
@@ -83,10 +96,10 @@ export function TurnstileWidget({ action, className, resetSignal = 0, onToken, o
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [configError]);
 
   useEffect(() => {
-    if (!isReady || !window.turnstile || !containerRef.current || widgetIdRef.current) return;
+    if (configError || !isReady || !window.turnstile || !containerRef.current || widgetIdRef.current) return;
 
     widgetIdRef.current = window.turnstile.render(containerRef.current, {
       sitekey: siteKey,
@@ -106,7 +119,7 @@ export function TurnstileWidget({ action, className, resetSignal = 0, onToken, o
         widgetIdRef.current = null;
       }
     };
-  }, [action, isReady, siteKey]);
+  }, [action, configError, isReady, siteKey]);
 
   useEffect(() => {
     if (previousResetSignal.current === resetSignal) return;
