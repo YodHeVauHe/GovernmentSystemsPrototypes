@@ -6,7 +6,13 @@ export function isServerVerificationBypassEnabled(value: string | boolean | unde
 }
 
 export function getTurnstileSiteKey() {
-  return import.meta.env.VITE_TURNSTILE_SITE_KEY || TURNSTILE_TEST_SITE_KEY;
+  if (import.meta.env.VITE_TURNSTILE_SITE_KEY) {
+    return import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  }
+  if (import.meta.env.PROD) {
+    throw new Error('VITE_TURNSTILE_SITE_KEY is required in production.');
+  }
+  return TURNSTILE_TEST_SITE_KEY;
 }
 
 export function shouldBypassTurnstileServerVerification() {
