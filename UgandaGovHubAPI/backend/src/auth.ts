@@ -4,7 +4,7 @@ import { ensureRateLimitSchema } from './rate-limit';
 import { decryptAtRest, encryptAtRest } from './crypto-at-rest';
 import type { DbClient } from './db';
 import { exec, hasColumn, one, run } from './db';
-import { shouldRequireAdminMfa } from './security-config';
+import { isDemoModeEnabled, isProductionEnv, shouldRequireAdminMfa } from './security-config';
 
 export const USER_ROLES = ['developer', 'api_owner', 'admin', 'reviewer'] as const;
 export type UserRole = typeof USER_ROLES[number];
@@ -196,6 +196,9 @@ export async function ensureDefaultAdmin(db: DbClient) {
   let password = process.env.GOVHUB_ADMIN_PASSWORD;
 
   if (!password) {
+    if (isProductionEnv()) {
+      throw new Error('GOVHUB_ADMIN_PASSWORD is required in production.');
+    }
     if (process.env.GOVHUB_DEMO_MODE !== 'true') {
       throw new Error('GOVHUB_ADMIN_PASSWORD is required unless GOVHUB_DEMO_MODE=true.');
     }
@@ -235,6 +238,7 @@ type DemoUserSeed = {
   envPrefix: string;
   fallbackEmail: string;
   fallbackPassword: string;
+  requiredForProductionDemo?: boolean;
   fullName: string;
   accountType: string;
   requestedRole: UserRole;
@@ -251,6 +255,7 @@ const demoUsers: DemoUserSeed[] = [
     envPrefix: 'GOVHUB_DEMO_DEVELOPER',
     fallbackEmail: 'demo.developer@govhub.go.ug',
     fallbackPassword: 'DemoDeveloper123!',
+    requiredForProductionDemo: true,
     fullName: 'Demo Developer',
     accountType: 'government_employee',
     requestedRole: 'developer',
@@ -265,6 +270,7 @@ const demoUsers: DemoUserSeed[] = [
     envPrefix: 'GOVHUB_DEMO_API_OWNER',
     fallbackEmail: 'demo.api.owner@nira.go.ug',
     fallbackPassword: 'DemoApiOwner123!',
+    requiredForProductionDemo: true,
     fullName: 'Demo API Owner',
     accountType: 'mda_api_owner',
     requestedRole: 'api_owner',
@@ -279,6 +285,7 @@ const demoUsers: DemoUserSeed[] = [
     envPrefix: 'GOVHUB_DEMO_REVIEWER',
     fallbackEmail: 'demo.reviewer@govhub.go.ug',
     fallbackPassword: 'DemoReviewer123!',
+    requiredForProductionDemo: true,
     fullName: 'Demo Compliance Reviewer',
     accountType: 'government_employee',
     requestedRole: 'reviewer',
@@ -347,13 +354,78 @@ const demoUsers: DemoUserSeed[] = [
   },
 ];
 
+function envString(env: NodeJS.ProcessEnv, key: string) {
+  const value = env[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export function shouldSeedDemoUsers(env: NodeJS.ProcessEnv = process.env) {
+  return isDemoModeEnabled(env);
+}
+
+export function resolveDemoUserCredentials(
+  demoUser: Pick<DemoUserSeed, 'envPrefix' | 'fallbackEmail' | 'fallbackPassword' | 'requiredForProductionDemo'>,
+  env: NodeJS.ProcessEnv = process.env
+) {
+  const email = normalizeEmail(
+    envString(env, `${demoUser.envPrefix}_EMAIL`)
+    || demoUser.fallbackEmail
+  );
+  const configuredPassword = envString(env, `${demoUser.envPrefix}_PASSWORD`);
+  if (configuredPassword) return { email, password: configuredPassword };
+
+  if (isProductionEnv(env)) {
+    if (demoUser.requiredForProductionDemo) {
+      throw new Error(`${demoUser.envPrefix}_PASSWORD is required when GOVHUB_DEMO_MODE=true in production.`);
+    }
+    return null;
+  }
+
+  return { email, password: demoUser.fallbackPassword };
+}
+
 export async function ensureDemoUsers(db: DbClient) {
-  if (process.env.GOVHUB_DEMO_MODE !== 'true') return;
+  if (!shouldSeedDemoUsers()) return;
+  const productionDemoMode = isProductionEnv();
   for (const demoUser of demoUsers) {
-    const email = normalizeEmail(process.env[`${demoUser.envPrefix}_EMAIL`] || demoUser.fallbackEmail);
-    const password = process.env[`${demoUser.envPrefix}_PASSWORD`] || demoUser.fallbackPassword;
+    const credentials = resolveDemoUserCredentials(demoUser);
+    if (!credentials) continue;
+    const { email, password } = credentials;
     const existing = await one(db, 'SELECT id FROM users WHERE email = $1', [email]);
-    if (existing) continue;
+    const reviewedAt = demoUser.status === 'APPROVED' ? new Date().toISOString() : null;
+
+    if (existing) {
+      if (!productionDemoMode) continue;
+      await run(db, `
+        UPDATE users
+        SET full_name = $1,
+            password_hash = $2,
+            account_type = $3,
+            requested_role = $4,
+            requested_mda_id = $5,
+            requested_organization = $6,
+            requested_purpose = $7,
+            status = $8,
+            role = $9,
+            mda_id = $10,
+            reviewed_at = $11
+        WHERE email = $12
+      `, [
+        demoUser.fullName,
+        hashPassword(password),
+        demoUser.accountType,
+        demoUser.requestedRole,
+        demoUser.requestedMdaId,
+        demoUser.organization,
+        demoUser.purpose,
+        demoUser.status,
+        demoUser.role,
+        demoUser.mdaId,
+        reviewedAt,
+        email,
+      ]);
+      continue;
+    }
 
     await run(db, `
       INSERT INTO users (
@@ -374,7 +446,7 @@ export async function ensureDemoUsers(db: DbClient) {
       demoUser.status,
       demoUser.role,
       demoUser.mdaId,
-      demoUser.status === 'APPROVED' ? new Date().toISOString() : null
+      reviewedAt
     ]);
   }
 }

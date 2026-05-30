@@ -215,7 +215,7 @@ The app can deploy as one Vercel project:
 - Vercel routes all other paths to the React Router SPA fallback.
 - Postgres is the persistent store for app data and OpenAPI spec text.
 
-Required Vercel environment variables:
+Core Vercel environment variables:
 
 ```bash
 DATABASE_URL=postgresql://...
@@ -223,12 +223,11 @@ GOVHUB_TRUST_TLS_TERMINATION=true
 GOVHUB_ALLOWED_ORIGINS=https://your-app.vercel.app,https://your-custom-domain.com
 GOVHUB_ADMIN_EMAIL=admin@ict.go.ug
 GOVHUB_ADMIN_PASSWORD=...
-GOVHUB_DEMO_DEVELOPER_EMAIL=...
-GOVHUB_DEMO_DEVELOPER_PASSWORD=...
-GOVHUB_DEMO_API_OWNER_EMAIL=...
-GOVHUB_DEMO_API_OWNER_PASSWORD=...
-GOVHUB_DEMO_REVIEWER_EMAIL=...
-GOVHUB_DEMO_REVIEWER_PASSWORD=...
+GOVHUB_DEMO_MODE=true
+GOVHUB_DATA_ENCRYPTION_KEY=...
+GOVHUB_REQUIRE_ADMIN_MFA=true
+GOVHUB_TURNSTILE_SECRET_KEY=...
+GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES=your-app.vercel.app,your-custom-domain.com
 ```
 
 `VITE_API_BASE_URL` can be omitted on Vercel when same-origin routing is used.
@@ -252,14 +251,56 @@ Do not set `DATABASE_SSL=false` in Vercel. The backend defaults to SSL for hoste
 
 ## Demo Accounts
 
-Demo accounts are seeded automatically in demo mode. Configure their passwords through local environment variables before sharing or presenting the app.
+`GOVHUB_DEMO_MODE` is the single switch for demo users:
 
-| Role | Email variable | Password variable |
+- `GOVHUB_DEMO_MODE=false` means no demo users are seeded. Use the configured
+  admin account and normal sign-up/approval flows.
+- `GOVHUB_DEMO_MODE=true` outside production seeds local demo users with the
+  fallback credentials below.
+- `GOVHUB_DEMO_MODE=true` in production seeds demo users, but never uses
+  fallback passwords. Production still requires `GOVHUB_ADMIN_PASSWORD`,
+  `GOVHUB_DATA_ENCRYPTION_KEY`, `GOVHUB_REQUIRE_ADMIN_MFA=true`, Turnstile, and
+  normal HTTPS/origin configuration.
+
+For a Vercel presentation deployment, keep `GOVHUB_DEMO_MODE=true` and configure
+explicit passwords for the primary demo accounts:
+
+```bash
+GOVHUB_DEMO_DEVELOPER_EMAIL=demo.developer@govhub.go.ug
+GOVHUB_DEMO_DEVELOPER_PASSWORD=...
+GOVHUB_DEMO_API_OWNER_EMAIL=demo.api.owner@nira.go.ug
+GOVHUB_DEMO_API_OWNER_PASSWORD=...
+GOVHUB_DEMO_REVIEWER_EMAIL=demo.reviewer@govhub.go.ug
+GOVHUB_DEMO_REVIEWER_PASSWORD=...
+```
+
+Those three passwords are required when `NODE_ENV=production` and
+`GOVHUB_DEMO_MODE=true`, because they cover the main demo flows. Existing demo
+users with the same email are updated on startup so the configured credentials
+work after redeploy.
+
+Optional demo account variables use the same pattern:
+
+```bash
+GOVHUB_DEMO_PUBLIC_DEVELOPER_EMAIL=demo.public.developer@example.com
+GOVHUB_DEMO_PUBLIC_DEVELOPER_PASSWORD=...
+GOVHUB_DEMO_PRIVATE_COMPANY_EMAIL=demo.company@example.com
+GOVHUB_DEMO_PRIVATE_COMPANY_PASSWORD=...
+GOVHUB_DEMO_BUSINESS_EMAIL=demo.business@example.com
+GOVHUB_DEMO_BUSINESS_PASSWORD=...
+GOVHUB_DEMO_RESEARCH_EMAIL=demo.research@example.edu
+GOVHUB_DEMO_RESEARCH_PASSWORD=...
+```
+
+Optional demo accounts are skipped in production unless their password variable
+is set. In local demo mode, these fallback credentials are available:
+
+| Role | Local email | Local fallback password |
 | --- | --- | --- |
-| Platform admin | `GOVHUB_ADMIN_EMAIL` | `GOVHUB_ADMIN_PASSWORD` |
-| MDA developer | `GOVHUB_DEMO_DEVELOPER_EMAIL` | `GOVHUB_DEMO_DEVELOPER_PASSWORD` |
-| NIRA API owner | `GOVHUB_DEMO_API_OWNER_EMAIL` | `GOVHUB_DEMO_API_OWNER_PASSWORD` |
-| Compliance reviewer | `GOVHUB_DEMO_REVIEWER_EMAIL` | `GOVHUB_DEMO_REVIEWER_PASSWORD` |
+| Platform admin | `admin@ict.go.ug` unless `GOVHUB_ADMIN_EMAIL` is set | Generated at startup unless `GOVHUB_ADMIN_PASSWORD` is set |
+| MDA developer | `demo.developer@govhub.go.ug` | `DemoDeveloper123!` |
+| NIRA API owner | `demo.api.owner@nira.go.ug` | `DemoApiOwner123!` |
+| Compliance reviewer | `demo.reviewer@govhub.go.ug` | `DemoReviewer123!` |
 
 ## Key Routes
 

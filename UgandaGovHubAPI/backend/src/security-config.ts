@@ -13,9 +13,6 @@ export function shouldRequireAdminMfa(env: NodeJS.ProcessEnv = process.env) {
 export function validateProductionSecurityEnv(env: NodeJS.ProcessEnv = process.env) {
   if (!isProductionEnv(env)) return;
 
-  if (isDemoModeEnabled(env)) {
-    throw new Error('GOVHUB_DEMO_MODE must not be true in production.');
-  }
   if (!env.GOVHUB_DATA_ENCRYPTION_KEY) {
     throw new Error('GOVHUB_DATA_ENCRYPTION_KEY is required in production.');
   }
