@@ -73,7 +73,7 @@ export function MatrixPanel({ mdas, matrix, matrixViewMode, setMatrixViewMode }:
                                   {activeCount}/{channels.length} active
                                 </span>
                               </div>
-                              <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                              <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
                                 {channels.map(channel => (
                                   <div key={channel.apiId} className="flex min-h-10 items-center justify-between gap-3 rounded-md border border-[#2e2e2e] bg-[#141414] px-3 py-2">
                                     <span className="min-w-0 truncate text-[12.5px] text-[#ededed]">{channel.label}</span>
