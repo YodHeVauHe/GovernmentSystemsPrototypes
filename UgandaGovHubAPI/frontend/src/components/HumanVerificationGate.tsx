@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { TurnstileWidget } from '@/components/TurnstileWidget';
@@ -80,7 +79,7 @@ export function HumanVerificationGate({ children }: { children: React.ReactNode 
       <section className="mx-auto flex w-full max-w-5xl flex-1 items-center py-16">
         <div className="w-full max-w-3xl">
           <div className="flex items-center gap-3 text-[#3ecf8e]">
-            <ShieldCheck className="size-8" />
+            <img src="/favicon.svg" alt="" className="size-10 rounded-md" />
             <span className="text-sm font-medium uppercase tracking-[0.18em] text-[#8b8b8b]">
               Uganda GovHub API Portal
             </span>
