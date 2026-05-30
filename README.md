@@ -1,6 +1,10 @@
 # Uganda GovHub API Prototype
 
 <p align="center">
+  <img src="UgandaGovHubAPI/frontend/public/favicon.svg" alt="Uganda GovHub API logo" width="96" height="96" />
+</p>
+
+<p align="center">
   <strong>Uganda GovHub API</strong><br />
   Closed-source government interoperability prototype
 </p>
