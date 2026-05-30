@@ -1,5 +1,24 @@
 # Uganda GovHub API: Interoperability and Data Exchange
 
+## Repository Access Notice
+
+This repository is **closed-source proprietary intellectual property**. It is
+made available only to explicitly authorized collaborators or reviewers.
+Cloning, downloading, or viewing this repository does not grant any right to
+copy, redistribute, deploy, publish, modify, commercialize, train AI models on,
+or reuse any part of the source code, documentation, designs, API
+specifications, assets, or related materials.
+
+Access for government, institutional, procurement, security, or technical review
+is for evaluation only unless a separate signed written agreement grants broader
+rights.
+
+Repository governance documents:
+
+- [Proprietary source-available license](LICENSE)
+- [Copyright and intellectual property notice](COPYRIGHT.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+
 ## Thematic Area
 
 **Area 10: Interoperability and Data Exchange** - government API platforms, data integration middleware, and governed MDA data exchange.
