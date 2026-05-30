@@ -2,10 +2,13 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconInnerShadowTop } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
+import { FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { TurnstileWidget } from '@/components/TurnstileWidget';
 import { useUser } from '@/context/UserContext';
+import { hasValidationErrors, validateLoginForm, type LoginValidationErrors } from '@/lib/auth-validation';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -15,21 +18,45 @@ export function LoginPage() {
   const [mfaCode, setMfaCode] = useState('');
   const [mfaRequired, setMfaRequired] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<LoginValidationErrors>({});
   const [submitting, setSubmitting] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
+
+  const clearFieldError = (field: keyof LoginValidationErrors) => {
+    setFieldErrors(current => ({ ...current, [field]: undefined }));
+  };
+
+  const resetTurnstile = () => {
+    setTurnstileToken('');
+    setTurnstileResetSignal(signal => signal + 1);
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
+    const nextFieldErrors = validateLoginForm({ email, password, mfaRequired, mfaCode, turnstileToken });
+    setFieldErrors(nextFieldErrors);
+    if (hasValidationErrors(nextFieldErrors)) return;
+
     setSubmitting(true);
     try {
-      const user = await login(email, password, mfaRequired ? mfaCode : undefined);
+      const user = await login({
+        email: email.trim(),
+        password,
+        mfaCode: mfaRequired ? mfaCode : undefined,
+        turnstileToken,
+      });
       navigate(user.status === 'APPROVED' ? '/dashboard' : '/account-status');
     } catch (err: any) {
       if (err.code === 'MFA_REQUIRED') {
         setMfaRequired(true);
+        setMfaCode('');
+        resetTurnstile();
         setError('');
       } else {
         setError(err.message || 'Unable to sign in.');
+        resetTurnstile();
       }
     } finally {
       setSubmitting(false);
@@ -38,7 +65,7 @@ export function LoginPage() {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-[#181818] px-4 text-[#ededed]">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-5 rounded-lg border border-[#2e2e2e] bg-[#141414] p-6">
+      <form onSubmit={submit} noValidate className="w-full max-w-sm space-y-5 rounded-lg border border-[#2e2e2e] bg-[#141414] p-6">
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
             <IconInnerShadowTop className="size-5" />
@@ -53,11 +80,35 @@ export function LoginPage() {
 
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" value={email} onChange={event => setEmail(event.target.value)} required />
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            aria-invalid={Boolean(fieldErrors.email)}
+            aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+            onChange={event => {
+              setEmail(event.target.value);
+              clearFieldError('email');
+            }}
+            required
+          />
+          <FieldError id="email-error">{fieldErrors.email}</FieldError>
         </div>
         <div className="space-y-2">
           <Label htmlFor="password">Password</Label>
-          <Input id="password" type="password" value={password} onChange={event => setPassword(event.target.value)} required />
+          <Input
+            id="password"
+            type="password"
+            value={password}
+            aria-invalid={Boolean(fieldErrors.password)}
+            aria-describedby={fieldErrors.password ? 'password-error' : undefined}
+            onChange={event => {
+              setPassword(event.target.value);
+              clearFieldError('password');
+            }}
+            required
+          />
+          <FieldError id="password-error">{fieldErrors.password}</FieldError>
         </div>
         {mfaRequired && (
           <div className="space-y-2">
@@ -67,11 +118,30 @@ export function LoginPage() {
               inputMode="numeric"
               autoComplete="one-time-code"
               value={mfaCode}
-              onChange={event => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              aria-invalid={Boolean(fieldErrors.mfaCode)}
+              aria-describedby={fieldErrors.mfaCode ? 'mfa-code-error' : undefined}
+              onChange={event => {
+                setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6));
+                clearFieldError('mfaCode');
+              }}
               required
             />
+            <FieldError id="mfa-code-error">{fieldErrors.mfaCode}</FieldError>
           </div>
         )}
+        <div className="space-y-2">
+          <Label>Human verification</Label>
+          <TurnstileWidget
+            action="login"
+            resetSignal={turnstileResetSignal}
+            onToken={token => {
+              setTurnstileToken(token);
+              if (token) clearFieldError('turnstileToken');
+            }}
+            onError={message => setFieldErrors(current => ({ ...current, turnstileToken: message }))}
+          />
+          <FieldError>{fieldErrors.turnstileToken}</FieldError>
+        </div>
         <Button type="submit" className="w-full" disabled={submitting}>
           {submitting && <Spinner className="size-4" />}
           {mfaRequired ? 'Verify and sign in' : 'Sign in'}

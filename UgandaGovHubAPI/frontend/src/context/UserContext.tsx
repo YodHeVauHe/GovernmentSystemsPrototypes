@@ -35,6 +35,14 @@ interface SignupInput {
   requested_mda_id: string | null;
   requested_organization: string;
   requested_purpose: string;
+  turnstileToken: string;
+}
+
+interface LoginInput {
+  email: string;
+  password: string;
+  mfaCode?: string;
+  turnstileToken: string;
 }
 
 interface UserContextType {
@@ -45,7 +53,7 @@ interface UserContextType {
   mdaId: string;
   isAuthenticated: boolean;
   isApproved: boolean;
-  login: (email: string, password: string, mfaCode?: string) => Promise<AuthUser>;
+  login: (input: LoginInput) => Promise<AuthUser>;
   signup: (input: SignupInput) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -108,11 +116,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     refreshUser();
   }, []);
 
-  const login = async (email: string, password: string, mfaCode?: string) => {
+  const login = async ({ email, password, mfaCode, turnstileToken }: LoginInput) => {
     const body = await parseAuthResponse(await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password, mfa_code: mfaCode || undefined }),
+      body: JSON.stringify({
+        email,
+        password,
+        mfa_code: mfaCode || undefined,
+        turnstile_token: turnstileToken,
+      }),
     }));
     if (body.mfa_required) {
       throw Object.assign(new Error('Enter your authenticator code.'), { code: 'MFA_REQUIRED' });
@@ -122,10 +135,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signup = async (input: SignupInput) => {
+    const { turnstileToken, ...signupInput } = input;
     const body = await parseAuthResponse(await fetch(`${API_BASE}/api/auth/signup`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...signupInput, turnstile_token: turnstileToken }),
     }));
     return body.user as AuthUser;
   };
