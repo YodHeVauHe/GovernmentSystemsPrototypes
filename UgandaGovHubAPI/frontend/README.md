@@ -1,5 +1,9 @@
 # Uganda GovHub API Frontend
 
+<p align="center">
+  <img src="./public/favicon.svg" alt="Uganda GovHub API app icon" width="72" height="72" />
+</p>
+
 This is the React/Vite frontend for the Uganda GovHub API prototype.
 
 ## What It Provides
