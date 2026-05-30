@@ -1,6 +1,8 @@
 # Uganda GovHub API: Interoperability and Data Exchange
 
 <p align="center">
+  <img src="./frontend/public/favicon.svg" alt="Uganda GovHub API app icon" width="72" height="72" />
+  <br />
   <strong>Uganda GovHub API</strong><br />
   Closed-source government interoperability prototype
 </p>
