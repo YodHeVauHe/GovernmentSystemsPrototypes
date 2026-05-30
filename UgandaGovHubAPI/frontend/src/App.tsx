@@ -19,6 +19,7 @@ import { AccountStatusPage } from './pages/AccountStatusPage';
 import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { DocsPage } from './pages/DocsPage';
 import { ApiDocsPage } from './pages/ApiDocsPage';
+import { HelpPage } from './pages/HelpPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 const authRoutes = ['/login', '/signup', '/account-status'];
@@ -28,6 +29,7 @@ const knownRoutes = [
   '/dashboard',
   '/account/settings',
   '/docs',
+  '/help',
 ];
 
 function isKnownAppRoute(pathname: string) {
@@ -154,6 +156,7 @@ function AppShell() {
               <Route path="/api/:id" element={<ApiDetail />} />
               <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
               <Route path="/account/settings" element={<AuthenticatedRoute><AccountSettingsPage /></AuthenticatedRoute>} />
+              <Route path="/help" element={<AuthenticatedRoute><HelpPage /></AuthenticatedRoute>} />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </div>
