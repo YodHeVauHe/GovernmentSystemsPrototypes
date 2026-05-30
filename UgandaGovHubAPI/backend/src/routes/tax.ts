@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
 import { generatePublicId } from '../ids';
 import { requiredSandboxString } from '../sandbox-input';
+import { sandboxTaxComplianceStatus } from '../sandbox-fixtures';
 
 export const taxRouter = Router();
 
@@ -15,7 +16,9 @@ taxRouter.post('/tin-status', (req, res) => {
   }
   const tin = tinInput.value;
 
-  if (tin === '1000123456') {
+  const complianceStatus = sandboxTaxComplianceStatus(tin);
+
+  if (complianceStatus === 'COMPLIANT') {
     return res.json({
       status: 'COMPLIANT',
       issuing_authority: 'Uganda Revenue Authority',
@@ -24,20 +27,24 @@ taxRouter.post('/tin-status', (req, res) => {
     });
   }
 
-  return res.json({
-    status: 'NON_COMPLIANT',
-    issuing_authority: 'Uganda Revenue Authority',
-    remarks: 'Outstanding returns or arrears detected.',
-    reference_id: generatePublicId('cl')
-  });
+  if (complianceStatus === 'NON_COMPLIANT') {
+    return res.json({
+      status: 'NON_COMPLIANT',
+      issuing_authority: 'Uganda Revenue Authority',
+      remarks: 'Outstanding returns or arrears detected.',
+      reference_id: generatePublicId('cl')
+    });
+  }
+
+  return sendSandboxError(res, 'TIN_NOT_FOUND', 'The provided TIN does not exist in the sandbox URA registry.', 404);
 });
 
 // GET /api/v1/tax/clearance/:tin
 taxRouter.get('/clearance/:tin', (req, res) => {
   const { tin } = req.params;
 
-  if (tin.startsWith('9')) {
-    return sendSandboxError(res, 'INVALID_TIN', 'TIN format is unrecognized.', 404);
+  if (sandboxTaxComplianceStatus(tin) !== 'COMPLIANT') {
+    return sendSandboxError(res, 'TIN_NOT_FOUND', 'The provided TIN does not exist in the sandbox URA registry.', 404);
   }
 
   return res.json({

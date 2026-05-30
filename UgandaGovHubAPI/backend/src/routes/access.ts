@@ -272,7 +272,7 @@ router.get('/', requireAuth(db, ['admin', 'api_owner', 'reviewer', 'developer'])
   }
 });
 
-router.post('/:id/reveal-key', requireAuth(db, ['developer']), async (req, res) => {
+router.post('/:id/reveal-key', requireAuth(db, ['developer', 'admin']), async (req, res) => {
   const id = String(req.params.id);
   const consumerUserId = req.user!.id;
   const consumerMdaId = req.user!.mda_id || null;
@@ -601,7 +601,8 @@ router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), a
   try {
     const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 100;
     const offset = typeof req.query.offset === 'string' ? parseInt(req.query.offset, 10) : 0;
-    res.json(await listAuditLogs(db, req.user!, limit, offset));
+    const scope = req.query.scope === 'api-calls' ? 'api-calls' : 'all';
+    res.json(await listAuditLogs(db, req.user!, limit, offset, { scope }));
   } catch (err: any) {
     console.error('[audit-logs fetch]', err);
     res.status(500).json({ error: 'Failed to fetch audit logs. Please try again.' });

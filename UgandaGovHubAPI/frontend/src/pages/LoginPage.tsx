@@ -65,7 +65,7 @@ export function LoginPage() {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-[#181818] px-4 text-[#ededed]">
-      <form onSubmit={submit} noValidate className="w-full max-w-sm space-y-5 rounded-lg border border-[#2e2e2e] bg-[#141414] p-6">
+      <form onSubmit={submit} noValidate className="w-full max-w-[348px] space-y-5 rounded-lg border border-[#2e2e2e] bg-[#141414] p-6">
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
             <IconInnerShadowTop className="size-5" />

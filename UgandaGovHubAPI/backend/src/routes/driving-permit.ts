@@ -1,20 +1,18 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
 import { requiredSandboxString } from '../sandbox-input';
+import { sandboxDrivingPermitStatus } from '../sandbox-fixtures';
 
 export const drivingPermitRouter = Router();
 
-// GET /api/v1/transport/driving-permit/status/:permitNumber
-drivingPermitRouter.get('/status/:permitNumber', (req, res) => {
-  const { permitNumber } = req.params;
-
+function sendPermitStatus(permitNumber: string | undefined, res: Response) {
   if (!permitNumber) {
     return sendSandboxError(res, 'MISSING_PERMIT_NUMBER', 'The "permitNumber" path parameter is required.');
   }
 
-  const pNum = permitNumber.toLowerCase();
+  const status = sandboxDrivingPermitStatus(permitNumber);
 
-  if (pNum.endsWith('susp')) {
+  if (status === 'SUSPENDED') {
     return res.json({
       status: 'SUSPENDED',
       card_valid_until: '2028-11-20',
@@ -22,7 +20,7 @@ drivingPermitRouter.get('/status/:permitNumber', (req, res) => {
     });
   }
 
-  if (pNum.endsWith('exp')) {
+  if (status === 'EXPIRED') {
     return res.json({
       status: 'EXPIRED',
       card_valid_until: '2024-05-10',
@@ -30,7 +28,7 @@ drivingPermitRouter.get('/status/:permitNumber', (req, res) => {
     });
   }
 
-  if (pNum === 'wp30219' || pNum.endsWith('valid') || pNum.startsWith('wp')) {
+  if (status === 'ACTIVE') {
     return res.json({
       status: 'ACTIVE',
       card_valid_until: '2029-08-15',
@@ -39,6 +37,16 @@ drivingPermitRouter.get('/status/:permitNumber', (req, res) => {
   }
 
   return sendSandboxError(res, 'PERMIT_NOT_FOUND', 'The provided driving permit number does not exist.', 404);
+}
+
+// GET /api/v1/transport/driving-permit/:permitNumber/status
+drivingPermitRouter.get('/:permitNumber/status', (req, res) => {
+  return sendPermitStatus(req.params.permitNumber, res);
+});
+
+// Compatibility alias for older OpenAPI documents.
+drivingPermitRouter.get('/status/:permitNumber', (req, res) => {
+  return sendPermitStatus(req.params.permitNumber, res);
 });
 
 // POST /api/v1/transport/driving-permit/verify
@@ -56,9 +64,9 @@ drivingPermitRouter.post('/verify', (req, res) => {
     return sendSandboxError(res, permitInput.code, permitInput.message);
   }
 
-  const pNum = permitInput.value.toLowerCase();
+  const status = sandboxDrivingPermitStatus(permitInput.value);
 
-  if (pNum === 'wp30219' || pNum.endsWith('valid') || pNum.startsWith('wp')) {
+  if (status === 'ACTIVE') {
     return res.json({
       verified: true,
       remarks: 'Permit details match successfully.',
@@ -66,7 +74,7 @@ drivingPermitRouter.post('/verify', (req, res) => {
     });
   }
 
-  if (pNum.endsWith('susp')) {
+  if (status === 'SUSPENDED') {
     return res.json({
       verified: true,
       remarks: 'Permit details match but the permit is currently suspended.',
@@ -74,9 +82,5 @@ drivingPermitRouter.post('/verify', (req, res) => {
     });
   }
 
-  return res.json({
-    verified: false,
-    remarks: 'The specified driving permit number was not found or details mismatched.',
-    status: 'NOT_FOUND'
-  });
+  return sendSandboxError(res, 'PERMIT_NOT_FOUND', 'The provided driving permit number does not exist.', 404);
 });

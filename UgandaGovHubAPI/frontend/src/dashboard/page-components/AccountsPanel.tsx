@@ -35,13 +35,13 @@ export function AccountsPanel({
   return (
               <div className="flex h-full min-h-0 flex-col gap-4">
                 <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
-                  <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                     <div className="min-w-0">
                       <h2 className="text-[15px] font-semibold text-white">Accounts</h2>
                       <p className="mt-0.5 max-w-[520px] text-[12px] leading-5 text-[#8b8b8b]">Review every account, update access, change status, request more information, or delete accounts when required.</p>
                     </div>
-                    <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-                      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-1">
+                    <div className="flex w-full flex-nowrap items-center justify-between gap-2 overflow-x-auto xl:w-auto xl:justify-end">
+                      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-[#2e2e2e] bg-[#1c1c1c] p-1">
                         {[
                           ['ALL', 'All'],
                           ['PENDING_REVIEW', 'Pending'],
@@ -71,7 +71,7 @@ export function AccountsPanel({
                           );
                         })}
                       </div>
-                      <div className="flex items-center gap-1 rounded-lg border border-[#2e2e2e] bg-[#141414] p-1">
+                      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-[#2e2e2e] bg-[#141414] p-1">
                         <button
                           type="button"
                           aria-label="Account card view"

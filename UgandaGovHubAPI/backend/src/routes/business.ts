@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
 import { requiredSandboxString } from '../sandbox-input';
+import { SANDBOX_FIXTURES, isKnownSandboxBeneficialOwnerNin, isKnownSandboxBusinessRegistration } from '../sandbox-fixtures';
 
 export const businessRouter = Router();
 
@@ -8,7 +9,7 @@ export const businessRouter = Router();
 businessRouter.get('/registration/:brn', (req, res) => {
   const { brn } = req.params;
 
-  if (brn === 'BRN12345') {
+  if (brn === SANDBOX_FIXTURES.business.activeBrn) {
     return res.json({
       status: 'ACTIVE',
       company_name: 'Acme Technologies Uganda Ltd',
@@ -17,7 +18,7 @@ businessRouter.get('/registration/:brn', (req, res) => {
     });
   }
 
-  if (brn === 'BRN00000') {
+  if (brn === SANDBOX_FIXTURES.business.dissolvedBrn) {
     return res.json({
       status: 'DISSOLVED',
       company_name: 'Old Kampala Traders',
@@ -44,7 +45,14 @@ businessRouter.post('/beneficial-ownership/verify', (req, res) => {
   const brn = brnInput.value;
   const nin = ninInput.value;
 
-  if (brn === 'BRN12345' && nin === 'CM99021234567X') {
+  if (!isKnownSandboxBusinessRegistration(brn)) {
+    return sendSandboxError(res, 'BRN_NOT_FOUND', 'The provided Business Registration Number does not exist.', 404);
+  }
+  if (!isKnownSandboxBeneficialOwnerNin(nin)) {
+    return sendSandboxError(res, 'NIN_NOT_FOUND', 'The provided NIN does not exist in the sandbox NIRA registry.', 404);
+  }
+
+  if (brn === SANDBOX_FIXTURES.business.activeBrn && nin === SANDBOX_FIXTURES.identity.activeNin) {
     return res.json({
       verified: true,
       ownership_percentage: 51.5,

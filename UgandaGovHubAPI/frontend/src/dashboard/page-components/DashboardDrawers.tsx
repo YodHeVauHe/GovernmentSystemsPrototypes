@@ -1,6 +1,6 @@
 import { IconX } from '@tabler/icons-react';
 import { AccessRequestStatusBadge } from './dashboard-page-helpers';
-import { formatAuditLogDetails } from '../view-helpers';
+import { formatAuditLogDetails, getAuditLogEndpoint, getAuditLogResponseStatus, getAuditLogResponseStatusLabel } from '../view-helpers';
 
 export function DashboardDrawers({ selectedAccessRequest, setSelectedAccessRequest, selectedLog, setSelectedLog }: any) {
   return (
@@ -132,6 +132,16 @@ export function DashboardDrawers({ selectedAccessRequest, setSelectedAccessReque
                     <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
                       <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Target Registry</span>
                       <span className="text-white font-medium">{selectedLog.api_name || 'System Access Layer'}</span>
+                    </div>
+                    <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
+                      <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Attempted Endpoint</span>
+                      <span className="font-mono text-white break-all">{getAuditLogEndpoint(selectedLog) || 'Unavailable'}</span>
+                    </div>
+                    <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
+                      <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Response Code</span>
+                      <span className={`font-mono ${getAuditLogResponseStatus(selectedLog) !== null && getAuditLogResponseStatus(selectedLog)! < 400 ? 'text-[#3ecf8e]' : 'text-red-400'}`}>
+                        {getAuditLogResponseStatusLabel(selectedLog) || 'Unavailable'}
+                      </span>
                     </div>
                   </div>
 

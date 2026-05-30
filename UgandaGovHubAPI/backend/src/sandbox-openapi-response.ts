@@ -1,11 +1,16 @@
 import type { DbClient } from './db';
 import { getCurrentSpecForApi, parseStoredOpenApiSpec } from './openapi-store';
+import { SANDBOX_FIXTURES } from './sandbox-fixtures';
 
 type OpenApiSpec = {
   servers?: Array<{ url?: string }>;
   paths?: Record<string, Record<string, any>>;
   components?: { schemas?: Record<string, any> };
 };
+
+type SandboxOpenApiResponse =
+  | { kind: 'response'; status: number; body: unknown }
+  | { kind: 'error'; status: number; code: string; message: string };
 
 const MAX_SCHEMA_EXAMPLE_DEPTH = 25;
 
@@ -145,10 +150,224 @@ function normalizedParamKey(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function requestValues(originalUrl: string, pathParams: Record<string, string>) {
+function normalizedFixtureValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function fixtureSet(values: string[]) {
+  return new Set(values.map(normalizedFixtureValue));
+}
+
+const sandboxFixtureRules = [
+  {
+    keys: ['nin', 'primarynin', 'relatednin', 'nationalidnumber'],
+    allowed: fixtureSet([
+      SANDBOX_FIXTURES.identity.activeNin,
+      SANDBOX_FIXTURES.identity.noMatchNin,
+      SANDBOX_FIXTURES.identity.expiredNin,
+      SANDBOX_FIXTURES.identity.revokedNin,
+      'CF01021234567Y',
+    ]),
+    code: 'NIN_NOT_FOUND',
+    message: 'The provided NIN does not exist in the sandbox NIRA registry.',
+    status: 404,
+  },
+  {
+    keys: ['tin'],
+    allowed: fixtureSet([
+      SANDBOX_FIXTURES.tax.compliantTin,
+      SANDBOX_FIXTURES.tax.nonCompliantTin,
+    ]),
+    code: 'TIN_NOT_FOUND',
+    message: 'The provided TIN does not exist in the sandbox URA registry.',
+    status: 404,
+  },
+  {
+    keys: ['brn'],
+    allowed: fixtureSet([
+      SANDBOX_FIXTURES.business.activeBrn,
+      SANDBOX_FIXTURES.business.dissolvedBrn,
+      '80010001234567',
+    ]),
+    code: 'BRN_NOT_FOUND',
+    message: 'The provided Business Registration Number does not exist.',
+    status: 404,
+  },
+  {
+    keys: ['permitnumber', 'permitno', 'drivingpermitnumber', 'permit'],
+    allowed: fixtureSet([
+      SANDBOX_FIXTURES.drivingPermit.activePermit,
+      SANDBOX_FIXTURES.drivingPermit.suspendedPermit,
+      SANDBOX_FIXTURES.drivingPermit.expiredPermit,
+      'DP-UG-2026-001245',
+    ]),
+    code: 'PERMIT_NOT_FOUND',
+    message: 'The provided driving permit number does not exist.',
+    status: 404,
+  },
+  {
+    keys: ['companynumber'],
+    allowed: fixtureSet(['C-2024-001245']),
+    code: 'COMPANY_NOT_FOUND',
+    message: 'The provided company number does not exist in the sandbox URSB registry.',
+    status: 404,
+  },
+  {
+    keys: ['caseid'],
+    allowed: fixtureSet(['case-2026-000145']),
+    code: 'CASE_NOT_FOUND',
+    message: 'The provided case ID does not exist in the sandbox workflow registry.',
+    status: 404,
+  },
+  {
+    keys: ['bundleid'],
+    allowed: fixtureSet(['business-startup']),
+    code: 'BUNDLE_NOT_FOUND',
+    message: 'The provided service bundle does not exist in the sandbox registry.',
+    status: 404,
+  },
+  {
+    keys: ['servicecenter'],
+    allowed: fixtureSet(['Kampala One Stop Centre']),
+    code: 'SERVICE_CENTER_NOT_FOUND',
+    message: 'The provided service center does not exist in the sandbox appointment registry.',
+    status: 404,
+  },
+  {
+    keys: ['givenname', 'given_name'],
+    allowed: fixtureSet(['JOHN', 'SARAH']),
+    code: 'INVALID_SANDBOX_INPUT',
+    message: 'The provided given name is not one of the documented sandbox fixture values.',
+    status: 400,
+  },
+  {
+    keys: ['surname'],
+    allowed: fixtureSet(['DOE', 'NAKATO']),
+    code: 'INVALID_SANDBOX_INPUT',
+    message: 'The provided surname is not one of the documented sandbox fixture values.',
+    status: 400,
+  },
+  {
+    keys: ['dateofbirth', 'date_of_birth'],
+    allowed: fixtureSet(['1990-01-01', '1988-09-14']),
+    code: 'INVALID_SANDBOX_INPUT',
+    message: 'The provided date of birth is not one of the documented sandbox fixture values.',
+    status: 400,
+  },
+  {
+    keys: ['districtofbirth'],
+    allowed: fixtureSet(['Wakiso']),
+    code: 'INVALID_SANDBOX_INPUT',
+    message: 'The provided district of birth is not one of the documented sandbox fixture values.',
+    status: 400,
+  },
+  {
+    keys: ['relationship'],
+    allowed: fixtureSet(['DEPENDANT']),
+    code: 'INVALID_SANDBOX_INPUT',
+    message: 'The provided relationship is not one of the documented sandbox fixture values.',
+    status: 400,
+  },
+  {
+    keys: ['servicecode'],
+    allowed: fixtureSet(['BUSINESS_PSV_LICENCE']),
+    code: 'INVALID_SANDBOX_INPUT',
+    message: 'The provided service code is not one of the documented sandbox fixture values.',
+    status: 400,
+  },
+  {
+    keys: ['requestedpsvclass'],
+    allowed: fixtureSet(['OMNIBUS']),
+    code: 'INVALID_SANDBOX_INPUT',
+    message: 'The provided PSV class is not one of the documented sandbox fixture values.',
+    status: 400,
+  },
+  {
+    keys: ['applicanttype'],
+    allowed: fixtureSet(['COMPANY']),
+    code: 'INVALID_SANDBOX_INPUT',
+    message: 'The provided applicant type is not one of the documented sandbox fixture values.',
+    status: 400,
+  },
+  {
+    keys: ['currency'],
+    allowed: fixtureSet(['UGX']),
+    code: 'INVALID_SANDBOX_INPUT',
+    message: 'The provided currency is not one of the documented sandbox fixture values.',
+    status: 400,
+  },
+];
+
+function sandboxFixtureRuleForKey(key: string) {
+  const normalizedKey = normalizedParamKey(key);
+  return sandboxFixtureRules.find(rule => rule.keys.includes(normalizedKey));
+}
+
+function collectPrimitiveValues(value: unknown, values: Record<string, string> = {}) {
+  if (Array.isArray(value)) {
+    value.forEach(item => collectPrimitiveValues(item, values));
+    return values;
+  }
+  if (!value || typeof value !== 'object') return values;
+
+  for (const [key, childValue] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof childValue === 'string' || typeof childValue === 'number' || typeof childValue === 'boolean') {
+      values[key] = String(childValue);
+      continue;
+    }
+    collectPrimitiveValues(childValue, values);
+  }
+  return values;
+}
+
+function requestBodyExampleValues(operation: any) {
+  const content = operation?.requestBody?.content || {};
+  const media = content['application/json'] || content[Object.keys(content)[0]];
+  if (media?.example === undefined) return {};
+  return collectPrimitiveValues(media.example);
+}
+
+function fixtureValidationError(rule: (typeof sandboxFixtureRules)[number]): SandboxOpenApiResponse {
+  return {
+    kind: 'error',
+    status: rule.status,
+    code: rule.code,
+    message: rule.message,
+  };
+}
+
+function validateSandboxFixtureValues(values: Record<string, string>, expectedValues: Record<string, string>) {
+  for (const [key, expectedValue] of Object.entries(expectedValues)) {
+    const rule = sandboxFixtureRuleForKey(key);
+    if (!rule) continue;
+    const actualValue = requestValueForKey(key, values);
+    if (actualValue === undefined || actualValue.trim() === '') {
+      return {
+        kind: 'error',
+        status: 400,
+        code: 'MISSING_SANDBOX_FIXTURE_VALUE',
+        message: `The "${key}" field is required for this sandbox fixture.`,
+      } satisfies SandboxOpenApiResponse;
+    }
+    if (!rule.allowed.has(normalizedFixtureValue(actualValue))) return fixtureValidationError(rule);
+    if (!rule.allowed.has(normalizedFixtureValue(expectedValue))) return fixtureValidationError(rule);
+  }
+
+  for (const [key, value] of Object.entries(values)) {
+    const rule = sandboxFixtureRuleForKey(key);
+    if (!rule) continue;
+    if (value.trim() === '' || !rule.allowed.has(normalizedFixtureValue(value))) {
+      return fixtureValidationError(rule);
+    }
+  }
+  return null;
+}
+
+function requestValues(originalUrl: string, pathParams: Record<string, string>, requestBody?: unknown) {
   const url = new URL(originalUrl, 'http://sandbox.local');
-  const values = Object.fromEntries(url.searchParams.entries());
-  return { ...values, ...pathParams };
+  const bodyValues = collectPrimitiveValues(requestBody);
+  const queryValues = Object.fromEntries(url.searchParams.entries());
+  return { ...bodyValues, ...queryValues, ...pathParams };
 }
 
 function requestValueForKey(key: string, values: Record<string, string>) {
@@ -213,7 +432,7 @@ function hydrateExampleWithRequestValues(example: unknown, values: Record<string
   return hydrate(example);
 }
 
-export function findSandboxOpenApiResponseExample(specInput: unknown, originalUrl: string, method: string): unknown | null {
+export function findSandboxOpenApiResponse(specInput: unknown, originalUrl: string, method: string, requestBody?: unknown): SandboxOpenApiResponse | null {
   const spec = specInput as OpenApiSpec;
   if (!spec?.paths) return null;
 
@@ -230,7 +449,17 @@ export function findSandboxOpenApiResponseExample(specInput: unknown, originalUr
         if (!pathParams) continue;
 
         const example = responseExample(spec, operation);
-        return example === null ? null : hydrateExampleWithRequestValues(example, requestValues(originalUrl, pathParams));
+        if (example === null) return null;
+
+        const values = requestValues(originalUrl, pathParams, requestBody);
+        const validationError = validateSandboxFixtureValues(values, requestBodyExampleValues(operation));
+        if (validationError) return validationError;
+
+        return {
+          kind: 'response',
+          status: 200,
+          body: hydrateExampleWithRequestValues(example, values),
+        };
       }
     }
   }
@@ -238,11 +467,17 @@ export function findSandboxOpenApiResponseExample(specInput: unknown, originalUr
   return null;
 }
 
-export async function findStoredSandboxOpenApiResponseExample(
+export function findSandboxOpenApiResponseExample(specInput: unknown, originalUrl: string, method: string, requestBody?: unknown): unknown | null {
+  const response = findSandboxOpenApiResponse(specInput, originalUrl, method, requestBody);
+  return response?.kind === 'response' ? response.body : null;
+}
+
+export async function findStoredSandboxOpenApiResponse(
   db: DbClient,
   apiId: string | null | undefined,
   originalUrl: string,
   method: string,
+  requestBody?: unknown,
 ) {
   if (!apiId) return null;
 
@@ -250,13 +485,25 @@ export async function findStoredSandboxOpenApiResponseExample(
   if (!storedSpec?.openapi_spec_text) return null;
 
   try {
-    return findSandboxOpenApiResponseExample(
+    return findSandboxOpenApiResponse(
       parseStoredOpenApiSpec(storedSpec.openapi_spec_text),
       originalUrl,
       method,
+      requestBody,
     );
   } catch (err) {
     console.error('[sandbox openapi response]', err);
     return null;
   }
+}
+
+export async function findStoredSandboxOpenApiResponseExample(
+  db: DbClient,
+  apiId: string | null | undefined,
+  originalUrl: string,
+  method: string,
+  requestBody?: unknown,
+) {
+  const response = await findStoredSandboxOpenApiResponse(db, apiId, originalUrl, method, requestBody);
+  return response?.kind === 'response' ? response.body : null;
 }

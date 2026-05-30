@@ -4,6 +4,7 @@ import { ensureRateLimitSchema } from './rate-limit';
 import { decryptAtRest, encryptAtRest } from './crypto-at-rest';
 import type { DbClient } from './db';
 import { exec, hasColumn, one, run } from './db';
+import { shouldRequireAdminMfa } from './security-config';
 
 export const USER_ROLES = ['developer', 'api_owner', 'admin', 'reviewer'] as const;
 export type UserRole = typeof USER_ROLES[number];
@@ -467,7 +468,7 @@ export function canAccess(user: AuthUser | null | undefined, roles?: UserRole[])
     return { allowed: false, code: 'FORBIDDEN', message: 'Your account does not have permission to access this feature.' };
   }
   if (
-    process.env.GOVHUB_REQUIRE_ADMIN_MFA === 'true' &&
+    shouldRequireAdminMfa() &&
     user.role === 'admin' &&
     roles?.includes('admin') &&
     !user.mfa_enabled_at

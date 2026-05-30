@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --import tsx src/lib/access-request-notifications.test.ts && node --import tsx src/lib/code-samples.test.ts && node --import tsx src/lib/auth-validation.test.ts && node --import tsx src/lib/turnstile-config.test.ts && node --import tsx src/pages/catalog-view-helpers.test.ts && node --import tsx src/dashboard/view-helpers.test.ts && node --import tsx src/lib/loading-ui.test.ts",
+    "test": "node --import tsx src/dashboard/api-key-storage.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

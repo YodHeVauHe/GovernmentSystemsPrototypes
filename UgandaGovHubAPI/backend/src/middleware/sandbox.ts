@@ -133,6 +133,14 @@ async function consumeInvalidSandboxQuota(db: Db, req: Request, res: Response) {
   return invalidQuota;
 }
 
+type SandboxAuditLogContext = {
+  eventType?: 'SANDBOX_CALL_ALLOWED' | 'SANDBOX_CALL_DENIED';
+  mdaId: string | null;
+  apiId: string | null;
+  correlationId: string;
+  details: Record<string, unknown>;
+};
+
 export function sandboxMiddleware(db: Db) {
   return async (req: Request, res: Response, next: NextFunction) => {
     // Always generate a server-side Correlation ID — never trust client input for audit logs
@@ -150,6 +158,34 @@ export function sandboxMiddleware(db: Db) {
 
     console.log(`[SANDBOX] ${req.method} ${normalizeSandboxLogPath(req.originalUrl)} | ID: ${correlationId} | Body:`, maskedBody);
     const auditPath = normalizeSandboxLogPath(req.originalUrl);
+    let responseBody: unknown = null;
+    let auditLogContext: SandboxAuditLogContext | null = null;
+    const originalJson = res.json.bind(res);
+    res.json = ((body?: any) => {
+      responseBody = redactSandboxLogValue(body);
+      return originalJson(body);
+    }) as Response['json'];
+
+    res.once('finish', () => {
+      if (!auditLogContext) return;
+      const responseStatus = res.statusCode;
+      const eventType = auditLogContext.eventType || (
+        responseStatus >= 400 ? 'SANDBOX_CALL_DENIED' : 'SANDBOX_CALL_ALLOWED'
+      );
+
+      logAuditEvent(db, eventType, auditLogContext.mdaId, auditLogContext.apiId, auditLogContext.correlationId, {
+        ...auditLogContext.details,
+        response_status: responseStatus,
+        response_code: responseStatus,
+        response_body: responseBody,
+      }).catch(err => {
+        console.error('Failed to write sandbox response audit log:', err);
+      });
+    });
+
+    function recordSandboxAudit(context: SandboxAuditLogContext) {
+      auditLogContext = context;
+    }
 
     // Enforce API Key
     const apiKeyHeader = parseSandboxApiKeyHeader(req.headers['x-govhub-api-key']);
@@ -159,12 +195,29 @@ export function sandboxMiddleware(db: Db) {
     if (!apiKeyHeader.ok) {
       const invalidQuota = await consumeInvalidSandboxQuota(db, req, res);
       if (!invalidQuota.allowed) {
+        recordSandboxAudit({
+          eventType: 'SANDBOX_CALL_DENIED',
+          mdaId: null,
+          apiId,
+          correlationId,
+          details: {
+            reason: 'Too many invalid sandbox API key attempts.',
+            path: auditPath,
+            method: req.method,
+          },
+        });
         return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'Too many invalid sandbox API key attempts.', 429);
       }
-      await logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
-        reason: apiKeyHeader.message,
-        path: auditPath,
-        method: req.method
+      recordSandboxAudit({
+        eventType: 'SANDBOX_CALL_DENIED',
+        mdaId: null,
+        apiId,
+        correlationId,
+        details: {
+          reason: apiKeyHeader.message,
+          path: auditPath,
+          method: req.method,
+        },
       });
       return sendSandboxError(res, apiKeyHeader.code, apiKeyHeader.message, 401);
     }
@@ -189,6 +242,18 @@ export function sandboxMiddleware(db: Db) {
     if (!requestRecord) {
       const invalidQuota = await consumeInvalidSandboxQuota(db, req, res);
       if (!invalidQuota.allowed) {
+        recordSandboxAudit({
+          eventType: 'SANDBOX_CALL_DENIED',
+          mdaId: null,
+          apiId,
+          correlationId,
+          details: {
+            reason: 'Too many invalid sandbox API key attempts.',
+            path: auditPath,
+            method: req.method,
+            provided_key: getApiKeyPreview(apiKey),
+          },
+        });
         return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'Too many invalid sandbox API key attempts.', 429);
       }
     } else {
@@ -197,36 +262,65 @@ export function sandboxMiddleware(db: Db) {
       res.setHeader('X-RateLimit-Remaining', String(Math.max(0, quota.remaining)));
       res.setHeader('X-RateLimit-Reset', Math.floor(quota.resetAt / 1000));
       if (!quota.allowed) {
+        recordSandboxAudit({
+          eventType: 'SANDBOX_CALL_DENIED',
+          mdaId: requestRecord.consumer_mda_id,
+          apiId,
+          correlationId,
+          details: {
+            consumer_user_id: requestRecord.consumer_user_id,
+            reason: 'The sandbox rate limit for this API key has been exceeded.',
+            path: auditPath,
+            method: req.method,
+          },
+        });
         return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'The sandbox rate limit for this API key has been exceeded.', 429);
       }
     }
     if (accessDecision.allowed === false && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
-      await logAuditEvent(db, 'SANDBOX_CALL_DENIED', null, apiId, correlationId as string, {
-        reason: accessDecision.message,
-        path: auditPath,
-        method: req.method,
-        provided_key: getApiKeyPreview(apiKey)
+      recordSandboxAudit({
+        eventType: 'SANDBOX_CALL_DENIED',
+        mdaId: requestRecord?.consumer_mda_id || null,
+        apiId,
+        correlationId,
+        details: {
+          consumer_user_id: requestRecord?.consumer_user_id,
+          reason: accessDecision.message,
+          path: auditPath,
+          method: req.method,
+          provided_key: getApiKeyPreview(apiKey),
+        },
       });
       return sendSandboxError(res, accessDecision.code, accessDecision.message, 403);
     }
 
     // Enforce endpoint/scope verification
     if (accessDecision.allowed === false && accessDecision.code === 'UNAUTHORIZED_ENDPOINT') {
-      await logAuditEvent(db, 'SANDBOX_CALL_DENIED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
-        consumer_user_id: requestRecord.consumer_user_id,
-        reason: accessDecision.message,
-        path: auditPath,
-        method: req.method,
-        authorized_api: requestRecord.api_id
+      recordSandboxAudit({
+        eventType: 'SANDBOX_CALL_DENIED',
+        mdaId: requestRecord.consumer_mda_id,
+        apiId,
+        correlationId,
+        details: {
+          consumer_user_id: requestRecord.consumer_user_id,
+          reason: accessDecision.message,
+          path: auditPath,
+          method: req.method,
+          authorized_api: requestRecord.api_id,
+        },
       });
       return sendSandboxError(res, accessDecision.code, accessDecision.message, 403);
     }
 
-    // Key is valid and authorized
-    await logAuditEvent(db, 'SANDBOX_CALL_ALLOWED', requestRecord.consumer_mda_id, apiId, correlationId as string, {
-      consumer_user_id: requestRecord.consumer_user_id,
-      path: auditPath,
-      method: req.method
+    recordSandboxAudit({
+      mdaId: requestRecord.consumer_mda_id,
+      apiId,
+      correlationId,
+      details: {
+        consumer_user_id: requestRecord.consumer_user_id,
+        path: auditPath,
+        method: req.method,
+      },
     });
 
     next();

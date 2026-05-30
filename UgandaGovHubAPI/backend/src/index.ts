@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { sandboxMiddleware, sandboxNotFoundHandler } from './middleware/sandbox';
+import { sandboxMiddleware, sandboxNotFoundHandler, sendSandboxError } from './middleware/sandbox';
 import { identityRouter } from './routes/identity';
 import { taxRouter } from './routes/tax';
 import { businessRouter } from './routes/business';
@@ -19,12 +19,13 @@ import { initAuditColumnCache } from './audit';
 import { createTransportServer, getTlsConfig } from './tls';
 import { createDb } from './db';
 import { syncProductionDemoCatalog } from './seed-production-demo-catalog';
-import { findStoredSandboxOpenApiResponseExample } from './sandbox-openapi-response';
+import { findStoredSandboxOpenApiResponse } from './sandbox-openapi-response';
 import { ensureCatalogSchema } from './catalog-schema';
 import { openApiAssetsRouter } from './routes/openapi-assets';
 import { catalogRouter } from './routes/catalog';
 import { apiErrorHandler, jsonBodyErrorHandler } from './http-errors';
 import { positiveIntegerEnv } from './env';
+import { validateProductionSecurityEnv } from './security-config';
 
 dotenv.config();
 
@@ -74,21 +75,27 @@ app.use('/api/catalog', catalogRouter(db));
 app.use('/api/access', accessRouter(db));
 
 app.use('/api/v1', sandboxMiddleware(db));
-app.use('/api/v1', async (req, res, next) => {
-  const example = await findStoredSandboxOpenApiResponseExample(
-    db,
-    res.locals.sandboxApiId,
-    req.originalUrl,
-    req.method,
-  );
-  if (example !== null) return res.json(example);
-  next();
-});
 app.use('/api/v1/identity', identityRouter);
 app.use('/api/v1/tax', taxRouter);
 app.use('/api/v1/business', businessRouter);
 app.use('/api/v1/transport/driving-permit', drivingPermitRouter);
 app.use('/api/v1/service-uganda', compositeRouter);
+app.use('/api/v1', async (req, res, next) => {
+  const fallbackResponse = await findStoredSandboxOpenApiResponse(
+    db,
+    res.locals.sandboxApiId,
+    req.originalUrl,
+    req.method,
+    req.body,
+  );
+  if (fallbackResponse?.kind === 'error') {
+    return sendSandboxError(res, fallbackResponse.code, fallbackResponse.message, fallbackResponse.status);
+  }
+  if (fallbackResponse?.kind === 'response') {
+    return res.status(fallbackResponse.status).json(fallbackResponse.body);
+  }
+  next();
+});
 app.use('/api/v1', sandboxNotFoundHandler);
 app.use(apiErrorHandler);
 
@@ -98,6 +105,7 @@ let initialized: Promise<void> | null = null;
 export function initializeApp() {
   if (!initialized) {
     initialized = (async () => {
+      validateProductionSecurityEnv();
       await ensureCatalogSchema(db);
       await ensureAuthSchema(db);
       await ensureAdminSchema(db);

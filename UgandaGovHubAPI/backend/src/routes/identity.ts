@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
 import { generatePublicId } from '../ids';
 import { requiredSandboxString } from '../sandbox-input';
+import { sandboxIdentityCardStatus, sandboxIdentityVerificationStatus } from '../sandbox-fixtures';
 
 export const identityRouter = Router();
 
@@ -15,8 +16,9 @@ identityRouter.post('/verify-nin', (req, res) => {
   }
   const nin = ninInput.value;
 
-  // Deterministic Mock Responses based on NIN
-  if (nin === 'CM99021234567X') {
+  const verificationStatus = sandboxIdentityVerificationStatus(nin);
+
+  if (verificationStatus === 'MATCH') {
     return res.json({
       status: 'MATCH',
       confidence_score: 1.0,
@@ -25,7 +27,7 @@ identityRouter.post('/verify-nin', (req, res) => {
     });
   }
 
-  if (nin === 'CM00000000000X') {
+  if (verificationStatus === 'NO_MATCH') {
     return res.json({
       status: 'NO_MATCH',
       confidence_score: 0.0,
@@ -34,13 +36,7 @@ identityRouter.post('/verify-nin', (req, res) => {
     });
   }
 
-  // Default response
-  return res.json({
-    status: 'PARTIAL_MATCH',
-    confidence_score: 0.75,
-    remarks: 'Name match fuzzy. Review required.',
-    transaction_id: generatePublicId('tx')
-  });
+  return sendSandboxError(res, 'NIN_NOT_FOUND', 'The provided NIN does not exist in the sandbox NIRA registry.', 404);
 });
 
 // POST /api/v1/identity/status
@@ -55,24 +51,30 @@ identityRouter.post('/status', (req, res) => {
   }
   const nin = ninInput.value;
 
-  if (nin.endsWith('E')) {
+  const cardStatus = sandboxIdentityCardStatus(nin);
+
+  if (cardStatus === 'EXPIRED') {
     return res.json({
       status: 'EXPIRED',
       card_valid_until: '2023-12-31'
     });
   }
 
-  if (nin.endsWith('R')) {
+  if (cardStatus === 'REVOKED') {
     return res.json({
       status: 'REVOKED',
       card_valid_until: '2030-12-31'
     });
   }
 
-  return res.json({
-    status: 'ACTIVE',
-    card_valid_until: '2034-01-01'
-  });
+  if (cardStatus === 'ACTIVE') {
+    return res.json({
+      status: 'ACTIVE',
+      card_valid_until: '2034-01-01'
+    });
+  }
+
+  return sendSandboxError(res, 'NIN_NOT_FOUND', 'The provided NIN does not exist in the sandbox NIRA registry.', 404);
 });
 
 // Deprecated: GET /api/v1/identity/status/:nin
@@ -82,11 +84,16 @@ identityRouter.get('/status/:nin', (req, res) => {
   res.setHeader('Link', '</api/v1/identity/status>; rel="successor-version"');
   const { nin } = req.params;
 
-  if (nin.endsWith('E')) {
+  const cardStatus = sandboxIdentityCardStatus(nin);
+
+  if (cardStatus === 'EXPIRED') {
     return res.json({ status: 'EXPIRED', card_valid_until: '2023-12-31' });
   }
-  if (nin.endsWith('R')) {
+  if (cardStatus === 'REVOKED') {
     return res.json({ status: 'REVOKED', card_valid_until: '2030-12-31' });
   }
-  return res.json({ status: 'ACTIVE', card_valid_until: '2034-01-01' });
+  if (cardStatus === 'ACTIVE') {
+    return res.json({ status: 'ACTIVE', card_valid_until: '2034-01-01' });
+  }
+  return sendSandboxError(res, 'NIN_NOT_FOUND', 'The provided NIN does not exist in the sandbox NIRA registry.', 404);
 });

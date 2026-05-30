@@ -3,6 +3,7 @@ import { IconLock, IconPlayerPlay, IconTerminal2 } from '@tabler/icons-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { API_BASE } from '@/lib/api-base';
+import { formatHttpStatusLabel, isSuccessStatus } from '@/lib/http-status';
 import { generatePublicId } from '@/lib/utils';
 import { useUser } from '../../context/UserContext';
 import {
@@ -17,7 +18,7 @@ import {
 export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: any[], spec: any }) {
   const { user, mdaId } = useUser();
   const [approvedRequests, setApprovedRequests] = useState<any[]>([]);
-  const [apiKeyOption, setApiKeyOption] = useState<'approved' | 'custom' | 'none'>('approved');
+  const [apiKeyOption, setApiKeyOption] = useState<'custom' | 'none'>('custom');
   const [customApiKey, setCustomApiKey] = useState('');
   const [activeEndpointIdx, setActiveEndpointIdx] = useState<number>(0);
   const [parameters, setParameters] = useState<SandboxParameterRow[]>([]);
@@ -96,15 +97,11 @@ export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoi
   // Stable correlation ID base (doesn't change on re-render)
   const correlationIdBase = useRef(generatePublicId('tx_client'));
 
-  // Resolve current API key value for auto header display
+  // Resolve current API key value for request headers.
   const resolvedKey = useMemo(() => {
-    if (apiKeyOption === 'approved') {
-      const requestId = approvedRequests[0]?.id;
-      return requestId ? window.sessionStorage.getItem(`govhub_api_key:${requestId}`) || '' : '';
-    }
-    if (apiKeyOption === 'custom') return customApiKey;
-    return '';
-  }, [apiKeyOption, customApiKey, approvedRequests]);
+    return apiKeyOption === 'custom' ? customApiKey.trim() : '';
+  }, [apiKeyOption, customApiKey]);
+  const canSendRequest = Boolean(activeEp) && (apiKeyOption === 'none' || resolvedKey.length > 0);
 
   // Auto-generated default headers for the sandbox request builder.
   const autoHeaders = useMemo((): SandboxParameterRow[] => {
@@ -378,19 +375,9 @@ export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoi
                 onChange={e => setApiKeyOption(e.target.value as any)}
                 className="h-[30px] px-2 bg-[#1c1c1c] border border-[#2e2e2e] text-[12px] text-white rounded-md focus:outline-none focus:border-[#444]"
               >
-                <option value="approved">Approved Key</option>
                 <option value="custom">Custom Key</option>
                 <option value="none">No Key (Anonymous)</option>
               </select>
-              {apiKeyOption === 'approved' && (
-                approvedRequests.length > 0 ? (
-                  <span className="text-[11px] text-[#3ecf8e] font-mono truncate max-w-[200px]">
-                    {resolvedKey ? `${approvedRequests[0].api_key_preview} loaded for this browser session.` : `${approvedRequests[0].api_key_preview} saved. Paste full key as custom to call.`}
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-orange-400">No approved keys</span>
-                )
-              )}
               {apiKeyOption === 'custom' && (
                 <input
                   type="text"
@@ -400,11 +387,18 @@ export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoi
                   className="flex-1 min-w-[120px] h-[30px] px-2 bg-[#0a0a0a] border border-[#2e2e2e] text-[12px] text-white font-mono rounded-md focus:outline-none focus:border-[#444]"
                 />
               )}
+              {approvedRequests.length > 0 ? (
+                <span className="text-[11px] text-[#3ecf8e] font-mono truncate max-w-[260px]">
+                  {`${approvedRequests[0].api_key_preview} approved. Paste the full key to call.`}
+                </span>
+              ) : (
+                <span className="text-[11px] text-orange-400">No active approved key record</span>
+              )}
             </div>
           </div>
           <button
             onClick={handleSend}
-            disabled={loading || !activeEp}
+            disabled={loading || !canSendRequest}
             className="h-[32px] w-full shrink-0 sm:w-auto sm:min-w-[128px] px-3 bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-semibold rounded-md text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-md disabled:opacity-50"
           >
             {loading ? <Spinner className="h-3.5 w-3.5 text-black" /> : <IconPlayerPlay className="w-3.5 h-3.5 fill-black" />}
@@ -529,8 +523,8 @@ export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoi
             </span>
             {response && (
               <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded
-                ${response.status === 200 ? 'bg-[#3ecf8e]/10 text-[#3ecf8e] border border-[#3ecf8e]/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                STATUS: {response.status} {response.statusText}
+                ${isSuccessStatus(response.status) ? 'bg-[#3ecf8e]/10 text-[#3ecf8e] border border-[#3ecf8e]/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                STATUS: {formatHttpStatusLabel(response.status, response.statusText)}
               </span>
             )}
           </div>
