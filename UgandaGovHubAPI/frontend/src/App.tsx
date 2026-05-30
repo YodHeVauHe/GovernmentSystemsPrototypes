@@ -12,6 +12,7 @@ import { UserProvider, useUser } from './context/UserContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { Toaster } from '@/components/ui/sonner';
 import { Spinner } from '@/components/ui/spinner';
+import { HumanVerificationGate } from '@/components/HumanVerificationGate';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { AccountStatusPage } from './pages/AccountStatusPage';
@@ -167,7 +168,9 @@ function App() {
     <UserProvider>
       <NotificationProvider>
         <BrowserRouter>
-          <AppShell />
+          <HumanVerificationGate>
+            <AppShell />
+          </HumanVerificationGate>
         </BrowserRouter>
         <Toaster position="bottom-right" richColors />
         <Analytics />
