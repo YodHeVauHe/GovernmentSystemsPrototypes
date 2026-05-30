@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CodeSamples } from '@/components/CodeSamples';
+import { isSuccessStatus } from '@/lib/http-status';
 import {
   bodyFields,
   buildBodyExample,
@@ -14,6 +15,7 @@ export function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: 
 
   const activeResponse = ep.data.responses?.[activeTab];
   const activeExample = responseExample(activeResponse, spec, ep, activeTab);
+  const activeResponseIsSuccess = isSuccessStatus(activeTab);
   const requestBodyExample = buildBodyExample(ep.data.requestBody, spec).value;
   const sampleUrl = buildSampleUrl(spec, apiId, ep.path);
   const parameters = endpointParameters(ep);
@@ -137,7 +139,7 @@ export function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: 
                         : 'border-transparent text-[#8b8b8b] hover:bg-[#222]'
                     }`}
                   >
-                    <span className={`mr-1.5 ${code.startsWith('2') ? 'text-[#3ecf8e]' : 'text-red-400'}`}>●</span>
+                    <span className={`mr-1.5 ${isSuccessStatus(code) ? 'text-[#3ecf8e]' : 'text-red-400'}`}>●</span>
                     {code}
                   </button>
                 );
@@ -150,7 +152,7 @@ export function EndpointBlock({ ep, spec, apiId }: { ep: any, spec: any, apiId: 
                 <div className="px-4 py-3 bg-[#0a0a0a]">
                   <p className="text-[12.5px] text-[#8b8b8b] mb-3">{activeResponse.description}</p>
                   {activeExample !== null ? (
-                    <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed text-[#3ecf8e] overflow-x-hidden">
+                    <pre className={`min-w-0 whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed overflow-x-hidden ${activeResponseIsSuccess ? 'text-[#3ecf8e]' : 'text-red-400'}`}>
                       {JSON.stringify(activeExample, null, 2)}
                     </pre>
                   ) : (

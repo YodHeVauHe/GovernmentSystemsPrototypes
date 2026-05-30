@@ -1,6 +1,7 @@
 import { IconExternalLink } from '@tabler/icons-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AuditEventBadge, ViewModeToggle } from './dashboard-page-helpers';
+import { getAuditLogEndpoint, getAuditLogResponseStatus, getAuditLogResponseStatusLabel } from '../view-helpers';
 
 export function AuditPanel({
   role,
@@ -14,17 +15,23 @@ export function AuditPanel({
   visibleLogs,
   selectedLog,
   setSelectedLog,
+  logScope = 'governance',
 }: any) {
+  const isApiCallPanel = logScope === 'api-calls' || role === 'developer';
+  const emptyMessage = isApiCallPanel
+    ? 'No API call logs recorded for your approved keys yet.'
+    : 'No compliance audit entries recorded.';
+
   return (
               <div className="flex h-full min-h-0 flex-col gap-4">
                 <div className="flex h-full min-h-0 flex-col border border-[#2e2e2e] bg-[#1c1c1c] rounded-xl overflow-hidden shadow-lg">
                   <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <h2 className="text-[15px] font-semibold text-white">
-                        {role === 'developer' ? 'My API Call Logs' : 'Platform Governance Audit Log'}
+                        {isApiCallPanel ? 'My API Call Logs' : 'Platform Governance Audit Log'}
                       </h2>
                       <p className="text-[12px] text-[#8b8b8b] mt-0.5">
-                        {role === 'developer'
+                        {isApiCallPanel
                           ? 'Shows sandbox calls made with your approved API keys, including allowed and denied outcomes.'
                           : 'Audits compliance actions and records API calls with strict cryptographic correlation IDs.'}
                       </p>
@@ -43,7 +50,7 @@ export function AuditPanel({
                           <option value="30d">Last 30 Days</option>
                         </select>
                       </div>
-                      {role !== 'developer' && (
+                      {!isApiCallPanel && (
                         <div className="flex items-center gap-2">
                           <span className="text-[12px] text-[#8b8b8b] font-mono">Filter Consumer:</span>
                           <select
@@ -74,6 +81,8 @@ export function AuditPanel({
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Event Type</TableHead>
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Consumer</TableHead>
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Registry Target</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Endpoint</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Response</TableHead>
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Correlation ID</TableHead>
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4 text-right">Details</TableHead>
                           </TableRow>
@@ -81,8 +90,8 @@ export function AuditPanel({
                         <TableBody>
                           {visibleLogs.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={6} className="h-28 text-center text-[#8b8b8b] text-[13px]">
-                                {role === 'developer' ? 'No API call logs recorded for your approved keys yet.' : 'No compliance audit entries recorded.'}
+                              <TableCell colSpan={8} className="h-28 text-center text-[#8b8b8b] text-[13px]">
+                                {emptyMessage}
                               </TableCell>
                             </TableRow>
                           ) : visibleLogs.map((log: any) => (
@@ -105,6 +114,20 @@ export function AuditPanel({
                               <TableCell className="py-3 px-4 text-left text-[13px] text-[#8b8b8b]">
                                 {log.api_name || <span className="text-[#555] font-mono">SYSTEM</span>}
                               </TableCell>
+                              <TableCell className="max-w-[260px] py-3 px-4 text-left font-mono text-[11px] text-[#ededed]">
+                                <span className="block truncate" title={getAuditLogEndpoint(log) || undefined}>
+                                  {getAuditLogEndpoint(log) || <span className="text-[#555]">Unavailable</span>}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-3 px-4 text-left font-mono text-[11px]">
+                                {getAuditLogResponseStatus(log) !== null ? (
+                                  <span className={getAuditLogResponseStatus(log)! < 400 ? 'text-[#3ecf8e]' : 'text-red-400'}>
+                                    {getAuditLogResponseStatusLabel(log)}
+                                  </span>
+                                ) : (
+                                  <span className="text-[#555]">Unavailable</span>
+                                )}
+                              </TableCell>
                               <TableCell className="py-3 px-4 text-left font-mono text-[11px] text-[#8b8b8b]">
                                 {log.request_id}
                               </TableCell>
@@ -123,7 +146,7 @@ export function AuditPanel({
                     <div className="min-h-0 flex-1 overflow-y-auto p-4">
                       {visibleLogs.length === 0 ? (
                         <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-dashed border-[#2e2e2e] bg-[#141414] px-4 text-center text-[13px] text-[#8b8b8b]">
-                          {role === 'developer' ? 'No API call logs recorded for your approved keys yet.' : 'No compliance audit entries recorded.'}
+                          {emptyMessage}
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -151,9 +174,23 @@ export function AuditPanel({
                                 </div>
                               </div>
                               <div className="mt-4 rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
-                                <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Correlation ID</div>
-                                <div className="mt-1 truncate font-mono text-[12px] text-[#ededed]" title={log.request_id || log.correlation_id}>
-                                  {log.request_id || log.correlation_id || 'Unavailable'}
+                                <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Endpoint</div>
+                                <div className="mt-1 truncate font-mono text-[12px] text-[#ededed]" title={getAuditLogEndpoint(log) || undefined}>
+                                  {getAuditLogEndpoint(log) || 'Unavailable'}
+                                </div>
+                              </div>
+                              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                                <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
+                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Response Code</div>
+                                  <div className={`mt-1 font-mono text-[12px] ${getAuditLogResponseStatus(log) !== null && getAuditLogResponseStatus(log)! < 400 ? 'text-[#3ecf8e]' : 'text-red-400'}`}>
+                                    {getAuditLogResponseStatusLabel(log) || 'Unavailable'}
+                                  </div>
+                                </div>
+                                <div className="min-w-0 rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
+                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Correlation ID</div>
+                                  <div className="mt-1 truncate font-mono text-[12px] text-[#ededed]" title={log.request_id || log.correlation_id}>
+                                    {log.request_id || log.correlation_id || 'Unavailable'}
+                                  </div>
                                 </div>
                               </div>
                               <div className="mt-4 inline-flex items-center gap-1.5 font-mono text-[12.5px] text-[#3ecf8e]">

@@ -1,6 +1,8 @@
+import { formatHttpStatusLabel } from '../lib/http-status';
+
 export type ViewMode = 'list' | 'grid';
 
-export type DashboardViewTab = 'approvals' | 'accounts' | 'credentials' | 'audit' | 'matrix' | 'analytics';
+export type DashboardViewTab = 'approvals' | 'accounts' | 'credentials' | 'apiLogs' | 'audit' | 'matrix' | 'analytics';
 
 export type ViewModePreferenceStorage = {
   getItem(key: string): string | null;
@@ -95,6 +97,39 @@ export function formatAuditLogDetails(details: unknown) {
   }
 }
 
+export function parseAuditLogDetails(details: unknown): Record<string, unknown> {
+  if (!details || typeof details !== 'string') {
+    return details && typeof details === 'object' && !Array.isArray(details) ? details as Record<string, unknown> : {};
+  }
+
+  try {
+    const parsed = JSON.parse(details);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function getAuditLogEndpoint(log: { details?: unknown }) {
+  const details = parseAuditLogDetails(log.details);
+  const path = typeof details.path === 'string' ? details.path : '';
+  const method = typeof details.method === 'string' ? details.method.toUpperCase() : '';
+  if (!path) return '';
+  return method ? `${method} ${path}` : path;
+}
+
+export function getAuditLogResponseStatus(log: { details?: unknown }) {
+  const details = parseAuditLogDetails(log.details);
+  const value = details.response_status ?? details.response_code;
+  const status = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(status) ? status : null;
+}
+
+export function getAuditLogResponseStatusLabel(log: { details?: unknown }) {
+  const status = getAuditLogResponseStatus(log);
+  return status === null ? '' : formatHttpStatusLabel(status);
+}
+
 export function getRequestStatusLabel(request: { status?: string; api_key_status?: string | null; api_key_revoked_at?: string | null }) {
   if (request.status === 'APPROVED' && request.api_key_revoked_at) return 'REVOKED';
   return request.status === 'APPROVED'
@@ -149,6 +184,7 @@ export function getVisibleDashboardTabs(role: string, canViewAuditLogs: boolean)
     ...(role !== 'developer' && role !== 'reviewer' ? ['approvals' as const] : []),
     ...(role === 'admin' ? ['accounts' as const] : []),
     ...(role === 'developer' || role === 'admin' ? ['credentials' as const] : []),
+    ...(role === 'admin' ? ['apiLogs' as const] : []),
     ...(canViewAuditLogs ? [
       'audit' as const,
       ...(role === 'reviewer' || role === 'admin' ? ['matrix' as const] : []),
@@ -157,24 +193,50 @@ export function getVisibleDashboardTabs(role: string, canViewAuditLogs: boolean)
   ];
 }
 
+function isSandboxCallLog(log: { event_type?: string }) {
+  return String(log.event_type || '').startsWith('SANDBOX_CALL');
+}
+
+export function filterPersonalApiCallLogs(
+  logs: any[],
+  options: { userId?: string | null; mdaId?: string | null; search: string }
+) {
+  const scopedLogs = logs.filter(log => (
+    isSandboxCallLog(log) &&
+    (
+      log.consumer_user_id === options.userId ||
+      Boolean(options.mdaId && !log.consumer_user_id && log.mda_id === options.mdaId)
+    )
+  ));
+
+  return filterDashboardAuditLogs(scopedLogs, {
+    role: 'admin',
+    filterMda: 'ALL',
+    search: options.search,
+  });
+}
+
 export function filterDashboardAuditLogs(
   logs: any[],
   options: { role: string; filterMda: string; search: string }
 ) {
+  const normalizedSearch = options.search.trim().toLowerCase();
+
   return logs.filter(log => {
-    if (options.role === 'developer' && !String(log.event_type || '').startsWith('SANDBOX_CALL')) return false;
+    if (options.role === 'developer' && !isSandboxCallLog(log)) return false;
     if (options.role !== 'developer' && options.filterMda !== 'ALL' && log.mda_id !== options.filterMda) return false;
     return true;
   }).filter(log => {
-    if (!options.search) return true;
+    if (!normalizedSearch) return true;
     return [
       log.event_type,
       log.mda_name,
       log.api_name,
+      getAuditLogEndpoint(log),
       log.request_id,
       log.correlation_id,
       log.details,
-    ].some(value => String(value || '').toLowerCase().includes(options.search));
+    ].some(value => String(value || '').toLowerCase().includes(normalizedSearch));
   });
 }
 

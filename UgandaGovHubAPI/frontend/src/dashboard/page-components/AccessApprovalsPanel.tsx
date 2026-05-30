@@ -144,7 +144,7 @@ export function AccessApprovalsPanel({
                             </TableRow>
                           ) : visibleRequests.map((req: any) => (
                             <TableRow key={req.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
-                              <TableCell className="py-3.5 px-4 font-semibold text-[13px] text-[#ededed]">{req.mda_name}</TableCell>
+                              <TableCell className="py-3.5 px-4 font-semibold text-[13px] text-orange-400">{req.mda_name}</TableCell>
                               <TableCell className="py-3.5 px-4 text-[13px] text-white font-medium">{req.api_name}</TableCell>
                               <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] italic">"{req.legal_basis || 'Not Provided'}"</TableCell>
                               <TableCell className="py-3.5 px-4 text-[13px] text-[#8b8b8b] max-w-[180px] truncate" title={req.purpose}>{req.purpose}</TableCell>
@@ -178,7 +178,7 @@ export function AccessApprovalsPanel({
                             <div key={req.id} className="flex min-h-[300px] flex-col rounded-lg border border-[#2e2e2e] bg-[#181818] p-4 text-left">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                  <div className="text-[12px] font-semibold uppercase tracking-wide text-[#8b8b8b]">{req.mda_name}</div>
+                                  <div className="text-[12px] font-semibold uppercase tracking-wide text-orange-400">{req.mda_name}</div>
                                   <h3 className="mt-1 truncate text-[15px] font-semibold text-white" title={req.api_name}>{req.api_name}</h3>
                                 </div>
                                 <div className="flex shrink-0 flex-col items-end gap-2">

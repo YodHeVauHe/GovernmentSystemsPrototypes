@@ -1,11 +1,12 @@
 import crypto from 'crypto';
+import { isProductionEnv } from './security-config';
 
 const PREFIX = 'enc:v1:';
 
 function getEncryptionKey() {
   const raw = process.env.GOVHUB_DATA_ENCRYPTION_KEY;
   if (!raw) {
-    if (process.env.GOVHUB_DEMO_MODE !== 'true' && process.env.NODE_ENV === 'production') {
+    if (isProductionEnv()) {
       throw new Error('GOVHUB_DATA_ENCRYPTION_KEY is required in production.');
     }
     return crypto.createHash('sha256').update('govhub-demo-development-encryption-key').digest();

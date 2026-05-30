@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { sendSandboxError } from '../middleware/sandbox';
 import { optionalSandboxString, requiredSandboxString } from '../sandbox-input';
+import { sandboxDrivingPermitStatus, sandboxIdentityVerificationStatus, sandboxTaxComplianceStatus } from '../sandbox-fixtures';
 
 export const compositeRouter = Router();
 
@@ -25,17 +26,21 @@ compositeRouter.post('/eligibility-check', (req, res) => {
   const permitNumber = permitInput.value;
 
   // 1. Identity Check Mock
-  let identityStatus = 'PARTIAL_MATCH';
-  let identityRemarks = 'Name match fuzzy. Review required.';
-  let identityEligible = true;
+  let identityStatus = '';
+  let identityRemarks = '';
+  let identityEligible = false;
 
-  if (nin === 'CM99021234567X') {
+  const identityVerificationStatus = sandboxIdentityVerificationStatus(nin);
+
+  if (identityVerificationStatus === 'MATCH') {
     identityStatus = 'MATCH';
     identityRemarks = 'All provided fields matched the registry.';
-  } else if (nin === 'CM00000000000X') {
+    identityEligible = true;
+  } else if (identityVerificationStatus === 'NO_MATCH') {
     identityStatus = 'NO_MATCH';
     identityRemarks = 'NIN not found or details completely mismatched.';
-    identityEligible = false;
+  } else {
+    return sendSandboxError(res, 'NIN_NOT_FOUND', 'The provided NIN does not exist in the sandbox NIRA registry.', 404);
   }
 
   // 2. Tax Compliance Mock
@@ -43,10 +48,14 @@ compositeRouter.post('/eligibility-check', (req, res) => {
   let taxRemarks = 'Outstanding returns or arrears detected.';
   let taxEligible = false;
 
-  if (tin === '1000123456') {
+  const complianceStatus = sandboxTaxComplianceStatus(tin);
+
+  if (complianceStatus === 'COMPLIANT') {
     taxStatus = 'COMPLIANT';
     taxRemarks = 'Tax clearance is up to date.';
     taxEligible = true;
+  } else if (complianceStatus !== 'NON_COMPLIANT') {
+    return sendSandboxError(res, 'TIN_NOT_FOUND', 'The provided TIN does not exist in the sandbox URA registry.', 404);
   }
 
   // 3. Driving Permit Mock (Optional)
@@ -55,22 +64,20 @@ compositeRouter.post('/eligibility-check', (req, res) => {
   let permitEligible = true;
 
   if (permitNumber) {
-    const pNum = permitNumber.toLowerCase();
-    if (pNum.endsWith('susp')) {
+    const drivingPermitStatus = sandboxDrivingPermitStatus(permitNumber);
+    if (drivingPermitStatus === 'SUSPENDED') {
       permitStatus = 'SUSPENDED';
       permitRemarks = 'Driving permit is suspended.';
       permitEligible = false;
-    } else if (pNum.endsWith('exp')) {
+    } else if (drivingPermitStatus === 'EXPIRED') {
       permitStatus = 'EXPIRED';
       permitRemarks = 'Driving permit is expired.';
       permitEligible = false;
-    } else if (pNum === 'wp30219' || pNum.startsWith('wp') || pNum.endsWith('valid')) {
+    } else if (drivingPermitStatus === 'ACTIVE') {
       permitStatus = 'ACTIVE';
       permitRemarks = 'Driving permit is valid.';
     } else {
-      permitStatus = 'NOT_FOUND';
-      permitRemarks = 'Driving permit number not found.';
-      permitEligible = false;
+      return sendSandboxError(res, 'PERMIT_NOT_FOUND', 'The provided driving permit number does not exist.', 404);
     }
   }
 

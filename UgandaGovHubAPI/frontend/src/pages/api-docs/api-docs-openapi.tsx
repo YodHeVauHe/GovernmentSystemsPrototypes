@@ -1,5 +1,6 @@
 import { CodeSamples } from '@/components/CodeSamples';
 import { API_BASE } from '@/lib/api-base';
+import { formatHttpStatusLabel, isSuccessStatus } from '@/lib/http-status';
 
 export type DocsVisibility = 'public' | 'authenticated' | 'restricted';
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete' | 'options' | 'head' | 'trace';
@@ -248,10 +249,15 @@ export function MethodBadge({ method }: { method: HttpMethod }) {
   );
 }
 
-function CodeBlock({ value }: { value: unknown }) {
+function CodeBlock({ value, tone = 'neutral' }: { value: unknown; tone?: 'neutral' | 'success' | 'error' }) {
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  const toneClassName = tone === 'success'
+    ? 'text-emerald-300'
+    : tone === 'error'
+      ? 'text-red-300'
+      : 'text-[#d8d8d8]';
   return (
-    <pre className="max-h-[380px] overflow-auto rounded-md border border-[#2e2e2e] bg-[#0f0f0f] p-4 text-[12px] leading-5 text-[#d8d8d8]">
+    <pre className={`max-h-[380px] overflow-auto rounded-md border border-[#2e2e2e] bg-[#0f0f0f] p-4 text-[12px] leading-5 ${toneClassName}`}>
       <code>{text}</code>
     </pre>
   );
@@ -331,7 +337,7 @@ export function SchemaViewer({ schema, spec, depth = 0 }: { schema: any; spec: O
   );
 }
 
-function MediaSchema({ content, spec }: { content: Record<string, any> | undefined; spec: OpenApiSpec }) {
+function MediaSchema({ content, spec, status }: { content: Record<string, any> | undefined; spec: OpenApiSpec; status?: string }) {
   if (!content || Object.keys(content).length === 0) return null;
   const [mediaType, media] = Object.entries(content)[0];
   const firstExample = Object.values(media?.examples || {})[0] as { value?: unknown } | undefined;
@@ -343,7 +349,7 @@ function MediaSchema({ content, spec }: { content: Record<string, any> | undefin
       <p className="text-[12.5px] leading-5 text-[#8b8b8b]">
         Example payloads show the shape a client can send or expect back. Replace placeholder values with approved data from your access request and MDA workflow.
       </p>
-      <CodeBlock value={example} />
+      <CodeBlock value={example} tone={status ? isSuccessStatus(status) ? 'success' : 'error' : 'neutral'} />
     </div>
   );
 }
@@ -436,12 +442,12 @@ export function OperationBlock({ item, spec }: { item: Operation; spec: OpenApiS
             {Object.entries(responses).map(([status, response]: [string, any]) => (
               <div key={status} className="rounded-md border border-[#2e2e2e] bg-[#141414] p-4">
                 <div className="mb-3 flex flex-wrap items-center gap-3">
-                  <span className={`rounded-md border px-2 py-1 font-mono text-[12px] ${responseStatusStyle(status)}`}>{status}</span>
+                  <span className={`rounded-md border px-2 py-1 font-mono text-[12px] ${responseStatusStyle(status)}`}>{formatHttpStatusLabel(status)}</span>
                   <span className="rounded-md border border-[#2e2e2e] bg-[#1c1c1c] px-2 py-1 text-[11px] uppercase tracking-wide text-[#8b8b8b]">{responseTone(status)}</span>
                   <span className="text-sm text-[#b5b5b5]">{response?.description || 'Response'}</span>
                 </div>
                 <p className="mb-3 text-[12.5px] leading-5 text-[#8b8b8b]">{responseHelp(status)}</p>
-                <MediaSchema content={response?.content} spec={spec} />
+                <MediaSchema content={response?.content} spec={spec} status={status} />
               </div>
             ))}
           </div>

@@ -162,7 +162,29 @@ function nonNegativeInteger(value: number, fallback: number) {
   return Math.max(0, Math.trunc(value));
 }
 
-export async function listAuditLogs(db: DbClient, user?: AccessUser, limit = 100, offset = 0): Promise<AuditLogPage> {
+type AuditLogScope = 'all' | 'api-calls';
+
+type ListAuditLogOptions = {
+  scope?: AuditLogScope;
+};
+
+function apiCallLogWhereClause(user: AccessUser) {
+  const hasMdaScope = Boolean(user.mda_id);
+  return {
+    whereClause: hasMdaScope
+      ? "WHERE (l.consumer_user_id = $1 OR (l.consumer_user_id IS NULL AND l.mda_id = $2)) AND l.event_type LIKE 'SANDBOX_CALL%'"
+      : "WHERE l.consumer_user_id = $1 AND l.event_type LIKE 'SANDBOX_CALL%'",
+    params: hasMdaScope ? [user.id, user.mda_id] : [user.id],
+  };
+}
+
+export async function listAuditLogs(
+  db: DbClient,
+  user?: AccessUser,
+  limit = 100,
+  offset = 0,
+  options: ListAuditLogOptions = {}
+): Promise<AuditLogPage> {
   const baseSelect = `
     SELECT
       l.*,
@@ -177,12 +199,8 @@ export async function listAuditLogs(db: DbClient, user?: AccessUser, limit = 100
   const safeLimit = boundedPositiveInteger(limit, 100, 500);
   const safeOffset = nonNegativeInteger(offset, 0);
 
-  if (user?.role === 'developer') {
-    const hasMdaScope = Boolean(user.mda_id);
-    const whereClause = hasMdaScope
-      ? "WHERE (l.consumer_user_id = $1 OR (l.consumer_user_id IS NULL AND l.mda_id = $2)) AND l.event_type LIKE 'SANDBOX_CALL%'"
-      : "WHERE l.consumer_user_id = $1 AND l.event_type LIKE 'SANDBOX_CALL%'";
-    const params = hasMdaScope ? [user.id, user.mda_id] : [user.id];
+  if (user && (user.role === 'developer' || options.scope === 'api-calls')) {
+    const { whereClause, params } = apiCallLogWhereClause(user);
 
     const total = Number((await one<{ count: string }>(db, `SELECT COUNT(*) as count FROM audit_logs l ${whereClause}`, params))?.count || 0);
     const data = await many(

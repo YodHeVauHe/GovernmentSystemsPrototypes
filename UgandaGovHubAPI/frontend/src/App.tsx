@@ -101,17 +101,18 @@ function AuthenticatedRoute({ children }: { children: React.ReactNode }) {
 
 function AppShell() {
   const location = useLocation();
-  const { loading, isAuthenticated, isApproved } = useUser();
+  const { loading, isAuthenticated, isApproved, role } = useUser();
   const authPage = authRoutes.includes(location.pathname);
   const publicDocsPage = location.pathname === '/docs' || location.pathname.startsWith('/docs/');
+  const dashboardPage = location.pathname === '/dashboard';
   const knownAppRoute = isKnownAppRoute(location.pathname);
   const [sidebarOpen, setSidebarOpen] = useState(!publicDocsPage);
 
   useEffect(() => {
-    if (publicDocsPage) {
+    if (publicDocsPage || (dashboardPage && role === 'admin')) {
       setSidebarOpen(false);
     }
-  }, [publicDocsPage]);
+  }, [dashboardPage, publicDocsPage, role]);
 
   if (authPage) {
     return (

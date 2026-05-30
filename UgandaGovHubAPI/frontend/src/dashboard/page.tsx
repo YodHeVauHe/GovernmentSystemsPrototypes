@@ -9,12 +9,15 @@ import {
   canCopyOneTimeApiKey,
   canViewAuditLogsTab,
   filterDashboardAuditLogs,
+  filterPersonalApiCallLogs,
   getVisibleDashboardTabs,
   hasActiveApprovedApiKey,
   hasPendingOneTimeApiKeyReveal,
+  type DashboardViewTab,
 } from './view-helpers';
 import { AccessApprovalsPanel } from './page-components/AccessApprovalsPanel';
 import { AccountsPanel } from './page-components/AccountsPanel';
+import { AdminDashboardSideMenu } from './page-components/AdminDashboardSideMenu';
 import { AnalyticsPanel } from './page-components/AnalyticsPanel';
 import { AuditPanel } from './page-components/AuditPanel';
 import { createAccountReviewActions } from './page-components/account-review-actions';
@@ -42,10 +45,11 @@ export default function DashboardPage() {
   const [requests, setRequests] = useState<any[]>([]);
   const [accountRequests, setAccountRequests] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [apiCallLogs, setApiCallLogs] = useState<any[]>([]);
   const [matrix, setMatrix] = useState<any[]>([]);
   const [selectedLog, setSelectedLog] = useState<any>(null);
   const [selectedAccessRequest, setSelectedAccessRequest] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<string>('approvals');
+  const [activeTab, setActiveTab] = useState<DashboardViewTab>('approvals');
   const [approving, setApproving] = useState<string | null>(null);
   const [accountReviewing, setAccountReviewing] = useState<string | null>(null);
   const [accountRoleInputs, setAccountRoleInputs] = useState<Record<string, string>>({});
@@ -76,11 +80,11 @@ export default function DashboardPage() {
   const dashboardSearch = (searchParams.get('q') || '').trim().toLowerCase();
 
   const isCurrentConsumerRequest = useCallback((request: any) => (
-    mdaId ? request.consumer_mda_id === mdaId : request.consumer_user_id === user?.id
+    request.consumer_user_id === user?.id || Boolean(mdaId && request.consumer_mda_id === mdaId)
   ), [mdaId, user?.id]);
 
   const claimPendingOneTimeApiKey = useCallback((request: any) => {
-    if (role !== 'developer' || !hasPendingOneTimeApiKeyReveal(request) || oneTimeApiKeyOpenRef.current) return;
+    if (!['admin', 'developer'].includes(role) || !hasPendingOneTimeApiKeyReveal(request) || oneTimeApiKeyOpenRef.current) return;
 
     const requestId = String(request.id || '');
     if (!requestId || pendingKeyRevealClaims.current.has(requestId)) return;
@@ -128,13 +132,15 @@ export default function DashboardPage() {
     Promise.all([
       fetchDashboardJson('/api/access'),
       canViewAnalytics ? fetchDashboardJson('/api/access/audit-logs') : Promise.resolve([]),
+      role === 'admin' ? fetchDashboardJson('/api/access/audit-logs?scope=api-calls') : Promise.resolve({ data: [] }),
       canViewOversight ? fetchDashboardJson('/api/access/matrix') : Promise.resolve([]),
       role === 'admin' ? fetchDashboardJson('/api/admin/users') : Promise.resolve({ users: [] }),
     ])
-      .then(([accessData, auditData, matrixData, userData]) => {
+      .then(([accessData, auditData, apiCallData, matrixData, userData]) => {
         const nextRequests = Array.isArray(accessData) ? accessData : [];
         setRequests(nextRequests);
         setAuditLogs(Array.isArray(auditData) ? auditData : Array.isArray(auditData?.data) ? auditData.data : []);
+        setApiCallLogs(Array.isArray(apiCallData) ? apiCallData : Array.isArray(apiCallData?.data) ? apiCallData.data : []);
         setMatrix(Array.isArray(matrixData) ? matrixData : []);
         setAccountRequests(Array.isArray(userData.users) ? userData.users : []);
         const pendingRevealRequest = nextRequests.find(req => isCurrentConsumerRequest(req) && hasPendingOneTimeApiKeyReveal(req));
@@ -162,7 +168,7 @@ export default function DashboardPage() {
   }, [fetchDashboardData, role, mdaId]);
 
   useEffect(() => {
-    if (role !== 'developer') return;
+    if (role !== 'admin' && role !== 'developer') return;
     const intervalId = window.setInterval(() => fetchDashboardData(false), 15000);
     return () => window.clearInterval(intervalId);
   }, [fetchDashboardData, role]);
@@ -198,9 +204,11 @@ export default function DashboardPage() {
         if (!res.ok || result.error) throw new Error(result.error || 'Failed to approve access request');
         return result;
       })
-      .then(() => {
+      .then(result => {
         toast.success('API key generated', {
-          description: 'The consumer will see a one-time copy popup in their dashboard.',
+          description: isCurrentConsumerRequest(request)
+            ? 'Copy the generated key from the one-time reveal dialog.'
+            : 'The consumer will see a one-time copy popup in their dashboard.',
         });
         addNotification({
           type: 'key',
@@ -208,6 +216,16 @@ export default function DashboardPage() {
           message: `Your access request to ${request?.api_name || 'the API'} was approved for ${request?.mda_name || 'your organization'}.`,
           recipientUserId: request?.consumer_user_id,
         });
+        if (isCurrentConsumerRequest(request) && result.api_key_pending_reveal) {
+          claimPendingOneTimeApiKey({
+            ...request,
+            status: 'APPROVED',
+            api_key_preview: result.api_key_preview,
+            api_key_pending_reveal: true,
+            api_key_status: result.api_key_status,
+            api_key_expires_at: result.api_key_expires_at,
+          });
+        }
         fetchDashboardData();
       })
       .catch(err => {
@@ -348,11 +366,9 @@ export default function DashboardPage() {
     if (!canCopyOneTimeApiKey(oneTimeApiKey?.apiKey, oneTimeApiKeyCopied)) return;
     try {
       await navigator.clipboard.writeText(oneTimeApiKey!.apiKey);
-      window.sessionStorage.setItem(`govhub_api_key:${oneTimeApiKey!.requestId}`, oneTimeApiKey!.apiKey);
-      window.sessionStorage.setItem('govhub_api_key', oneTimeApiKey!.apiKey);
       setOneTimeApiKeyCopied(true);
       toast.success('API key copied', {
-        description: 'Store it now. It cannot be copied again after this screen is closed.',
+        description: 'Paste it into the sandbox console or store it in your approved secret manager.',
       });
     } catch {
       toast.error('Copy failed', {
@@ -370,7 +386,7 @@ export default function DashboardPage() {
   const canViewAuditLogs = canViewAuditLogsTab(role, currentConsumerRequests);
   useEffect(() => {
     const visibleDashboardTabs = getVisibleDashboardTabs(role, canViewAuditLogs);
-    if (visibleDashboardTabs.includes(activeTab as any)) return;
+    if (visibleDashboardTabs.includes(activeTab)) return;
     setActiveTab(visibleDashboardTabs[0] || 'analytics');
   }, [activeTab, role, canViewAuditLogs]);
   const visibleRequests = activeDashboardRequests.filter(req => {
@@ -398,6 +414,11 @@ export default function DashboardPage() {
   const visibleLogs = filterDashboardAuditLogs(auditLogs, {
     role,
     filterMda,
+    search: dashboardSearch,
+  });
+  const visibleApiCallLogs = filterPersonalApiCallLogs(apiCallLogs, {
+    userId: user?.id,
+    mdaId,
     search: dashboardSearch,
   });
 
@@ -462,6 +483,181 @@ export default function DashboardPage() {
   const keyActionTitle = keyActionIsDelete ? 'Delete API key?' : 'Revoke API key?';
   const keyActionButtonLabel = keyActionIsDelete ? 'Delete key' : 'Revoke key';
 
+  const renderDashboardContent = () => {
+    if (dashboardLoading) return <DashboardLoadingState />;
+    if (dashboardError) return <DashboardErrorState error={dashboardError} />;
+
+    if (activeTab === 'approvals') {
+      return (
+        <AccessApprovalsPanel
+          visibleRequests={visibleRequests}
+          approvalViewMode={approvalViewMode}
+          setApprovalViewMode={setApprovalViewMode}
+          setSelectedAccessRequest={setSelectedAccessRequest}
+          keyExpiryInputs={keyExpiryInputs}
+          setKeyExpiryInputs={setKeyExpiryInputs}
+          handleApprove={handleApprove}
+          approving={approving}
+          handleUpdateExpiry={handleUpdateExpiry}
+          openKeyActionConfirmation={openKeyActionConfirmation}
+        />
+      );
+    }
+
+    if (activeTab === 'accounts' && role === 'admin') {
+      return (
+        <AccountsPanel
+          accountRequests={accountRequests}
+          accountStatusCounts={accountStatusCounts}
+          accountStatusFilter={accountStatusFilter}
+          setAccountStatusFilter={setAccountStatusFilter}
+          accountViewMode={accountViewMode}
+          setAccountViewMode={setAccountViewMode}
+          filteredAccountRequests={filteredAccountRequests}
+          accountRoleInputs={accountRoleInputs}
+          setAccountRoleInputs={setAccountRoleInputs}
+          accountMdaInputs={accountMdaInputs}
+          setAccountMdaInputs={setAccountMdaInputs}
+          accountReviewing={accountReviewing}
+          mdas={mdas}
+          handleApproveAccount={handleApproveAccount}
+          handleNeedsInfoAccount={handleNeedsInfoAccount}
+          handleRejectAccount={handleRejectAccount}
+          handleSuspendAccount={handleSuspendAccount}
+          handleDeleteAccount={handleDeleteAccount}
+        />
+      );
+    }
+
+    if (activeTab === 'credentials') {
+      return (
+        <CredentialsPanel
+          filteredCredentialRequests={filteredCredentialRequests}
+          credentialViewMode={credentialViewMode}
+          setCredentialViewMode={setCredentialViewMode}
+          dashboardSearch={dashboardSearch}
+        />
+      );
+    }
+
+    if (activeTab === 'apiLogs' && role === 'admin') {
+      return (
+        <AuditPanel
+          role={role}
+          logScope="api-calls"
+          timeRange={timeRange}
+          setTimeRange={setTimeRange}
+          filterMda="ALL"
+          setFilterMda={setFilterMda}
+          mdas={mdas}
+          auditViewMode={auditViewMode}
+          setAuditViewMode={setAuditViewMode}
+          visibleLogs={visibleApiCallLogs}
+          selectedLog={selectedLog}
+          setSelectedLog={setSelectedLog}
+        />
+      );
+    }
+
+    if (activeTab === 'audit' && canViewAuditLogs) {
+      return (
+        <AuditPanel
+          role={role}
+          timeRange={timeRange}
+          setTimeRange={setTimeRange}
+          filterMda={filterMda}
+          setFilterMda={setFilterMda}
+          mdas={mdas}
+          auditViewMode={auditViewMode}
+          setAuditViewMode={setAuditViewMode}
+          visibleLogs={visibleLogs}
+          selectedLog={selectedLog}
+          setSelectedLog={setSelectedLog}
+        />
+      );
+    }
+
+    if (activeTab === 'matrix') {
+      return (
+        <MatrixPanel
+          mdas={mdas}
+          matrix={matrix}
+          matrixViewMode={matrixViewMode}
+          setMatrixViewMode={setMatrixViewMode}
+        />
+      );
+    }
+
+    return (
+      <AnalyticsPanel
+        timeRange={timeRange}
+        setTimeRange={setTimeRange}
+        analyticsLogs={analyticsLogs}
+        analyticsAllowed={analyticsAllowed}
+        analyticsDenied={analyticsDenied}
+        analyticsSuccessRate={analyticsSuccessRate}
+        analyticsTraffic={analyticsTraffic}
+        maxTrafficCount={maxTrafficCount}
+        analyticsDistribution={analyticsDistribution}
+        distributionColors={distributionColors}
+      />
+    );
+  };
+
+  const dashboardOverlays = (
+    <>
+      <DashboardDialogs
+        oneTimeApiKey={oneTimeApiKey}
+        oneTimeApiKeyCopied={oneTimeApiKeyCopied}
+        oneTimeApiKeyOpenRef={oneTimeApiKeyOpenRef}
+        setOneTimeApiKey={setOneTimeApiKey}
+        setOneTimeApiKeyCopied={setOneTimeApiKeyCopied}
+        handleCopyOneTimeApiKey={handleCopyOneTimeApiKey}
+        keyActionConfirmation={keyActionConfirmation}
+        keyActionBusy={keyActionBusy}
+        setKeyActionConfirmation={setKeyActionConfirmation}
+        keyActionTitle={keyActionTitle}
+        keyActionIsDelete={keyActionIsDelete}
+        keyActionRequest={keyActionRequest}
+        confirmKeyAction={confirmKeyAction}
+        keyActionButtonLabel={keyActionButtonLabel}
+      />
+      <DashboardDrawers
+        selectedAccessRequest={selectedAccessRequest}
+        setSelectedAccessRequest={setSelectedAccessRequest}
+        selectedLog={selectedLog}
+        setSelectedLog={setSelectedLog}
+      />
+    </>
+  );
+
+  if (role === 'admin') {
+    return (
+      <div className="flex h-full min-h-0 w-full overflow-hidden text-left text-[#ededed]">
+        <AdminDashboardSideMenu
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          pendingApprovals={pendingApprovals}
+          pendingAccountCount={pendingAccountCount}
+        />
+        <main className="min-w-0 flex-1 overflow-hidden">
+          <div className="mx-auto flex h-full min-h-0 w-full max-w-[1400px] flex-col gap-5 p-3 lg:p-5">
+            <DashboardStats
+              totalApproved={totalApproved}
+              pendingApprovals={pendingApprovals}
+              totalCallsCount={totalCallsCount}
+              successRate={successRate}
+            />
+            <div className="min-h-0 flex-1 w-full">
+              {renderDashboardContent()}
+            </div>
+          </div>
+        </main>
+        {dashboardOverlays}
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-hidden">
       <div className="flex h-full min-h-0 flex-col gap-5 p-3 lg:p-5 text-left max-w-[1400px] mx-auto w-full text-[#ededed] relative">
@@ -481,113 +677,10 @@ export default function DashboardPage() {
         />
 
         <div className="min-h-0 flex-1 w-full">
-          {dashboardLoading && <DashboardLoadingState />}
-          {!dashboardLoading && dashboardError && <DashboardErrorState error={dashboardError} />}
-          {!dashboardLoading && !dashboardError && activeTab === 'approvals' && (
-            <AccessApprovalsPanel
-              visibleRequests={visibleRequests}
-              approvalViewMode={approvalViewMode}
-              setApprovalViewMode={setApprovalViewMode}
-              setSelectedAccessRequest={setSelectedAccessRequest}
-              keyExpiryInputs={keyExpiryInputs}
-              setKeyExpiryInputs={setKeyExpiryInputs}
-              handleApprove={handleApprove}
-              approving={approving}
-              handleUpdateExpiry={handleUpdateExpiry}
-              openKeyActionConfirmation={openKeyActionConfirmation}
-            />
-          )}
-          {!dashboardLoading && !dashboardError && activeTab === 'accounts' && role === 'admin' && (
-            <AccountsPanel
-              accountRequests={accountRequests}
-              accountStatusCounts={accountStatusCounts}
-              accountStatusFilter={accountStatusFilter}
-              setAccountStatusFilter={setAccountStatusFilter}
-              accountViewMode={accountViewMode}
-              setAccountViewMode={setAccountViewMode}
-              filteredAccountRequests={filteredAccountRequests}
-              accountRoleInputs={accountRoleInputs}
-              setAccountRoleInputs={setAccountRoleInputs}
-              accountMdaInputs={accountMdaInputs}
-              setAccountMdaInputs={setAccountMdaInputs}
-              accountReviewing={accountReviewing}
-              mdas={mdas}
-              handleApproveAccount={handleApproveAccount}
-              handleNeedsInfoAccount={handleNeedsInfoAccount}
-              handleRejectAccount={handleRejectAccount}
-              handleSuspendAccount={handleSuspendAccount}
-              handleDeleteAccount={handleDeleteAccount}
-            />
-          )}
-          {!dashboardLoading && !dashboardError && activeTab === 'credentials' && (
-            <CredentialsPanel
-              filteredCredentialRequests={filteredCredentialRequests}
-              credentialViewMode={credentialViewMode}
-              setCredentialViewMode={setCredentialViewMode}
-              dashboardSearch={dashboardSearch}
-            />
-          )}
-          {!dashboardLoading && !dashboardError && activeTab === 'audit' && canViewAuditLogs && (
-            <AuditPanel
-              role={role}
-              timeRange={timeRange}
-              setTimeRange={setTimeRange}
-              filterMda={filterMda}
-              setFilterMda={setFilterMda}
-              mdas={mdas}
-              auditViewMode={auditViewMode}
-              setAuditViewMode={setAuditViewMode}
-              visibleLogs={visibleLogs}
-              selectedLog={selectedLog}
-              setSelectedLog={setSelectedLog}
-            />
-          )}
-          {!dashboardLoading && !dashboardError && activeTab === 'matrix' && (
-            <MatrixPanel
-              mdas={mdas}
-              matrix={matrix}
-              matrixViewMode={matrixViewMode}
-              setMatrixViewMode={setMatrixViewMode}
-            />
-          )}
-          {!dashboardLoading && !dashboardError && activeTab === 'analytics' && (
-            <AnalyticsPanel
-              timeRange={timeRange}
-              setTimeRange={setTimeRange}
-              analyticsLogs={analyticsLogs}
-              analyticsAllowed={analyticsAllowed}
-              analyticsDenied={analyticsDenied}
-              analyticsSuccessRate={analyticsSuccessRate}
-              analyticsTraffic={analyticsTraffic}
-              maxTrafficCount={maxTrafficCount}
-              analyticsDistribution={analyticsDistribution}
-              distributionColors={distributionColors}
-            />
-          )}
+          {renderDashboardContent()}
         </div>
 
-        <DashboardDialogs
-          oneTimeApiKey={oneTimeApiKey}
-          oneTimeApiKeyCopied={oneTimeApiKeyCopied}
-          oneTimeApiKeyOpenRef={oneTimeApiKeyOpenRef}
-          setOneTimeApiKey={setOneTimeApiKey}
-          setOneTimeApiKeyCopied={setOneTimeApiKeyCopied}
-          handleCopyOneTimeApiKey={handleCopyOneTimeApiKey}
-          keyActionConfirmation={keyActionConfirmation}
-          keyActionBusy={keyActionBusy}
-          setKeyActionConfirmation={setKeyActionConfirmation}
-          keyActionTitle={keyActionTitle}
-          keyActionIsDelete={keyActionIsDelete}
-          keyActionRequest={keyActionRequest}
-          confirmKeyAction={confirmKeyAction}
-          keyActionButtonLabel={keyActionButtonLabel}
-        />
-        <DashboardDrawers
-          selectedAccessRequest={selectedAccessRequest}
-          setSelectedAccessRequest={setSelectedAccessRequest}
-          selectedLog={selectedLog}
-          setSelectedLog={setSelectedLog}
-        />
+        {dashboardOverlays}
       </div>
     </div>
   );
