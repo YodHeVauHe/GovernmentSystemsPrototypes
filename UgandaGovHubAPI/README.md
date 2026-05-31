@@ -10,11 +10,11 @@
 <p align="center">
   <a href="../README.md">Main Repo</a>
   ·
-  <a href="LICENSE">License</a>
+  <a href="../LICENSE">License</a>
   ·
-  <a href="COPYRIGHT.md">Copyright</a>
+  <a href="../COPYRIGHT.md">Copyright</a>
   ·
-  <a href="CODE_OF_CONDUCT.md">Code of Conduct</a>
+  <a href="../CODE_OF_CONDUCT.md">Code of Conduct</a>
   ·
   <a href="../CONTRIBUTING.md">Contributing</a>
   ·
@@ -49,9 +49,9 @@ use.
 
 Repository governance documents:
 
-- [Proprietary source-available license](LICENSE)
-- [Copyright and intellectual property notice](COPYRIGHT.md)
-- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Proprietary source-available license](../LICENSE)
+- [Copyright and intellectual property notice](../COPYRIGHT.md)
+- [Code of conduct](../CODE_OF_CONDUCT.md)
 - [Main repository contributing rules](../CONTRIBUTING.md)
 - [Main repository security policy](../SECURITY.md)
 
