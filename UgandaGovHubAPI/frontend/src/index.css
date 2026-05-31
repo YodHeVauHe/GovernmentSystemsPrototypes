@@ -144,3 +144,38 @@
     scrollbar-gutter: stable;
   }
 }
+
+@layer components {
+  .auth-page-background {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, hsl(0 0% 10%) 0%, hsl(0 0% 7%) 58%, hsl(153 24% 7%) 100%);
+  }
+
+  .auth-page-background::before,
+  .auth-page-background::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .auth-page-background::before {
+    z-index: -2;
+    background:
+      linear-gradient(135deg, hsl(var(--brand-default) / 0.16) 0%, transparent 36%),
+      linear-gradient(205deg, transparent 0%, hsl(var(--warning-default) / 0.08) 48%, transparent 72%),
+      linear-gradient(90deg, hsl(0 0% 100% / 0.05) 0 1px, transparent 1px 100%);
+    background-size: 100% 100%, 100% 100%, 12rem 100%;
+    mask-image: linear-gradient(to bottom, hsl(0 0% 0% / 0.9), hsl(0 0% 0% / 0.32));
+  }
+
+  .auth-page-background::after {
+    z-index: -1;
+    background:
+      linear-gradient(90deg, hsl(0 0% 7% / 0.92) 0%, transparent 46%, hsl(0 0% 7% / 0.82) 100%),
+      linear-gradient(180deg, transparent 0%, hsl(0 0% 0% / 0.42) 100%);
+  }
+}
