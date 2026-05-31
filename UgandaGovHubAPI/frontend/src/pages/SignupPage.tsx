@@ -166,8 +166,8 @@ export function SignupPage() {
   };
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-[#181818] px-4 py-8 text-[#ededed]">
-      <form onSubmit={submit} noValidate className="w-full max-w-2xl space-y-5 rounded-lg border border-[#2e2e2e] bg-[#141414] p-6">
+    <main className="auth-page-background flex min-h-dvh items-center justify-center px-4 py-8 text-[#ededed]">
+      <form onSubmit={submit} noValidate className="relative z-10 w-full max-w-2xl space-y-5 rounded-lg border border-[#2e2e2e]/80 bg-[#141414]/95 p-6 shadow-2xl shadow-black/35 backdrop-blur">
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
             <IconInnerShadowTop className="size-5" />
