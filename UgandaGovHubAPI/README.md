@@ -260,20 +260,23 @@ localhost origins in that list.
 
 ## Demo Accounts
 
-`GOVHUB_DEMO_MODE` is the single switch for demo users:
+`GOVHUB_DEMO_MODE` is the single switch for seeded demo users:
 
 - `GOVHUB_DEMO_MODE=false` means no demo users are seeded. Use the configured
   admin account and normal sign-up/approval flows.
 - `GOVHUB_DEMO_MODE=true` outside production seeds local demo users with the
   fallback credentials below.
 - `GOVHUB_DEMO_MODE=true` in production seeds demo users, but never uses
-  fallback passwords. Production still requires the encryption key, admin
-  password, admin MFA, Turnstile, HTTPS origins, and database TLS protections.
+  fallback passwords. Startup requires explicit passwords for the primary demo
+  accounts before auth routes are available. Production still requires the
+  encryption key, admin password, admin MFA, Turnstile, HTTPS origins, and
+  database TLS protections.
 
 For a Vercel presentation deployment, keep `GOVHUB_DEMO_MODE=true` and
 configure explicit passwords for the primary demo accounts:
 
 ```bash
+GOVHUB_DEMO_MODE=true
 GOVHUB_DEMO_DEVELOPER_EMAIL=demo.developer@govhub.go.ug
 GOVHUB_DEMO_DEVELOPER_PASSWORD=...
 GOVHUB_DEMO_API_OWNER_EMAIL=demo.api.owner@nira.go.ug

@@ -12,6 +12,12 @@ export function shouldRequireAdminMfa(env: NodeJS.ProcessEnv = process.env) {
   return isProductionEnv(env) || env.GOVHUB_REQUIRE_ADMIN_MFA === 'true';
 }
 
+const requiredProductionDemoPasswordEnvKeys = [
+  'GOVHUB_DEMO_DEVELOPER_PASSWORD',
+  'GOVHUB_DEMO_API_OWNER_PASSWORD',
+  'GOVHUB_DEMO_REVIEWER_PASSWORD',
+];
+
 function parseCsvEnv(value: string | undefined) {
   return (value || '')
     .split(',')
@@ -64,12 +70,19 @@ function isValidProductionDataEncryptionKey(value: string | undefined) {
   }
 }
 
+function validateProductionDemoModeEnv(env: NodeJS.ProcessEnv) {
+  if (!isDemoModeEnabled(env)) return;
+
+  const missingPasswordEnvKey = requiredProductionDemoPasswordEnvKeys.find(key => !env[key]?.trim());
+  if (missingPasswordEnvKey) {
+    throw new Error(`${missingPasswordEnvKey} is required when GOVHUB_DEMO_MODE=true in production.`);
+  }
+}
+
 export function validateProductionSecurityEnv(env: NodeJS.ProcessEnv = process.env) {
   if (!isProductionEnv(env)) return;
 
-  if (isDemoModeEnabled(env)) {
-    throw new Error('GOVHUB_DEMO_MODE=true is not allowed in production.');
-  }
+  validateProductionDemoModeEnv(env);
   if (!env.GOVHUB_DATA_ENCRYPTION_KEY) {
     throw new Error('GOVHUB_DATA_ENCRYPTION_KEY is required in production.');
   }
