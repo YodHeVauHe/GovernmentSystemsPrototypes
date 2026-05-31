@@ -70,6 +70,16 @@ function createTimeoutSignal(timeoutMs: number) {
   };
 }
 
+function turnstileFailureMessage(errors: string[] | undefined) {
+  if (!errors?.length) return 'Human verification failed. Please retry the challenge.';
+
+  const errorList = errors.join(', ');
+  if (errors.some(error => ['invalid-input-secret', 'missing-input-secret'].includes(error))) {
+    return `Human verification failed: ${errorList}. Check the Cloudflare Turnstile site key and secret key configuration.`;
+  }
+  return `Human verification failed: ${errorList}. Please retry the challenge.`;
+}
+
 export async function validateTurnstileToken({
   token,
   action,
@@ -134,12 +144,13 @@ export async function validateTurnstileToken({
   }
 
   if (!result.success) {
+    const errors = result['error-codes'] || [];
     return {
       ok: false,
       status: 400,
       code: 'TURNSTILE_FAILED',
-      message: 'Human verification failed. Please retry the challenge.',
-      errors: result['error-codes'] || [],
+      message: turnstileFailureMessage(errors),
+      errors,
     };
   }
 
