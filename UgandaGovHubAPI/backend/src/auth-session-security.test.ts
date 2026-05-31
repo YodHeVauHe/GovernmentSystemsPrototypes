@@ -1,6 +1,6 @@
 import assert from 'assert';
 import { adminUsersRouter } from './routes/auth';
-import type { AuthUser } from './auth';
+import { getBearerToken, sanitizeUser, SESSION_COOKIE_NAME, type AuthUser } from './auth';
 import type { Db, DbClient } from './db';
 
 type MockRequest = {
@@ -99,6 +99,43 @@ function authUser(overrides: Partial<AuthUser>): AuthUser {
   };
 }
 
+function sessionRequest(cookie: string) {
+  return {
+    headers: { cookie },
+  } as any;
+}
+
+function runSessionCookieParsingSecurityTests() {
+  assert.equal(
+    getBearerToken(sessionRequest(`${SESSION_COOKIE_NAME}=valid-session-token`)),
+    'valid-session-token',
+    'a single session cookie should authenticate the request',
+  );
+
+  assert.equal(
+    getBearerToken(sessionRequest(`${SESSION_COOKIE_NAME}=attacker-token; theme=dark; ${SESSION_COOKIE_NAME}=valid-session-token`)),
+    null,
+    'duplicate session cookies must be rejected to avoid ambiguous cookie-tossing behavior',
+  );
+}
+
+function runSanitizeUserSecurityTests() {
+  const publicUser = sanitizeUser(authUser({
+    password_hash: 'scrypt:sensitive-hash',
+    mfa_secret_encrypted: 'enc:v1:sensitive-secret',
+    mfa_enabled_at: new Date(0).toISOString(),
+  }));
+
+  assert.equal(Object.prototype.hasOwnProperty.call(publicUser, 'password_hash'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(publicUser, 'mfa_secret_encrypted'), false);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(publicUser, 'mfa_enabled_at'),
+    false,
+    'public user responses should expose only MFA enabled state, not the security-event timestamp',
+  );
+  assert.equal(publicUser.mfa_enabled, true);
+}
+
 const adminUser = authUser({
   id: 'admin-user',
   full_name: 'Platform Admin',
@@ -184,6 +221,9 @@ class AuthSessionSecurityDb implements Db {
 }
 
 async function runAuthSessionSecurityTest() {
+  runSessionCookieParsingSecurityTests();
+  runSanitizeUserSecurityTests();
+
   const db = new AuthSessionSecurityDb();
   const response = await invokeRoute(adminUsersRouter(db), '/:id/suspend', 'post', {
     params: { id: suspendedUser.id },

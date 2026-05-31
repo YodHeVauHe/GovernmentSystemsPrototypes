@@ -266,12 +266,12 @@ localhost origins in that list.
   admin account and normal sign-up/approval flows.
 - `GOVHUB_DEMO_MODE=true` outside production seeds local demo users with the
   fallback credentials below.
-- `GOVHUB_DEMO_MODE=true` in production is rejected at startup. Deployed
-  environments must use real configured accounts and the normal approval flow.
+- `GOVHUB_DEMO_MODE=true` in production seeds demo users, but never uses
+  fallback passwords. Production still requires the encryption key, admin
+  password, admin MFA, Turnstile, HTTPS origins, and database TLS protections.
 
-For a local presentation deployment, keep `GOVHUB_DEMO_MODE=true` outside
-production and optionally configure explicit passwords for the primary demo
-accounts:
+For a Vercel presentation deployment, keep `GOVHUB_DEMO_MODE=true` and
+configure explicit passwords for the primary demo accounts:
 
 ```bash
 GOVHUB_DEMO_DEVELOPER_EMAIL=demo.developer@govhub.go.ug
@@ -282,8 +282,10 @@ GOVHUB_DEMO_REVIEWER_EMAIL=demo.reviewer@govhub.go.ug
 GOVHUB_DEMO_REVIEWER_PASSWORD=...
 ```
 
-Existing demo users with the same email are updated on startup in demo mode so
-the configured credentials work after a local restart.
+Those three passwords are required when `NODE_ENV=production` and
+`GOVHUB_DEMO_MODE=true`, because they cover the main demo flows. Existing demo
+users with the same email are updated on startup so the configured credentials
+work after redeploy.
 
 Optional demo account variables use the same pattern:
 

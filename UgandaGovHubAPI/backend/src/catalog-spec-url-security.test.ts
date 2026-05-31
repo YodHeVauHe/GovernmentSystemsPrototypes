@@ -1,6 +1,8 @@
 import assert from 'assert';
 import dns from 'dns/promises';
+import { resolveCatalogSpecInput } from './catalog-spec-input';
 import { fetchSpecFromUrl } from './catalog-spec-url';
+import { validateOpenApiSpec } from './versioning';
 
 const originalEnv = {
   nodeEnv: process.env.NODE_ENV,
@@ -68,6 +70,79 @@ async function runCatalogSpecUrlSecurityTests() {
     false,
     'Spec URL import must enforce byte limits while streaming instead of buffering the full response body.',
   );
+
+  await assert.rejects(
+    () => resolveCatalogSpecInput(
+      { openapi_spec: 'x'.repeat(11) },
+      async () => {
+        throw new Error('fetch should not be called for inline specs');
+      },
+    ),
+    /Specification content is too large/,
+    'inline OpenAPI specs must honor GOVHUB_SPEC_MAX_BYTES like URL imports do.',
+  );
+
+  const externalAuthorityPathSpecs = [
+    {
+      route: '//attacker.example/collect',
+      pattern: /path "\/\/attacker\.example\/collect" must start with a single "\/"/,
+    },
+    {
+      route: '/\\attacker.example/collect',
+      pattern: /path "\/\\attacker\.example\/collect" must start with a single "\/"/,
+    },
+  ];
+
+  for (const { route, pattern } of externalAuthorityPathSpecs) {
+    assert.throws(
+      () => validateOpenApiSpec(`
+openapi: 3.0.0
+info:
+  title: Redirecting path
+  version: 1.0.0
+paths:
+  ${route}:
+    get:
+      responses:
+        '200':
+          description: ok
+`),
+      pattern,
+      'OpenAPI path keys must not be allowed to become external authority URLs in the sandbox console.',
+    );
+  }
+
+  const externalAuthorityServerSpecs = [
+    {
+      url: '//attacker.example',
+      pattern: /server url "\/\/attacker\.example" must not be protocol-relative/,
+    },
+    {
+      url: '/\\attacker.example',
+      pattern: /server url "\/\\attacker\.example" must not contain backslashes/,
+    },
+  ];
+
+  for (const { url, pattern } of externalAuthorityServerSpecs) {
+    assert.throws(
+      () => validateOpenApiSpec(`
+openapi: 3.0.0
+info:
+  title: Redirecting server
+  version: 1.0.0
+servers:
+  - url: '${url}'
+paths:
+  /collect:
+    get:
+      responses:
+        '200':
+          description: ok
+`),
+      pattern,
+      'OpenAPI server URLs must not be allowed to become external authority URLs in the sandbox console.',
+    );
+  }
 }
 
 runCatalogSpecUrlSecurityTests()

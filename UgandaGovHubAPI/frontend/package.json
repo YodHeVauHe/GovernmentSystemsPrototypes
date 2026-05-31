@@ -10,7 +10,8 @@
     "test:api-key-storage": "node --import tsx src/dashboard/api-key-storage.test.ts",
     "test:account-approval-security": "node --import tsx src/dashboard/account-approval-security.test.ts",
     "test:document-storage-security": "node --import tsx src/pages/account-settings/document-storage-security.test.ts",
-    "test": "npm run test:api-key-storage && npm run test:account-approval-security && npm run test:document-storage-security",
+    "test:openapi-example-security": "node --import tsx src/pages/openapi-example-security.test.ts",
+    "test": "npm run test:api-key-storage && npm run test:account-approval-security && npm run test:document-storage-security && npm run test:openapi-example-security",
     "preview": "vite preview"
   },
   "dependencies": {

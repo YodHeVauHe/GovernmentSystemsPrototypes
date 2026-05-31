@@ -34,7 +34,7 @@ export type AuthUser = {
   updated_at: string;
 };
 
-export type PublicUser = Omit<AuthUser, 'password_hash' | 'mfa_secret_encrypted'> & { mfa_enabled: boolean };
+export type PublicUser = Omit<AuthUser, 'password_hash' | 'mfa_secret_encrypted' | 'mfa_enabled_at'> & { mfa_enabled: boolean };
 
 export type AccessDecision =
   | { allowed: true }
@@ -452,7 +452,7 @@ export async function ensureDemoUsers(db: DbClient) {
 }
 
 export function sanitizeUser(user: AuthUser): PublicUser {
-  const { password_hash, mfa_secret_encrypted, ...publicUser } = user;
+  const { password_hash, mfa_secret_encrypted, mfa_enabled_at, ...publicUser } = user;
   return {
     ...publicUser,
     mfa_enabled: Boolean(user.mfa_enabled_at),
@@ -497,17 +497,21 @@ export function getBearerToken(req: Request) {
     if (bearerToken) return normalizeToken(bearerToken);
   }
   const cookieHeader = req.headers.cookie || '';
-  const cookies = Object.fromEntries(cookieHeader.split(';').map(cookie => {
+  let sessionCookieValue: string | null = null;
+  let sessionCookieCount = 0;
+  for (const cookie of cookieHeader.split(';')) {
     const [name, ...valueParts] = cookie.trim().split('=');
-    const rawValue = valueParts.join('=');
+    if (name !== SESSION_COOKIE_NAME) continue;
+    sessionCookieCount += 1;
+    if (sessionCookieCount > 1) return null;
+
     try {
-      return [name, decodeURIComponent(rawValue)];
+      sessionCookieValue = decodeURIComponent(valueParts.join('='));
     } catch {
-      return [name, ''];
+      return null;
     }
-  }).filter(([name]) => Boolean(name)));
-  const token = cookies[SESSION_COOKIE_NAME];
-  return normalizeToken(token);
+  }
+  return normalizeToken(sessionCookieValue);
 }
 
 export function setSessionCookie(res: Response, token: string) {
