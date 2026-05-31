@@ -21,6 +21,9 @@ AGENTS.md
 .githooks/
 /test
 
+# Local security assessment reports
+API_SECURITY_ASSESSMENT_*.md
+
 # Git worktrees
 .worktrees/
 .vercel

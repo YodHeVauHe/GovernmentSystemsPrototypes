@@ -5,3 +5,6 @@ tests/
 *.db
 .vercel
 .env*
+
+# Local security assessment reports
+API_SECURITY_ASSESSMENT_*.md
