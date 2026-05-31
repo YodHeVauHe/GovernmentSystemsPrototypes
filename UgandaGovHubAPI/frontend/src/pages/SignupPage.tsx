@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconInnerShadowTop } from '@tabler/icons-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -86,6 +87,8 @@ const accountTypes: Array<{
   },
 ];
 
+const LOGIN_REDIRECT_DELAY_MS = 1400;
+
 export function SignupPage() {
   const navigate = useNavigate();
   const { signup } = useUser();
@@ -151,11 +154,13 @@ export function SignupPage() {
         requested_mda_id: selectedType.requiresMda ? form.requested_mda_id : '',
         turnstileToken,
       });
-      navigate('/login');
+      toast.success('Account request submitted', {
+        description: 'Your account was created. Sign in to complete verification from account settings.',
+      });
+      setTimeout(() => navigate('/login'), LOGIN_REDIRECT_DELAY_MS);
     } catch (err: any) {
       setError(err.message || 'Unable to create account.');
       resetTurnstile();
-    } finally {
       setSubmitting(false);
     }
   };

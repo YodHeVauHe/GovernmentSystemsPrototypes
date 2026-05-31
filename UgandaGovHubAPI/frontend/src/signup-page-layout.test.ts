@@ -17,3 +17,9 @@ assert.equal(
   true,
   'Signup form should use a narrower max-w-2xl shell while remaining full-width on small screens.'
 );
+
+assert.equal(
+  signupPage.includes("toast.success('Account request submitted'") && signupPage.includes('setTimeout(() => navigate'),
+  true,
+  'Signup should show a success toast before redirecting to the login screen.'
+);
