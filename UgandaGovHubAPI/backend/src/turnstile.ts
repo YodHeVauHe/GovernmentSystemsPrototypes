@@ -1,11 +1,17 @@
 import crypto from 'crypto';
 
 export const TURNSTILE_SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const DEFAULT_TURNSTILE_TIMEOUT_MS = 5_000;
+const MAX_TURNSTILE_TIMEOUT_MS = 30_000;
 const CLOUDFLARE_TEST_SECRET_KEYS = new Set([
   '1x0000000000000000000000000000000AA',
   '2x0000000000000000000000000000000AA',
   '3x0000000000000000000000000000000AA',
 ]);
+
+export function isCloudflareTestTurnstileSecret(secret: string | null | undefined) {
+  return typeof secret === 'string' && CLOUDFLARE_TEST_SECRET_KEYS.has(secret);
+}
 
 type TurnstileAction = 'app_load' | 'login' | 'signup';
 
@@ -43,6 +49,25 @@ function configuredTurnstileAllowedHostnames() {
     .split(',')
     .map(hostname => hostname.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function configuredTurnstileTimeoutMs() {
+  const rawTimeout = process.env.GOVHUB_TURNSTILE_TIMEOUT_MS;
+  if (!rawTimeout) return DEFAULT_TURNSTILE_TIMEOUT_MS;
+
+  const timeout = Number(rawTimeout);
+  if (!Number.isFinite(timeout) || timeout < 1) return DEFAULT_TURNSTILE_TIMEOUT_MS;
+  return Math.min(Math.trunc(timeout), MAX_TURNSTILE_TIMEOUT_MS);
+}
+
+function createTimeoutSignal(timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  timeout.unref?.();
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeout),
+  };
 }
 
 export async function validateTurnstileToken({
@@ -83,10 +108,12 @@ export async function validateTurnstileToken({
   }
 
   let result: SiteverifyResponse;
+  const timeout = createTimeoutSignal(configuredTurnstileTimeoutMs());
   try {
     const response = await fetchImpl(TURNSTILE_SITEVERIFY_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      signal: timeout.signal,
       body: JSON.stringify({
         secret,
         response: normalizedToken,
@@ -102,6 +129,8 @@ export async function validateTurnstileToken({
       code: 'TURNSTILE_UNAVAILABLE',
       message: 'Human verification is temporarily unavailable. Please try again.',
     };
+  } finally {
+    timeout.clear();
   }
 
   if (!result.success) {
@@ -114,7 +143,7 @@ export async function validateTurnstileToken({
     };
   }
 
-  const isCloudflareTestSecret = CLOUDFLARE_TEST_SECRET_KEYS.has(secret);
+  const isCloudflareTestSecret = isCloudflareTestTurnstileSecret(secret);
   if (!isCloudflareTestSecret && result.action !== action) {
     return {
       ok: false,

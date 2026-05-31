@@ -122,11 +122,11 @@ export function AccountSettingsPage() {
       .catch(error => toast.error('Profile update failed', { description: error.message }));
   };
 
-  const saveDocumentDirectly = (type: string, label: string, file_name: string, mime_type: string, storage_ref: string) => {
+  const saveDocumentDirectly = (type: string, label: string, file_name: string, mime_type: string) => {
     accountRequest<AccountResponse>('/api/auth/account/documents', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ type, label, file_name, mime_type, storage_ref }),
+      body: JSON.stringify({ type, label, file_name, mime_type }),
     })
       .then(body => {
         setAccount(body.account);

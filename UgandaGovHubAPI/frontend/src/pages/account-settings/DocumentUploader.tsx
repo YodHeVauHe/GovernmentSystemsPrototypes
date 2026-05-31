@@ -4,15 +4,13 @@ import { Spinner } from '@/components/ui/spinner';
 import type { AccountDocument } from './types';
 
 type DocumentUploaderProps = {
-  type: string;
   label: string;
   accepts: string;
   submittedDoc?: AccountDocument;
-  onUploadComplete: (fileName: string, mimeType: string, storageRef: string) => void;
+  onUploadComplete: (fileName: string, mimeType: string) => void;
 };
 
 export function DocumentUploader({
-  type,
   label,
   accepts,
   submittedDoc,
@@ -40,8 +38,7 @@ export function DocumentUploader({
         currentProgress = 100;
         window.clearInterval(interval);
         setUploading(false);
-        const storageRef = `s3://govhub-vault/docs/${type}_${Date.now()}_${file.name}`;
-        onUploadComplete(file.name, file.type || 'application/pdf', storageRef);
+        onUploadComplete(file.name, file.type || 'application/pdf');
       }
       setProgress(currentProgress);
     }, 100);
@@ -59,9 +56,6 @@ export function DocumentUploader({
               <div className="truncate text-sm font-semibold text-foreground">{label}</div>
               <div className="max-w-[200px] truncate font-mono text-xs text-foreground-light sm:max-w-md">
                 {submittedDoc.file_name} - {submittedDoc.mime_type}
-              </div>
-              <div className="mt-0.5 truncate font-mono text-[10px] text-foreground-muted">
-                Ref: {submittedDoc.storage_ref}
               </div>
             </div>
           </div>

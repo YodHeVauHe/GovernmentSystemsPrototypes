@@ -1,5 +1,7 @@
 import type { AccountProfile, AccountRequirement, AccountType, VerificationDocument } from './account-verification-types';
 
+export type AccountApprovalRole = 'developer' | 'api_owner' | 'admin' | 'reviewer';
+
 export const ENCRYPTED_PROFILE_FIELDS: Array<keyof AccountProfile> = [
   'nin',
   'national_id_number',
@@ -134,8 +136,24 @@ export const ACCOUNT_TYPE_REQUIREMENTS: Record<AccountType, AccountRequirement> 
   },
 };
 
+export const ACCOUNT_TYPE_ALLOWED_ROLES: Record<AccountType, readonly AccountApprovalRole[]> = {
+  public_developer: ['developer'],
+  private_company: ['developer'],
+  business_name: ['developer'],
+  civil_society: ['developer'],
+  research_institution: ['developer', 'reviewer'],
+  government_employee: ['developer', 'reviewer', 'admin'],
+  mda_api_owner: ['api_owner', 'admin'],
+  admin: ['admin'],
+};
+
 export function normalizeAccountType(value: string | null | undefined): AccountType {
   if (value === 'government') return 'government_employee';
   if (value && value in ACCOUNT_TYPE_REQUIREMENTS) return value as AccountType;
   return 'public_developer';
+}
+
+export function isRoleAllowedForAccountType(accountType: string | null | undefined, role: string | null | undefined) {
+  const normalizedAccountType = normalizeAccountType(accountType);
+  return ACCOUNT_TYPE_ALLOWED_ROLES[normalizedAccountType].includes(role as AccountApprovalRole);
 }

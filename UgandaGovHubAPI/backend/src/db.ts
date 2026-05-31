@@ -10,6 +10,8 @@ export type Db = DbClient & {
   transaction<T>(callback: (client: DbClient) => Promise<T>): Promise<T>;
 };
 
+export type DatabaseSslConfig = false | { rejectUnauthorized: boolean };
+
 function requireDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL;
   if (!databaseUrl) {
@@ -21,7 +23,7 @@ function requireDatabaseUrl() {
 export function createDb(): Db {
   const pool = new Pool({
     connectionString: requireDatabaseUrl(),
-    ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
+    ssl: resolveDatabaseSslConfig(process.env),
   });
 
   return {
@@ -49,6 +51,11 @@ export function createDb(): Db {
       return pool.end();
     },
   };
+}
+
+export function resolveDatabaseSslConfig(env: NodeJS.ProcessEnv = process.env): DatabaseSslConfig {
+  if (env.DATABASE_SSL === 'false') return false;
+  return { rejectUnauthorized: env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false' };
 }
 
 export async function one<T extends QueryResultRow = any>(db: DbClient, sql: string, params: unknown[] = []) {

@@ -21,6 +21,16 @@ type GuardDecision =
   | { allowed: true }
   | { allowed: false; code: string; message: string };
 
+const ACCESS_REQUEST_LIST_DEFAULT_LIMIT = 100;
+const ACCESS_REQUEST_LIST_MAX_LIMIT = 100;
+const ACCESS_REQUEST_LIST_MAX_OFFSET = 10000;
+const ACCESS_MATRIX_DEFAULT_LIMIT = 100;
+const ACCESS_MATRIX_MAX_LIMIT = 100;
+const ACCESS_MATRIX_MAX_OFFSET = 10000;
+const AUDIT_LOG_DEFAULT_LIMIT = 100;
+const AUDIT_LOG_MAX_LIMIT = 500;
+const AUDIT_LOG_MAX_OFFSET = 10000;
+
 function canViewOneTimeApiKeyState(user: AccessUser, request: AccessRequestListRow) {
   if (user.role !== 'developer') return true;
   if (request.consumer_user_id) return request.consumer_user_id === user.id;
@@ -66,7 +76,12 @@ export function resolveConsumerMdaForRequest(user: AccessUser, requestedMdaId?: 
   return { allowed: true, mdaId: user.mda_id, userId: user.id, consumerType: 'mda' };
 }
 
-export async function buildAccessRequestList(db: DbClient, user: AccessUser) {
+export async function buildAccessRequestList(
+  db: DbClient,
+  user: AccessUser,
+  limit = ACCESS_REQUEST_LIST_DEFAULT_LIMIT,
+  offset = 0,
+) {
   const baseSelect = `
     SELECT
       r.id, r.consumer_mda_id, r.consumer_user_id, r.consumer_type, r.api_id, r.purpose,
@@ -83,17 +98,20 @@ export async function buildAccessRequestList(db: DbClient, user: AccessUser) {
     LEFT JOIN users consumer ON r.consumer_user_id = consumer.id
   `;
 
+  const safeLimit = boundedPositiveInteger(limit, ACCESS_REQUEST_LIST_DEFAULT_LIMIT, ACCESS_REQUEST_LIST_MAX_LIMIT);
+  const safeOffset = boundedNonNegativeInteger(offset, 0, ACCESS_REQUEST_LIST_MAX_OFFSET);
+
   if (user.role === 'admin' || user.role === 'reviewer') {
-    return many(db, `${baseSelect} ORDER BY r.created_at DESC`);
+    return many(db, `${baseSelect} ORDER BY r.created_at DESC LIMIT $1 OFFSET $2`, [safeLimit, safeOffset]);
   }
   if (user.role === 'api_owner') {
-    return many(db, `${baseSelect} WHERE a.owning_mda_id = $1 ORDER BY r.created_at DESC`, [user.mda_id]);
+    return many(db, `${baseSelect} WHERE a.owning_mda_id = $1 ORDER BY r.created_at DESC LIMIT $2 OFFSET $3`, [user.mda_id, safeLimit, safeOffset]);
   }
   if (user.mda_id) {
-    const requests = await many(db, `${baseSelect} WHERE r.consumer_mda_id = $1 ORDER BY r.created_at DESC`, [user.mda_id]);
+    const requests = await many(db, `${baseSelect} WHERE r.consumer_mda_id = $1 ORDER BY r.created_at DESC LIMIT $2 OFFSET $3`, [user.mda_id, safeLimit, safeOffset]);
     return maskHiddenOneTimeApiKeyState(user, requests);
   }
-  const requests = await many(db, `${baseSelect} WHERE r.consumer_user_id = $1 ORDER BY r.created_at DESC`, [user.id]);
+  const requests = await many(db, `${baseSelect} WHERE r.consumer_user_id = $1 ORDER BY r.created_at DESC LIMIT $2 OFFSET $3`, [user.id, safeLimit, safeOffset]);
   return maskHiddenOneTimeApiKeyState(user, requests);
 }
 
@@ -103,6 +121,33 @@ export async function canSubmitAccessRequest(db: DbClient, apiId: string): Promi
     return { allowed: false, code: 'API_NOT_FOUND', message: 'The requested API does not exist.' };
   }
   return { allowed: true };
+}
+
+export async function buildAccessMatrix(
+  db: DbClient,
+  limit = ACCESS_MATRIX_DEFAULT_LIMIT,
+  offset = 0,
+) {
+  const safeLimit = boundedPositiveInteger(limit, ACCESS_MATRIX_DEFAULT_LIMIT, ACCESS_MATRIX_MAX_LIMIT);
+  const safeOffset = boundedNonNegativeInteger(offset, 0, ACCESS_MATRIX_MAX_OFFSET);
+
+  return many(db, `
+    SELECT
+      consumer_mda_id,
+      consumer_user_id,
+      consumer_type,
+      api_id,
+      status,
+      api_key_expires_at
+    FROM access_requests
+    WHERE status = 'APPROVED'
+      AND api_key_hash IS NOT NULL
+      AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
+      AND api_key_revoked_at IS NULL
+      AND (api_key_expires_at IS NULL OR api_key_expires_at > $1)
+    ORDER BY api_id ASC, consumer_mda_id ASC, consumer_user_id ASC
+    LIMIT $2 OFFSET $3
+  `, [new Date().toISOString(), safeLimit, safeOffset]);
 }
 
 export type BlockingAccessRequest = {
@@ -157,9 +202,11 @@ function boundedPositiveInteger(value: number, fallback: number, max: number) {
   return Math.min(integer, max);
 }
 
-function nonNegativeInteger(value: number, fallback: number) {
+function boundedNonNegativeInteger(value: number, fallback: number, max: number) {
   if (!Number.isFinite(value)) return fallback;
-  return Math.max(0, Math.trunc(value));
+  const integer = Math.trunc(value);
+  if (integer < 0) return fallback;
+  return Math.min(integer, max);
 }
 
 type AuditLogScope = 'all' | 'api-calls';
@@ -168,13 +215,20 @@ type ListAuditLogOptions = {
   scope?: AuditLogScope;
 };
 
-function apiCallLogWhereClause(user: AccessUser) {
+function developerApiCallLogWhereClause(user: AccessUser) {
   const hasMdaScope = Boolean(user.mda_id);
   return {
     whereClause: hasMdaScope
       ? "WHERE (l.consumer_user_id = $1 OR (l.consumer_user_id IS NULL AND l.mda_id = $2)) AND l.event_type LIKE 'SANDBOX_CALL%'"
       : "WHERE l.consumer_user_id = $1 AND l.event_type LIKE 'SANDBOX_CALL%'",
     params: hasMdaScope ? [user.id, user.mda_id] : [user.id],
+  };
+}
+
+function allApiCallLogWhereClause() {
+  return {
+    whereClause: "WHERE l.event_type LIKE 'SANDBOX_CALL%'",
+    params: [] as unknown[],
   };
 }
 
@@ -196,11 +250,13 @@ export async function listAuditLogs(
     LEFT JOIN users consumer ON l.consumer_user_id = consumer.id
   `;
 
-  const safeLimit = boundedPositiveInteger(limit, 100, 500);
-  const safeOffset = nonNegativeInteger(offset, 0);
+  const safeLimit = boundedPositiveInteger(limit, AUDIT_LOG_DEFAULT_LIMIT, AUDIT_LOG_MAX_LIMIT);
+  const safeOffset = boundedNonNegativeInteger(offset, 0, AUDIT_LOG_MAX_OFFSET);
 
-  if (user && (user.role === 'developer' || options.scope === 'api-calls')) {
-    const { whereClause, params } = apiCallLogWhereClause(user);
+  if (user?.role === 'developer' || options.scope === 'api-calls') {
+    const { whereClause, params } = user?.role === 'developer'
+      ? developerApiCallLogWhereClause(user)
+      : allApiCallLogWhereClause();
 
     const total = Number((await one<{ count: string }>(db, `SELECT COUNT(*) as count FROM audit_logs l ${whereClause}`, params))?.count || 0);
     const data = await many(

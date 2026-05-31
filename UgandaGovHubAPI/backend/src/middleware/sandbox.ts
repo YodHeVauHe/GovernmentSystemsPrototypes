@@ -1,19 +1,37 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { buildRegisteredSandboxMappings, computeApiKeyAccess, computeApiKeyHash, getApiKeyPreview, resolveSandboxApiId, type SandboxApiMapping } from '../admin';
+import { computeApiKeyAccess, computeApiKeyHash, getApiKeyPreview, resolveSandboxApiId } from '../admin';
 import { logAuditEvent } from '../audit';
 import { consumeRateLimit } from '../rate-limit';
 import type { Db } from '../db';
-import { many, one } from '../db';
+import { one } from '../db';
 import { positiveIntegerEnv } from '../env';
 
-async function getDynamicSandboxMappings(db: Db): Promise<SandboxApiMapping[]> {
-  const rows = await many(db, 'SELECT id, sandbox_available FROM apis WHERE sandbox_available = TRUE');
-  return buildRegisteredSandboxMappings(rows);
+function registeredSandboxApiIdFromPath(url: string) {
+  const pathname = new URL(url, 'http://sandbox.local').pathname.replace(/\/+$/, '');
+  const match = /^\/api\/v1\/sandbox\/([^/?#]+)/i.exec(pathname);
+  if (!match) return null;
+
+  try {
+    const apiId = decodeURIComponent(match[1]);
+    return apiId && !apiId.includes('/') ? apiId : null;
+  } catch {
+    return null;
+  }
 }
 
 async function getApiIdFromPath(db: Db, url: string): Promise<string | null> {
-  return resolveSandboxApiId(url) || resolveSandboxApiId(url, await getDynamicSandboxMappings(db));
+  const defaultApiId = resolveSandboxApiId(url);
+  if (defaultApiId) {
+    const api = await one<{ id: string }>(db, 'SELECT id FROM apis WHERE id = $1 AND sandbox_available = TRUE', [defaultApiId]);
+    return api?.id || null;
+  }
+
+  const registeredApiId = registeredSandboxApiIdFromPath(url);
+  if (!registeredApiId) return null;
+
+  const api = await one<{ id: string }>(db, 'SELECT id FROM apis WHERE id = $1 AND sandbox_available = TRUE', [registeredApiId]);
+  return api?.id || null;
 }
 
 const SANDBOX_RATE_LIMIT = positiveIntegerEnv('GOVHUB_SANDBOX_RATE_LIMIT', 100);
@@ -22,8 +40,14 @@ const SANDBOX_RATE_WINDOW_MS = 60 * 1000;
 
 const identifierLogKeys = new Set([
   'nin',
+  'nationalid',
+  'nationalidentificationnumber',
   'tin',
+  'tinnumber',
+  'taxidentificationnumber',
+  'taxpayeridentificationnumber',
   'brn',
+  'businessregistrationnumber',
   'permitnumber',
   'permitno',
   'drivingpermitnumber',
@@ -39,6 +63,28 @@ const sensitiveExactLogKeys = new Set([
   'apikey',
   'xgovhubapikey',
 ]);
+const personalDataLogKeys = new Set([
+  'address',
+  'birthdate',
+  'companyname',
+  'contactemail',
+  'contactphone',
+  'dateofbirth',
+  'dob',
+  'email',
+  'emailaddress',
+  'firstname',
+  'fullname',
+  'givenname',
+  'lastname',
+  'mobilenumber',
+  'name',
+  'phonenumber',
+  'postaladdress',
+  'registeredname',
+  'residentialaddress',
+  'surname',
+]);
 
 function normalizeLogKey(key: string) {
   return key.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -47,6 +93,7 @@ function normalizeLogKey(key: string) {
 function isSensitiveLogKey(key: string) {
   const normalizedKey = normalizeLogKey(key);
   return identifierLogKeys.has(normalizedKey)
+    || personalDataLogKeys.has(normalizedKey)
     || sensitiveExactLogKeys.has(normalizedKey)
     || normalizedKey.endsWith('token')
     || normalizedKey.endsWith('secret')
@@ -60,6 +107,16 @@ const sensitivePathSegmentPatterns = [
   /^\/api\/v1\/transport\/(?:driving-permit\/(?:status|classes)|driver-test-results)\/[^/?#]+/,
   /^\/api\/v1\/service-uganda\/(?:cases|case-status|service-bundle)\/[^/?#]+/,
 ];
+
+function redactCanonicalDrivingPermitPath(pathname: string) {
+  return pathname.replace(
+    /^\/api\/v1\/transport\/driving-permit\/[^/?#]+\/(?:status|classes)(?=$|[/?#])/,
+    match => {
+      const lastSlash = match.lastIndexOf('/');
+      return `/api/v1/transport/driving-permit/[REDACTED]${match.slice(lastSlash)}`;
+    }
+  );
+}
 
 export function redactSandboxLogValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(item => redactSandboxLogValue(item));
@@ -93,7 +150,7 @@ export function normalizeSandboxLogPath(pathWithQuery: string) {
       const lastSlash = match.lastIndexOf('/');
       return `${match.slice(0, lastSlash + 1)}[REDACTED]`;
     }),
-    dynamicallyRedactedPath
+    redactCanonicalDrivingPermitPath(dynamicallyRedactedPath)
   );
   if (!query) return redactedPathname;
   const params = new URLSearchParams(query);

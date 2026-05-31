@@ -151,7 +151,7 @@ The app is implemented as a local full-stack prototype:
 - **Backend:** Node.js, Express, TypeScript, PostgreSQL via `pg`.
 - **API contracts:** OpenAPI specs stored in Postgres and served through `/openapi/*.yaml`.
 - **Auth:** Cookie-backed sessions with seeded demo accounts.
-- **Security controls:** MFA setup and enforcement, role-based access control, sensitive field encryption at rest, TLS/HSTS support, audit logging, and privacy metadata aligned to Uganda's Data Protection and Privacy Act, 2019.
+- **Security controls:** MFA setup and enforcement, role-based access control, bounded admin, catalog, docs, and access-governance listings, sensitive field encryption at rest, TLS/HSTS support, redacted audit logging, and privacy metadata aligned to Uganda's Data Protection and Privacy Act, 2019.
 - **Integrations:** Mock/sandbox services for NIRA-style identity verification, URA-style tax status, URSB-style business lookup, driving permit verification, and composite eligibility checks. There are no live external integrations.
 
 ## Local Demo
@@ -223,11 +223,13 @@ GOVHUB_TRUST_TLS_TERMINATION=true
 GOVHUB_ALLOWED_ORIGINS=https://your-app.vercel.app,https://your-custom-domain.com
 GOVHUB_ADMIN_EMAIL=admin@ict.go.ug
 GOVHUB_ADMIN_PASSWORD=...
-GOVHUB_DEMO_MODE=true
-GOVHUB_DATA_ENCRYPTION_KEY=...
+GOVHUB_DEMO_MODE=false
+GOVHUB_DATA_ENCRYPTION_KEY=<64-hex-or-canonical-32-byte-base64-key>
 GOVHUB_REQUIRE_ADMIN_MFA=true
 GOVHUB_TURNSTILE_SECRET_KEY=...
 GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES=your-app.vercel.app,your-custom-domain.com
+GOVHUB_TURNSTILE_TIMEOUT_MS=5000
+GOVHUB_MFA_RATE_LIMIT=5
 ```
 
 `VITE_API_BASE_URL` can be omitted on Vercel when same-origin routing is used.
@@ -247,7 +249,14 @@ POSTGRES_URL=postgresql://...
 POSTGRES_PRISMA_URL=postgresql://...
 ```
 
-Do not set `DATABASE_SSL=false` in Vercel. The backend defaults to SSL for hosted Postgres connections.
+Do not set `DATABASE_SSL=false` in Vercel. The backend defaults to SSL with
+certificate verification for hosted Postgres connections, and production
+startup rejects `DATABASE_SSL=false` and
+`DATABASE_SSL_REJECT_UNAUTHORIZED=false`.
+
+Set `GOVHUB_ALLOWED_ORIGINS` explicitly for deployed HTTPS frontend origins.
+Production startup rejects a missing CORS allow-list, non-HTTPS origins, and
+localhost origins in that list.
 
 ## Demo Accounts
 
@@ -257,13 +266,12 @@ Do not set `DATABASE_SSL=false` in Vercel. The backend defaults to SSL for hoste
   admin account and normal sign-up/approval flows.
 - `GOVHUB_DEMO_MODE=true` outside production seeds local demo users with the
   fallback credentials below.
-- `GOVHUB_DEMO_MODE=true` in production seeds demo users, but never uses
-  fallback passwords. Production still requires `GOVHUB_ADMIN_PASSWORD`,
-  `GOVHUB_DATA_ENCRYPTION_KEY`, `GOVHUB_REQUIRE_ADMIN_MFA=true`, Turnstile, and
-  normal HTTPS/origin configuration.
+- `GOVHUB_DEMO_MODE=true` in production is rejected at startup. Deployed
+  environments must use real configured accounts and the normal approval flow.
 
-For a Vercel presentation deployment, keep `GOVHUB_DEMO_MODE=true` and configure
-explicit passwords for the primary demo accounts:
+For a local presentation deployment, keep `GOVHUB_DEMO_MODE=true` outside
+production and optionally configure explicit passwords for the primary demo
+accounts:
 
 ```bash
 GOVHUB_DEMO_DEVELOPER_EMAIL=demo.developer@govhub.go.ug
@@ -274,10 +282,8 @@ GOVHUB_DEMO_REVIEWER_EMAIL=demo.reviewer@govhub.go.ug
 GOVHUB_DEMO_REVIEWER_PASSWORD=...
 ```
 
-Those three passwords are required when `NODE_ENV=production` and
-`GOVHUB_DEMO_MODE=true`, because they cover the main demo flows. Existing demo
-users with the same email are updated on startup so the configured credentials
-work after redeploy.
+Existing demo users with the same email are updated on startup in demo mode so
+the configured credentials work after a local restart.
 
 Optional demo account variables use the same pattern:
 
@@ -292,8 +298,7 @@ GOVHUB_DEMO_RESEARCH_EMAIL=demo.research@example.edu
 GOVHUB_DEMO_RESEARCH_PASSWORD=...
 ```
 
-Optional demo accounts are skipped in production unless their password variable
-is set. In local demo mode, these fallback credentials are available:
+In local demo mode, these fallback credentials are available:
 
 | Role | Local email | Local fallback password |
 | --- | --- | --- |
@@ -315,7 +320,37 @@ is set. In local demo mode, these fallback credentials are available:
 
 ## Security Configuration
 
-Set `GOVHUB_DATA_ENCRYPTION_KEY` to a strong 32-byte base64 value or passphrase before using persistent data.
+Set `GOVHUB_DATA_ENCRYPTION_KEY` before using persistent data. Production
+requires this to be an explicit 32-byte key encoded as 64 hex characters or
+canonical standard base64; arbitrary passphrases and malformed base64-like
+strings are rejected in production.
+
+Production startup also requires a real Cloudflare Turnstile secret and
+`GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES`. Cloudflare test secrets are rejected
+in production. Turnstile Siteverify calls time out after
+`GOVHUB_TURNSTILE_TIMEOUT_MS` milliseconds, defaulting to 5000 and capped at
+30000, so login and signup verification fail closed if the upstream stalls.
+
+Production startup requires `GOVHUB_ALLOWED_ORIGINS` to be set to the deployed
+HTTPS frontend origin or origins. Do not include `http:` origins, `localhost`,
+`127.0.0.1`, or other loopback origins in production CORS configuration.
+
+Authenticated MFA setup, enable, and disable attempts are rate-limited per
+user. `GOVHUB_MFA_RATE_LIMIT` controls the number of attempts per 10-minute
+window and defaults to 5.
+
+Signup, login, and MFA password-confirmation inputs are capped at 1024
+characters before password hashing or verification to keep auth flows bounded.
+
+Account verification document storage references are generated server-side.
+The frontend posts only public document metadata and does not send storage
+locator fields.
+
+OpenAPI URL imports must use `https:` in production. Keep
+`GOVHUB_SPEC_URL_HOSTS` to an explicit comma-separated allow-list for trusted
+spec hosts; `GOVHUB_ALLOW_UNLISTED_SPEC_URLS=true` is rejected in production.
+Fetched specs are capped by `GOVHUB_SPEC_MAX_BYTES` while streaming so
+oversized responses are rejected before being buffered in full.
 
 For HTTPS directly from the backend, set:
 
