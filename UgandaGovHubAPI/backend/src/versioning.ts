@@ -31,6 +31,33 @@ function readOptionalText(value: unknown, fieldName: string) {
   return value;
 }
 
+function hasValidOpenApiPathShape(route: string) {
+  return route.startsWith('/') && !route.startsWith('//') && !/[\\\u0000-\u001F\u007F]/.test(route);
+}
+
+function validateOpenApiServerUrl(serverUrl: string) {
+  if (serverUrl.trim().startsWith('//')) {
+    throw new Error(`Invalid specification: server url "${serverUrl}" must not be protocol-relative.`);
+  }
+  if (/[\\\u0000-\u001F\u007F]/.test(serverUrl)) {
+    throw new Error(`Invalid specification: server url "${serverUrl}" must not contain backslashes or control characters.`);
+  }
+}
+
+function validateOpenApiServers(value: unknown) {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    throw new Error('Invalid specification: "servers" must be an array.');
+  }
+  value.forEach((server, index) => {
+    if (!isRecord(server)) {
+      throw new Error(`Invalid specification: server "${index}" must be an object.`);
+    }
+    const serverUrl = readOptionalText(server.url, `servers.${index}.url`);
+    if (serverUrl) validateOpenApiServerUrl(serverUrl);
+  });
+}
+
 export function slugifyVersion(version: string) {
   return version
     .trim()
@@ -73,6 +100,7 @@ export function validateOpenApiSpec(specText: string) {
     throw new Error('Invalid specification: "info.version" must contain at least one ASCII letter or number.');
   }
   const description = readOptionalText(info.description, 'info.description');
+  validateOpenApiServers(parsed.servers);
   if (!Object.prototype.hasOwnProperty.call(parsed, 'paths')) {
     throw new Error('Invalid specification: missing "paths" object.');
   }
@@ -81,6 +109,9 @@ export function validateOpenApiSpec(specText: string) {
     throw new Error('Invalid specification: "paths" must be an object.');
   }
   const endpointsCount = Object.entries(paths).reduce((count, [route, pathItem]) => {
+    if (!hasValidOpenApiPathShape(route)) {
+      throw new Error(`Invalid specification: path "${route}" must start with a single "/" and cannot contain backslashes or control characters.`);
+    }
     if (!isRecord(pathItem)) {
       throw new Error(`Invalid specification: path item "${route}" must be an object.`);
     }

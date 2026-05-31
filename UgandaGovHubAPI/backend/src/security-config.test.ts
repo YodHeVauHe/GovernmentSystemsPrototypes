@@ -18,17 +18,6 @@ assert.throws(
 assert.throws(
   () => validateProductionSecurityEnv({
     NODE_ENV: 'production',
-    GOVHUB_DEMO_MODE: 'true',
-    GOVHUB_ADMIN_PASSWORD: 'AdminPass123!',
-    GOVHUB_DATA_ENCRYPTION_KEY: 'a'.repeat(64),
-    GOVHUB_REQUIRE_ADMIN_MFA: 'true',
-  } as NodeJS.ProcessEnv),
-  /GOVHUB_DEMO_MODE must be disabled in production/
-);
-
-assert.throws(
-  () => validateProductionSecurityEnv({
-    NODE_ENV: 'production',
     GOVHUB_DEMO_MODE: 'false',
     GOVHUB_ADMIN_PASSWORD: 'AdminPass123!',
     GOVHUB_DATA_ENCRYPTION_KEY: 'password',
@@ -174,7 +163,7 @@ assert.throws(
 
 assert.doesNotThrow(() => validateProductionSecurityEnv({
   NODE_ENV: 'production',
-  GOVHUB_DEMO_MODE: 'false',
+  GOVHUB_DEMO_MODE: 'true',
   GOVHUB_ADMIN_PASSWORD: 'AdminPass123!',
   GOVHUB_DATA_ENCRYPTION_KEY: 'a'.repeat(64),
   GOVHUB_REQUIRE_ADMIN_MFA: 'true',

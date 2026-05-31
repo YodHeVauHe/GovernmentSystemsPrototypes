@@ -124,6 +124,10 @@ class MfaRateLimitSecurityDb implements Db {
       return { rows: [mfaUser as T], rowCount: 1 };
     }
 
+    if (normalizedSql.includes('SELECT * FROM users WHERE email = $1')) {
+      return { rows: [mfaUser as T], rowCount: 1 };
+    }
+
     if (normalizedSql.startsWith('INSERT INTO rate_limits')) {
       const bucketKey = String(params[0]);
       const group = String(params[1]);
@@ -159,7 +163,38 @@ async function runMfaRateLimitSecurityTest() {
   assert.equal(response.body.code, 'MFA_RATE_LIMITED');
 }
 
-void runMfaRateLimitSecurityTest().catch(error => {
+async function runLoginMfaRateLimitSecurityTest() {
+  const db = new MfaRateLimitSecurityDb();
+  const router = authRouter(db);
+  let response = { status: 0, body: {} as Record<string, unknown> };
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    response = await invokeRoute(router, '/login', 'post', {
+      params: {},
+      headers: {},
+      body: {
+        email: mfaUser.email,
+        password,
+        mfa_code: wrongTotpCode,
+      },
+      ip: `203.0.113.${attempt + 1}`,
+    });
+  }
+
+  assert.equal(
+    response.status,
+    429,
+    'login MFA code guesses must be rate-limited per user even when source IP changes',
+  );
+  assert.equal(response.body.code, 'MFA_RATE_LIMITED');
+}
+
+async function runMfaRateLimitSecurityTests() {
+  await runMfaRateLimitSecurityTest();
+  await runLoginMfaRateLimitSecurityTest();
+}
+
+void runMfaRateLimitSecurityTests().catch(error => {
   console.error(error);
   process.exit(1);
 });

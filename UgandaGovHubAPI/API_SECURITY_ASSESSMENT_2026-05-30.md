@@ -13,7 +13,9 @@ The backend has several strong controls in place: parameterized database access,
 
 No production dependency vulnerabilities were reported by `npm audit --omit=dev` for either backend or frontend at assessment time.
 
-The original review identified operational hardening gaps rather than obvious exploitable code injection flaws. The implementation now remediates the tracked gaps: production admin MFA is fail-closed, authenticated MFA mutation attempts are rate-limited, signup and MFA confirmation passwords are bounded before hashing or verification, suspended accounts have active sessions revoked, production startup rejects demo-mode and missing security secrets, production data encryption keys must be explicit 32-byte keys, malformed encrypted-field prefixes are re-encrypted instead of being trusted, full sandbox API keys are no longer persisted to browser session storage, the backend test command now runs tests that exist in the current worktree, production Turnstile configuration rejects test secrets and missing hostname validation, Turnstile upstream verification is bounded by a fail-closed timeout, Turnstile-backed login/signup/app-load verification is locally rate-limited before upstream calls, production database TLS rejects certificate-verification bypasses, production CORS requires explicit HTTPS non-localhost origins, production OpenAPI URL imports require trusted HTTPS hosts and enforce body-size limits while streaming, API responses include defensive headers, docs/catalog/OpenAPI responses use no-store cache controls, account-verification snapshots no longer expose internal document storage locators, document uploads no longer accept client-supplied storage references, the frontend no longer generates or posts internal document storage locators, sandbox audit/log paths and bodies redact canonical and common alias identifiers plus common PII aliases, sandbox route resolution enforces catalog `sandbox_available` controls for built-in and dynamic APIs, privileged audit-log API-call filtering preserves cross-consumer review visibility, catalog version mutations re-check API ownership inside the write transaction, and account role assignment plus MDA assignment requirements are constrained by verified account category.
+The original review identified operational hardening gaps rather than obvious exploitable code injection flaws. The implementation now remediates the tracked gaps: production admin MFA is fail-closed, authenticated MFA mutation attempts and login-time MFA code guesses are rate-limited per user, signup and MFA confirmation passwords are bounded before hashing or verification, public user responses omit password hashes, MFA secrets, and MFA enablement timestamps, suspended accounts have active sessions revoked, production startup rejects demo-mode and missing security secrets, production data encryption keys must be explicit 32-byte keys, malformed encrypted-field prefixes are re-encrypted instead of being trusted, full sandbox API keys are no longer persisted to browser session storage, the backend test command now runs tests that exist in the current worktree, production Turnstile configuration rejects test secrets and missing hostname validation, Turnstile upstream verification is bounded by a fail-closed timeout, Turnstile-backed login/signup/app-load verification is locally rate-limited before upstream calls, production database TLS rejects certificate-verification bypasses, production CORS requires explicit HTTPS non-localhost origins, production OpenAPI URL imports require trusted HTTPS hosts and enforce body-size limits while streaming, inline OpenAPI specs now use the same configured byte ceiling as URL imports, OpenAPI path keys and server URLs must remain safe relative inputs that cannot normalize into external authority URLs, recursive OpenAPI schemas are bounded during frontend example generation, API responses include defensive headers, docs/catalog/OpenAPI responses use no-store cache controls, account-verification snapshots no longer expose internal document storage locators, document uploads no longer accept client-supplied storage references, the frontend no longer generates or posts internal document storage locators, sandbox audit/log paths and bodies redact canonical and common alias identifiers plus common PII aliases, sandbox route resolution enforces catalog `sandbox_available` controls for built-in and dynamic APIs, privileged audit-log API-call filtering preserves cross-consumer review visibility, catalog version mutations re-check API ownership inside the write transaction, and account role assignment plus MDA assignment requirements are constrained by verified account category.
+
+The additional session review also rejects duplicate `govhub_session` cookies so ambiguous cookie headers cannot silently select an attacker-controlled, stale, or path-confused session value.
 
 ## Findings
 
@@ -726,20 +728,151 @@ Remediation:
 - Excess attempts return `HUMAN_VERIFICATION_RATE_LIMITED` without calling Cloudflare.
 - Covered by `backend/src/auth-turnstile-rate-limit-security.test.ts`.
 
+### 38. Recursive OpenAPI Schemas Can Crash Frontend Example Rendering
+
+Severity: Low to Medium
+OWASP API mapping: API4 Unrestricted Resource Consumption, API3 Broken Object Property Level Authorization
+Status: Remediated
+
+Evidence:
+- `frontend/src/pages/api-docs/api-docs-openapi.tsx` generated request, response, and code-sample examples by recursively following schema `$ref`, object properties, and array items without cycle tracking.
+- `frontend/src/pages/catalog/api-detail-helpers.tsx` used similar recursion for catalog request/response examples.
+- OpenAPI schemas commonly support self-references, for example tree or graph node models. A malicious or accidental self-referential schema could therefore overflow the browser call stack or freeze docs/catalog views for users allowed to view that API.
+
+Impact:
+An API owner or administrator could publish a valid-looking recursive OpenAPI schema that makes the docs or catalog detail page fail for administrators, reviewers, API owners, developers, or approved consumers who open it. This is a frontend availability risk on a trusted but user-supplied specification surface.
+
+Remediation:
+- Added shared `frontend/src/lib/openapi-examples.ts` example generation with JSON-pointer `$ref` resolution, visited-reference tracking, and a maximum traversal depth.
+- Docs and catalog example generation now use the bounded helper and omit recursive branches instead of following them indefinitely.
+- Covered by `frontend/src/pages/openapi-example-security.test.ts`.
+
+### 39. Duplicate Session Cookies Are Resolved Ambiguously
+
+Severity: Low to Medium
+OWASP API mapping: API2 Broken Authentication, API8 Security Misconfiguration
+Status: Remediated
+
+Evidence:
+- `getBearerToken()` parsed the `Cookie` header with `Object.fromEntries()`.
+- If a request contained more than one `govhub_session` cookie, the last duplicate silently won.
+
+Impact:
+Duplicate session-cookie names can arise from path/domain confusion, stale cookies, or cookie-tossing scenarios. Silently choosing one duplicate makes authentication dependent on header ordering instead of rejecting the ambiguous request, which weakens session-boundary predictability.
+
+Remediation:
+- Session cookie parsing now rejects requests with more than one `govhub_session` cookie.
+- Bearer tokens and single well-formed session cookies continue to work normally.
+- Covered by `backend/src/auth-session-security.test.ts`.
+
+### 40. Login-Time MFA Code Guesses Are Not Rate-Limited Per User
+
+Severity: Medium
+OWASP API mapping: API2 Broken Authentication, API4 Unrestricted Resource Consumption
+Status: Remediated
+
+Evidence:
+- `/api/auth/login` applied a login rate-limit bucket keyed by `IP:email`.
+- After a correct password for an MFA-enabled account, invalid TOTP guesses were checked directly without consuming the existing per-user MFA attempt limiter.
+- A distributed attacker with a known password could rotate source IPs and continue TOTP guessing against the same account without hitting an account-level MFA bucket.
+
+Impact:
+The password still had to be known, and the TOTP space is time-limited, but relying only on IP+email throttling leaves login-time MFA weaker than the authenticated setup/enable/disable MFA flows. Per-user throttling is the correct boundary for protecting a second factor on a specific account.
+
+Remediation:
+- The login MFA branch now consumes the same per-user MFA limiter before validating a submitted TOTP code.
+- Successful TOTP validation clears the login MFA attempt bucket.
+- Covered by `backend/src/auth-mfa-rate-limit-security.test.ts`.
+
+### 41. Inline OpenAPI Specs Bypass The Configured Spec Size Limit
+
+Severity: Low to Medium
+OWASP API mapping: API4 Unrestricted Resource Consumption, API10 Unsafe Consumption of APIs
+Status: Remediated
+
+Evidence:
+- URL-based OpenAPI imports enforced `GOVHUB_SPEC_MAX_BYTES`.
+- Inline `openapi_spec` catalog registration/patch input and `/api/catalog/validate-spec` `specText` were accepted directly and only relied on the broader Express JSON body limit.
+
+Impact:
+Operators can configure a smaller spec-specific byte ceiling for remote imports, but inline specs ignored that ceiling. If the global JSON limit is raised for unrelated API needs, a privileged API owner could submit oversized specs that consume parsing/storage resources beyond the intended OpenAPI ingestion budget.
+
+Remediation:
+- Inline OpenAPI spec input now checks `GOVHUB_SPEC_MAX_BYTES` before validation, parsing, catalog registration, or catalog patching.
+- `/api/catalog/validate-spec` applies the same inline limit to `specText`.
+- Covered by `backend/src/catalog-spec-url-security.test.ts`.
+
+### 42. Public User Serialization Exposes MFA Enablement Timestamp
+
+Severity: Low
+OWASP API mapping: API3 Broken Object Property Level Authorization, API2 Broken Authentication
+Status: Remediated
+
+Evidence:
+- `sanitizeUser()` omitted `password_hash` and `mfa_secret_encrypted`, but still returned `mfa_enabled_at`.
+- Auth, account, and admin user responses therefore exposed the exact timestamp when an account enabled MFA.
+
+Impact:
+The timestamp is not a credential, but it is account-security metadata that clients do not need. Exposing it increases unnecessary information disclosure about security posture and account lifecycle timing. The frontend only requires a boolean `mfa_enabled` value.
+
+Remediation:
+- `sanitizeUser()` now omits `mfa_enabled_at` and returns only `mfa_enabled`.
+- The `PublicUser` type now excludes the timestamp field.
+- Covered by `backend/src/auth-session-security.test.ts`.
+
+### 43. OpenAPI Path Keys Can Normalize Into External Sandbox Request URLs
+
+Severity: Medium
+OWASP API mapping: API3 Broken Object Property Level Authorization, API10 Unsafe Consumption of APIs
+Status: Remediated
+
+Evidence:
+- `validateOpenApiSpec()` accepted any `paths` object key as long as the path item was an object.
+- Frontend docs/catalog helpers later build sample and sandbox URLs from those path keys with `new URL(...)`.
+- Path keys such as `//attacker.example/collect` or `/\attacker.example/collect` can be interpreted by browser URL parsing as external authority URLs when combined with an empty or root server base path.
+
+Impact:
+A malicious or compromised OpenAPI spec could present a sandbox request target outside the GovHub API origin. If a user pasted a sandbox API key or enabled custom request headers and sent the request, those user-supplied headers could be transmitted to an attacker-controlled host instead of the intended sandbox route.
+
+Remediation:
+- OpenAPI validation now requires each path key to start with exactly one `/`.
+- Path keys containing backslashes or control characters are rejected before catalog registration, patching, validation, or version metadata parsing.
+- Covered by `backend/src/catalog-spec-url-security.test.ts`.
+
+### 44. OpenAPI Server URLs Can Normalize Into External Sandbox Request URLs
+
+Severity: Medium
+OWASP API mapping: API3 Broken Object Property Level Authorization, API10 Unsafe Consumption of APIs
+Status: Remediated
+
+Evidence:
+- `validateOpenApiSpec()` did not validate optional `servers` declarations.
+- Frontend docs/catalog helpers use `spec.servers?.[0]?.url` when constructing sample and sandbox URLs.
+- Protocol-relative server URLs such as `//attacker.example` or backslash-containing relative URLs such as `/\attacker.example` can be interpreted as external authority URLs by browser URL parsing.
+
+Impact:
+A malicious OpenAPI spec could use a hostile `servers[0].url` value with otherwise normal path keys to show or send sandbox requests to an attacker-controlled origin. If a user pasted an API key or enabled custom headers, those user-supplied headers could leave the GovHub API origin.
+
+Remediation:
+- OpenAPI validation now requires `servers`, when present, to be an array of objects.
+- Server URLs that are protocol-relative or contain backslashes/control characters are rejected before catalog registration, patching, validation, or version metadata parsing.
+- Covered by `backend/src/catalog-spec-url-security.test.ts`.
+
 ## Positive Controls Observed
 
 - Sessions are random, stored as SHA-256 hashes, expire after 24 hours, and are revoked on logout and account suspension.
-- Passwords use per-user random salts with `crypto.scryptSync`, and signup/login/MFA confirmation password inputs are bounded before hashing or verification.
-- Session cookies are `httpOnly`, `sameSite=strict`, `secure` in production, and path-scoped.
+- Passwords use per-user random salts with `crypto.scryptSync`, signup/login/MFA confirmation password inputs are bounded before hashing or verification, and public user responses expose only boolean MFA state rather than MFA secret or timestamp fields.
+- Session cookies are `httpOnly`, `sameSite=strict`, `secure` in production, path-scoped, and duplicate session cookie names are rejected.
 - Login is rate-limited by IP and normalized email.
-- Authenticated MFA setup, enable, and disable attempts are rate-limited per user.
+- Authenticated MFA setup, enable, and disable attempts plus login-time MFA code guesses are rate-limited per user.
 - Signup/login/app-load human verification supports Cloudflare Turnstile, fails closed in production when not configured, and applies local per-IP rate limiting before upstream Siteverify calls.
 - Production startup rejects Cloudflare Turnstile test secrets and requires an allowed-hostname list.
 - Cloudflare Turnstile Siteverify calls use a bounded timeout and fail closed if the upstream stalls.
 - Production data encryption requires an explicit 32-byte key instead of arbitrary passphrase input, malformed base64-like strings are rejected, and encrypted-looking client values are re-encrypted unless they are valid decryptable ciphertext.
 - Hosted Postgres connections default to SSL certificate verification, and production rejects unsafe database SSL overrides.
 - Production CORS requires explicit HTTPS deployed origins and rejects localhost origins.
-- OpenAPI URL imports require HTTPS in production, production disallows unlisted spec URL hosts, and fetched bodies are capped while streaming.
+- OpenAPI URL imports require HTTPS in production, production disallows unlisted spec URL hosts, fetched bodies are capped while streaming, inline OpenAPI specs honor the same configured byte ceiling, and OpenAPI path keys/server URLs cannot normalize into external authority URLs.
+- Frontend OpenAPI example generation tracks visited `$ref` pointers and caps traversal depth before rendering docs/catalog samples.
 - Common defensive headers are centralized, and sensitive API, docs, catalog, and OpenAPI asset paths get no-store cache headers.
 - Account-verification document responses omit internal storage references, document uploads ignore client-supplied storage references, the frontend does not over-post storage locators, and encrypted server-side storage metadata is retained internally.
 - Sandbox audit/log path normalization redacts canonical and compatibility driving-permit identifiers.
@@ -766,7 +899,7 @@ Remediation:
 - `npm test` in `backend`: passed after additional remediation.
 - `npm run test:security-config` in `backend`: passed after additional production config and encryption-key hardening.
 - `npm run test:db-security` in `backend`: passed after database TLS hardening.
-- `npm run test:catalog-spec-url-security` in `backend`: passed after OpenAPI URL import HTTPS and streamed-size hardening.
+- `npm run test:catalog-spec-url-security` in `backend`: passed after OpenAPI URL import HTTPS, streamed-size hardening, inline spec size-limit hardening, and OpenAPI path/server authority normalization hardening.
 - `npm run test:catalog-versions-security` in `backend`: passed after catalog version ownership race hardening and version list pagination hardening.
 - `npm run test:catalog-detail-security` in `backend`: passed after catalog detail response field allowlisting.
 - `npm run test:crypto-at-rest-security` in `backend`: passed after encrypted-field prefix hardening.
@@ -778,13 +911,14 @@ Remediation:
 - `npm run test:account-approval-security` in `frontend`: passed after aligning approval MDA defaults with verified account category.
 - `npm run test:account-verification-security` in `backend`: passed after removing document `storage_ref` from account snapshots and stripping client-supplied `storage_ref` from validated document upload input.
 - `npm run test:document-storage-security` in `frontend`: passed after removing client-generated document storage references from upload payloads.
+- `npm run test:openapi-example-security` in `frontend`: passed after bounding recursive OpenAPI example generation.
 - `npm run test:sandbox-logging-security` in `backend`: passed after redacting canonical driving-permit sandbox paths, common identifier aliases, common PII aliases in sandbox audit bodies, hardening dynamic sandbox path resolution, and enforcing `sandbox_available` for built-in sandbox mappings.
 - `npm run test:turnstile-security` in `backend`: passed after adding a bounded Turnstile Siteverify timeout.
 - `npm run test:auth-turnstile-rate-limit-security` in `backend`: passed after adding pre-upstream human-verification rate limiting.
 - `npm run test:auth-signup-security` in `backend`: passed after bounding signup passwords before hashing.
 - `npm run test:auth-password-confirmation-security` in `backend`: passed after bounding MFA password confirmations before rate-limit writes and password verification.
-- `npm run test:auth-mfa-rate-limit-security` in `backend`: passed after adding per-user MFA setup/enable/disable attempt limits.
-- `npm run test:auth-session-security` in `backend`: passed after adding session revocation to account suspension.
+- `npm run test:auth-mfa-rate-limit-security` in `backend`: passed after adding per-user MFA setup/enable/disable attempt limits and login-time MFA guess throttling.
+- `npm run test:auth-session-security` in `backend`: passed after adding session revocation to account suspension, duplicate session-cookie rejection, and public-user MFA timestamp stripping.
 - `npm test` in `frontend`: passed after remediation.
 - `npm test` at repository root: passed after additional remediation.
 - `npm run build` at repository root: passed after remediation; Vite reported the existing large chunk warning.
@@ -824,3 +958,10 @@ Remediation:
 26. Set `sandbox_available=false` for a built-in sandbox API such as the identity API and call `/api/v1/identity/status/:nin` with an otherwise valid API key for that API; the middleware should reject the call instead of routing it to the sandbox handler.
 27. Submit profile or document metadata containing a malformed encrypted-looking value such as `enc:v1:not-a-valid-envelope`; account snapshot/admin review reads should still work, and the stored field should round-trip as plaintext after encrypted storage.
 28. Set `GOVHUB_TURNSTILE_RATE_LIMIT=2`, configure a non-test Turnstile secret, and send three `/api/auth/human-verification` requests from the same IP; the third response should be HTTP 429 with `HUMAN_VERIFICATION_RATE_LIMITED` and should not call Siteverify.
+29. Publish or validate an OpenAPI schema where `#/components/schemas/Node` contains a child `$ref` back to itself; docs and catalog pages should render examples without stack overflow, omitting the recursive branch after the first safe object.
+30. Send a request with two `govhub_session` cookies in the same `Cookie` header; backend session parsing should reject the cookie credential and treat the request as unauthenticated.
+31. Submit six bad `/api/auth/login` TOTP codes for the same MFA-enabled account from different IPs after a correct password; attempts beyond `GOVHUB_MFA_RATE_LIMIT` should return `MFA_RATE_LIMITED`.
+32. Set `GOVHUB_SPEC_MAX_BYTES=10` and submit an 11-byte inline `openapi_spec` or `specText`; catalog registration, catalog patch, and spec validation should reject it with `Specification content is too large.`
+33. Fetch `/api/auth/me` or `/api/admin/users` for an MFA-enabled account and confirm the user object includes `mfa_enabled: true` but omits `password_hash`, `mfa_secret_encrypted`, and `mfa_enabled_at`.
+34. Submit or validate an OpenAPI spec with a path key like `//attacker.example/collect` or `/\attacker.example/collect`; catalog registration, catalog patch, spec validation, and version parsing should reject it before the spec can reach docs or sandbox URL builders.
+35. Submit or validate an OpenAPI spec with `servers: [{ url: "//attacker.example" }]` or `servers: [{ url: "/\\attacker.example" }]`; catalog registration, catalog patch, spec validation, and version parsing should reject it before docs or sandbox URL builders use the server URL.

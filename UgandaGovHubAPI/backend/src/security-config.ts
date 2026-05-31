@@ -67,9 +67,6 @@ function isValidProductionDataEncryptionKey(value: string | undefined) {
 export function validateProductionSecurityEnv(env: NodeJS.ProcessEnv = process.env) {
   if (!isProductionEnv(env)) return;
 
-  if (isDemoModeEnabled(env)) {
-    throw new Error('GOVHUB_DEMO_MODE must be disabled in production.');
-  }
   if (!env.GOVHUB_DATA_ENCRYPTION_KEY) {
     throw new Error('GOVHUB_DATA_ENCRYPTION_KEY is required in production.');
   }

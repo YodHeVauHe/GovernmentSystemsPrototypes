@@ -1,4 +1,5 @@
 import { API_BASE } from '@/lib/api-base';
+import { resolveOpenApiSchema, schemaExample as openApiSchemaExample } from '@/lib/openapi-examples';
 
 export type SandboxParameterLocation = 'path' | 'query' | 'header' | 'cookie';
 
@@ -75,7 +76,7 @@ export function buildBodyExample(requestBody: any, spec?: any) {
     return { contentType, value: firstExample.value };
   }
 
-  const schema = spec ? resolveSchema(media?.schema, spec) : media?.schema;
+  const schema = spec ? resolveOpenApiSchema(media?.schema, spec) : media?.schema;
   if (schema?.type === 'object' || schema?.properties) {
     const value = Object.fromEntries(
       Object.entries(schema.properties || {}).map(([name, propertySchema]) => [
@@ -89,46 +90,24 @@ export function buildBodyExample(requestBody: any, spec?: any) {
   return { contentType, value: '' };
 }
 
-function resolveOpenApiRef(spec: any, ref?: string) {
-  if (!ref?.startsWith('#/')) return null;
-  return ref
-    .slice(2)
-    .split('/')
-    .reduce((current: any, segment: string) => current?.[segment], spec);
-}
-
-function resolveSchema(schema: any, spec: any): any {
-  if (!schema?.$ref) return schema;
-  return resolveOpenApiRef(spec, schema.$ref) || schema;
-}
+const catalogSchemaExampleOptions = {
+  sampleValues,
+  stringFallback: '',
+  booleanFallback: false,
+  numberFallback: 0,
+  integerFallback: 0,
+};
 
 function schemaExample(schema: any, spec: any, name = 'value'): any {
-  const resolved = resolveSchema(schema, spec);
-  if (!resolved) return sampleValues[name] || '';
-  if (resolved.example !== undefined) return resolved.example;
-  if (resolved.default !== undefined) return resolved.default;
-  if (resolved.enum?.length) return resolved.enum[0];
-  if (sampleValues[name] !== undefined) return sampleValues[name];
-  if (resolved.type === 'array') return [schemaExample(resolved.items, spec, name)];
-  if (resolved.type === 'object' || resolved.properties) {
-    return Object.fromEntries(
-      Object.entries(resolved.properties || {}).map(([propertyName, propertySchema]) => [
-        propertyName,
-        schemaExample(propertySchema, spec, propertyName),
-      ])
-    );
-  }
-  if (resolved.type === 'boolean') return false;
-  if (resolved.type === 'integer' || resolved.type === 'number') return 0;
-  return sampleValues[name] || '';
+  return openApiSchemaExample(schema, spec, name, catalogSchemaExampleOptions) ?? sampleValues[name] ?? '';
 }
 
 export function bodyFields(requestBody: any, spec: any) {
   const content = requestBody?.content || {};
   const media = content['application/json'] || content[Object.keys(content)[0]];
-  const schema = resolveSchema(media?.schema, spec);
+  const schema = resolveOpenApiSchema(media?.schema, spec);
   return Object.entries(schema?.properties || {}).map(([name, fieldSchema]: [string, any]) => {
-    const resolvedField = resolveSchema(fieldSchema, spec);
+    const resolvedField = resolveOpenApiSchema(fieldSchema, spec);
     return {
       name,
       required: schema?.required?.includes(name),

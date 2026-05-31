@@ -9,7 +9,7 @@ import { canViewApiDocs, listVisibleDocsApis } from '../docs-access';
 import { generatePublicId } from '../ids';
 import { getSpecSha, parseSpecMetadata, slugifyVersion, validateOpenApiSpec } from '../versioning';
 import { getCurrentSpecForApi, getVersionSpecForApi } from '../openapi-store';
-import { resolveCatalogSpecInput } from '../catalog-spec-input';
+import { enforceInlineSpecSizeLimit, resolveCatalogSpecInput } from '../catalog-spec-input';
 import { UPDATE_API_SQL } from '../catalog-sql';
 import { fetchSpecFromUrl } from '../catalog-spec-url';
 import { catalogVersionsRouter } from './catalog-versions';
@@ -443,7 +443,7 @@ export function catalogRouter(db: Db) {
     }
 
     try {
-      let content = specText || '';
+      let content = specText ? enforceInlineSpecSizeLimit(specText) : '';
       if (specUrl) {
         try {
           content = await fetchSpecFromUrl(specUrl);

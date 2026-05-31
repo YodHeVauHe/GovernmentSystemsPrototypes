@@ -1,6 +1,7 @@
 import { CodeSamples } from '@/components/CodeSamples';
 import { API_BASE } from '@/lib/api-base';
 import { formatHttpStatusLabel, isSuccessStatus } from '@/lib/http-status';
+import { resolveOpenApiSchema, schemaExample, schemaLabel } from '@/lib/openapi-examples';
 
 export type DocsVisibility = 'public' | 'authenticated' | 'restricted';
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete' | 'options' | 'head' | 'trace';
@@ -181,50 +182,18 @@ export function extractOperations(spec: OpenApiSpec | null): Operation[] {
   return operations;
 }
 
-function resolveRef(spec: OpenApiSpec, schema: any) {
-  if (!schema?.$ref || typeof schema.$ref !== 'string') return schema;
-  const prefix = '#/components/schemas/';
-  if (!schema.$ref.startsWith(prefix)) return schema;
-  return spec.components?.schemas?.[schema.$ref.slice(prefix.length)] || schema;
-}
-
-function schemaLabel(schema: any): string {
-  if (!schema) return 'any';
-  if (schema.$ref) return schema.$ref.split('/').at(-1);
-  if (schema.type === 'array') return `${schemaLabel(schema.items)}[]`;
-  if (Array.isArray(schema.type)) return schema.type.join(' | ');
-  return schema.type || schema.format || 'object';
-}
-
-function sampleValue(schema: any, spec: OpenApiSpec): any {
-  const resolved = resolveRef(spec, schema);
-  if (resolved?.example !== undefined) return resolved.example;
-  if (resolved?.enum?.length) return resolved.enum[0];
-  if (resolved?.type === 'array') return [sampleValue(resolved.items, spec)];
-  if (resolved?.type === 'object' || resolved?.properties) {
-    return Object.fromEntries(
-      Object.entries(resolved.properties || {}).map(([key, value]) => [key, sampleValue(value, spec)]),
-    );
-  }
-  if (resolved?.type === 'boolean') return true;
-  if (resolved?.type === 'number' || resolved?.type === 'integer') return 1;
-  if (resolved?.format === 'date') return '2026-05-22';
-  if (resolved?.format === 'date-time') return '2026-05-22T00:00:00Z';
-  return 'string';
-}
-
 function requestBodyExample(operation: any, spec: OpenApiSpec) {
   const content = operation?.requestBody?.content || {};
   const media = content['application/json'] || Object.values(content)[0] as any;
   const firstExample = media?.examples ? Object.values(media.examples)[0] as any : null;
-  return media?.example ?? firstExample?.value ?? sampleValue(media?.schema, spec);
+  return media?.example ?? firstExample?.value ?? schemaExample(media?.schema, spec);
 }
 
 function sampleParameterValue(parameter: any, spec: OpenApiSpec) {
   if (parameter?.example !== undefined) return parameter.example;
   const firstExample = parameter?.examples ? Object.values(parameter.examples)[0] as any : null;
   if (firstExample?.value !== undefined) return firstExample.value;
-  return sampleValue(parameter?.schema, spec);
+  return schemaExample(parameter?.schema, spec);
 }
 
 function operationSampleUrl(item: Operation, spec: OpenApiSpec) {
@@ -296,7 +265,7 @@ function fieldDescription(name: string, schema: any, required: boolean) {
 }
 
 export function SchemaViewer({ schema, spec, depth = 0 }: { schema: any; spec: OpenApiSpec; depth?: number }) {
-  const resolved = resolveRef(spec, schema);
+  const resolved = resolveOpenApiSchema(schema, spec);
   const properties = resolved?.properties || {};
   const required = new Set<string>(resolved?.required || []);
 
@@ -341,7 +310,7 @@ function MediaSchema({ content, spec, status }: { content: Record<string, any> |
   if (!content || Object.keys(content).length === 0) return null;
   const [mediaType, media] = Object.entries(content)[0];
   const firstExample = Object.values(media?.examples || {})[0] as { value?: unknown } | undefined;
-  const example = media?.example ?? firstExample?.value ?? sampleValue(media?.schema, spec);
+  const example = media?.example ?? firstExample?.value ?? schemaExample(media?.schema, spec);
   return (
     <div className="space-y-3">
       <div className="inline-flex rounded-md border border-[#2e2e2e] bg-[#141414] px-2 py-1 font-mono text-[11px] text-[#b5b5b5]">{mediaType}</div>

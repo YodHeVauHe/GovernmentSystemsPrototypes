@@ -147,7 +147,7 @@ const ADMIN_USERS_LIST_DEFAULT_LIMIT = 100;
 const ADMIN_USERS_LIST_MAX_LIMIT = 100;
 const ADMIN_USERS_LIST_MAX_OFFSET = 10000;
 const ADMIN_USER_STATUSES = new Set<string>(USER_STATUSES);
-type MfaRateLimitAction = 'setup' | 'enable' | 'disable';
+type MfaRateLimitAction = 'setup' | 'enable' | 'disable' | 'login';
 
 type ProfilePatchValidation =
   | { ok: true; value: Record<string, string | null> }
@@ -579,9 +579,12 @@ export function authRouter(db: Db) {
       if (!mfa_code) {
         return res.status(202).json({ mfa_required: true, email: normalizedEmail });
       }
+      const mfaQuota = await consumeMfaRateLimit(db, user.id, 'login');
+      if (sendMfaRateLimitError(res, mfaQuota)) return;
       if (!verifyTotpCode(secret, mfaCodeFromBody(mfa_code))) {
         return res.status(401).json({ error: 'Invalid multi-factor authentication code.', code: 'INVALID_MFA_CODE' });
       }
+      await clearMfaRateLimit(db, user.id, 'login');
     }
     // Successful login — clear the rate limit bucket
     await clearRateLimit(db, 'login', attemptKey);
