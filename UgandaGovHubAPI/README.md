@@ -226,6 +226,7 @@ GOVHUB_ADMIN_PASSWORD=...
 GOVHUB_DEMO_MODE=false
 GOVHUB_DATA_ENCRYPTION_KEY=<64-hex-or-canonical-32-byte-base64-key>
 GOVHUB_REQUIRE_ADMIN_MFA=true
+VITE_TURNSTILE_SITE_KEY=...
 GOVHUB_TURNSTILE_SECRET_KEY=...
 GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES=your-app.vercel.app,your-custom-domain.com
 GOVHUB_TURNSTILE_TIMEOUT_MS=5000
@@ -233,6 +234,11 @@ GOVHUB_MFA_RATE_LIMIT=5
 ```
 
 `VITE_API_BASE_URL` can be omitted on Vercel when same-origin routing is used.
+
+`VITE_TURNSTILE_SITE_KEY` and `GOVHUB_TURNSTILE_SECRET_KEY` must come from the
+same Cloudflare Turnstile widget. Add every deployed hostname, for example
+`your-app.vercel.app` and any custom domain, to both the Cloudflare widget
+hostname list and `GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES`.
 
 ## Vercel/Postgres Notes
 

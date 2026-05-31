@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "seed": "ts-node src/seed.ts",
     "test:security-config": "ts-node src/security-config.test.ts",
-    "test": "npm run typecheck && npm run test:security-config"
+    "test:turnstile": "ts-node src/turnstile.test.ts",
+    "test": "npm run typecheck && npm run test:security-config && npm run test:turnstile"
   },
   "keywords": [],
   "author": "",
