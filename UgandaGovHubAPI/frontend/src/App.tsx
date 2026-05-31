@@ -106,14 +106,12 @@ function AppShell() {
 
   if (authPage) {
     return (
-      <HumanVerificationGate>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/account-status" element={<AccountStatusPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </HumanVerificationGate>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/account-status" element={<AccountStatusPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
     );
   }
 
@@ -139,40 +137,38 @@ function AppShell() {
   }
 
   return (
-    <HumanVerificationGate>
-      <SidebarProvider
-        open={sidebarOpen}
-        onOpenChange={setSidebarOpen}
-        style={
-          {
-            "--sidebar-width": "224px",
-            "--sidebar-width-icon": "56px",
-            "--header-height": "48px",
-          } as React.CSSProperties
-        }
-      >
-        <AppSidebar collapsible="icon" />
-        <SidebarInset className="bg-[#181818] flex flex-col h-dvh overflow-hidden">
-          <div className="flex flex-col overflow-hidden w-full h-full">
-            <RouteLoadingBar />
-            <SiteHeader />
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <Routes>
-                <Route path="/catalog" element={<Catalog />} />
-                <Route path="/docs" element={<DocsPage />} />
-                <Route path="/docs/:apiId" element={<ApiDocsPage />} />
-                <Route path="/catalog/add" element={<ProtectedRoute><AddApiPage /></ProtectedRoute>} />
-                <Route path="/api/:id" element={<ApiDetail />} />
-                <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-                <Route path="/account/settings" element={<AuthenticatedRoute><AccountSettingsPage /></AuthenticatedRoute>} />
-                <Route path="/help" element={<AuthenticatedRoute><HelpPage /></AuthenticatedRoute>} />
-                <Route path="*" element={<NotFoundPage />} />
-              </Routes>
-            </div>
+    <SidebarProvider
+      open={sidebarOpen}
+      onOpenChange={setSidebarOpen}
+      style={
+        {
+          "--sidebar-width": "224px",
+          "--sidebar-width-icon": "56px",
+          "--header-height": "48px",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar collapsible="icon" />
+      <SidebarInset className="bg-[#181818] flex flex-col h-dvh overflow-hidden">
+        <div className="flex flex-col overflow-hidden w-full h-full">
+          <RouteLoadingBar />
+          <SiteHeader />
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <Routes>
+              <Route path="/catalog" element={<Catalog />} />
+              <Route path="/docs" element={<DocsPage />} />
+              <Route path="/docs/:apiId" element={<ApiDocsPage />} />
+              <Route path="/catalog/add" element={<ProtectedRoute><AddApiPage /></ProtectedRoute>} />
+              <Route path="/api/:id" element={<ApiDetail />} />
+              <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/account/settings" element={<AuthenticatedRoute><AccountSettingsPage /></AuthenticatedRoute>} />
+              <Route path="/help" element={<AuthenticatedRoute><HelpPage /></AuthenticatedRoute>} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
           </div>
-        </SidebarInset>
-      </SidebarProvider>
-    </HumanVerificationGate>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 
@@ -181,7 +177,9 @@ function App() {
     <UserProvider>
       <NotificationProvider>
         <BrowserRouter>
-          <AppShell />
+          <HumanVerificationGate>
+            <AppShell />
+          </HumanVerificationGate>
         </BrowserRouter>
         <Toaster position="bottom-right" richColors />
         <Analytics />
