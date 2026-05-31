@@ -145,6 +145,7 @@ async function findActiveApprovedAccessRequestExcluding(db: DbClient, requestId:
        (target.consumer_mda_id IS NOT NULL AND existing.consumer_mda_id = target.consumer_mda_id)
        OR (target.consumer_mda_id IS NULL AND target.consumer_user_id IS NOT NULL AND existing.consumer_user_id = target.consumer_user_id)
      )
+     AND COALESCE(existing.environment, 'sandbox') = COALESCE(target.environment, 'sandbox')
     WHERE target.id = $1
       AND existing.status = 'APPROVED'
       AND existing.api_key_hash IS NOT NULL
@@ -160,7 +161,7 @@ export function accessRouter(db: DbClient) {
 const router = Router();
 
 // Create an access request (Simulates Developer action)
-router.post('/', requireAuth(db, ['developer', 'admin']), async (req, res) => {
+router.post('/', requireAuth(db, ['developer']), async (req, res) => {
   const input = validateAccessRequestInput(req.body || {});
   if (!input.ok) {
     return res.status(400).json({ error: input.message, code: 'INVALID_ACCESS_REQUEST' });
@@ -185,6 +186,7 @@ router.post('/', requireAuth(db, ['developer', 'admin']), async (req, res) => {
       apiId: api_id,
       consumerMdaId: mdaDecision.mdaId || null,
       consumerUserId: mdaDecision.userId || null,
+      environment,
     });
     if (blockingRequest) {
       return res.status(409).json(accessRequestAlreadyExistsResponse(blockingRequest));
@@ -210,6 +212,7 @@ router.post('/', requireAuth(db, ['developer', 'admin']), async (req, res) => {
               ($2::text IS NOT NULL AND existing.consumer_mda_id = $2)
               OR ($2::text IS NULL AND $3::text IS NOT NULL AND existing.consumer_user_id = $3)
             )
+            AND COALESCE(existing.environment, 'sandbox') = $10
             AND (
               existing.status = 'PENDING'
               OR (
@@ -242,6 +245,7 @@ router.post('/', requireAuth(db, ['developer', 'admin']), async (req, res) => {
         apiId: api_id,
         consumerMdaId: mdaDecision.mdaId || null,
         consumerUserId: mdaDecision.userId || null,
+        environment,
       });
       if (currentBlockingRequest) {
         return res.status(409).json(accessRequestAlreadyExistsResponse(currentBlockingRequest));
@@ -280,7 +284,7 @@ router.get('/', requireAuth(db, ['admin', 'api_owner', 'reviewer', 'developer'])
   }
 });
 
-router.post('/:id/reveal-key', requireAuth(db, ['developer', 'admin']), async (req, res) => {
+router.post('/:id/reveal-key', requireAuth(db, ['developer']), async (req, res) => {
   const id = String(req.params.id);
   const consumerUserId = req.user!.id;
   const consumerMdaId = req.user!.mda_id || null;
@@ -414,6 +418,7 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req,
               (target.consumer_mda_id IS NOT NULL AND existing.consumer_mda_id = target.consumer_mda_id)
               OR (target.consumer_mda_id IS NULL AND target.consumer_user_id IS NOT NULL AND existing.consumer_user_id = target.consumer_user_id)
             )
+            AND COALESCE(existing.environment, 'sandbox') = COALESCE(target.environment, 'sandbox')
             AND existing.status = 'APPROVED'
             AND existing.api_key_hash IS NOT NULL
             AND COALESCE(existing.api_key_status, 'ACTIVE') = 'ACTIVE'

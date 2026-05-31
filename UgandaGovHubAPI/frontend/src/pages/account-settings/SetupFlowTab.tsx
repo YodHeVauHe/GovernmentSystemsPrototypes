@@ -1,6 +1,12 @@
 import { IconCircleCheck, IconClipboardCheck } from '@tabler/icons-react';
 import { SettingsTabFrame } from './SettingsTabFrame';
 import type { AccountSnapshot } from './types';
+import {
+  hasMissingOrganizationFields,
+  hasMissingProfileFields,
+  hasMissingVerificationDocuments,
+  resolveNextVerificationTab,
+} from './verification-flow';
 
 type VerificationStep = {
   title: string;
@@ -11,10 +17,11 @@ type VerificationStep = {
 
 export function SetupFlowTab({ account }: { account: AccountSnapshot }) {
   const status = account.profile.verification_status;
-  const documentsComplete = account.verification_progress
-    ? account.verification_progress.missing_documents.length === 0
-    : account.documents.length >= account.requirements.requiredDocuments.length;
-  const documentsStarted = account.documents.length > 0;
+  const missingProfileFields = hasMissingProfileFields(account);
+  const missingOrganizationFields = hasMissingOrganizationFields(account);
+  const missingDocuments = hasMissingVerificationDocuments(account);
+  const nextTab = resolveNextVerificationTab(account);
+  const documentsComplete = account.requirements.requiredDocuments.length === 0 || !missingDocuments;
 
   const steps: VerificationStep[] = [
     {
@@ -26,19 +33,25 @@ export function SetupFlowTab({ account }: { account: AccountSnapshot }) {
     {
       title: 'Profile Details',
       desc: 'Complete profile and organization fields. Public developers provide NIN and National ID details; organizations provide URSB/BRN/TIN details where applicable.',
-      isActive: status === 'draft_profile' && !account.verification_progress?.can_submit,
-      isCompleted: status !== 'draft_profile' || account.verification_progress?.missing_fields.length === 0,
+      isActive: nextTab === 'profile',
+      isCompleted: (status !== 'draft_profile' && status !== 'needs_more_information') || !missingProfileFields,
+    },
+    {
+      title: 'Organization and MDA Details',
+      desc: 'Complete company, business, MDA, staff, department, supervisor, and authorization fields that apply to the selected account category.',
+      isActive: nextTab === 'organization',
+      isCompleted: (status !== 'draft_profile' && status !== 'needs_more_information') || !missingOrganizationFields,
     },
     {
       title: 'Evidence Verification Documents',
       desc: 'Submit document metadata for the required evidence. This prototype simulates document verification by collecting file metadata.',
-      isActive: status === 'draft_profile' && documentsStarted && !documentsComplete,
+      isActive: nextTab === 'documents' && missingDocuments,
       isCompleted: documentsComplete,
     },
     {
       title: 'Submit for Admin Review',
       desc: 'Submit the account for administrator review. Until approval, the account remains a registered applicant.',
-      isActive: status === 'draft_profile' && Boolean(account.verification_progress?.can_submit),
+      isActive: nextTab === 'documents' && Boolean(account.verification_progress?.can_submit),
       isCompleted: ['submitted_for_review', 'verified', 'suspended', 'rejected'].includes(status),
     },
     {

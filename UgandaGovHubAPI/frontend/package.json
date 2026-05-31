@@ -8,10 +8,15 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:api-key-storage": "node --import tsx src/dashboard/api-key-storage.test.ts",
+    "test:fetch-credentials-security": "node --import tsx src/context/fetch-credentials-security.test.ts",
     "test:account-approval-security": "node --import tsx src/dashboard/account-approval-security.test.ts",
+    "test:account-review-validation": "node --import tsx src/dashboard/page-components/account-review-validation.test.ts",
     "test:document-storage-security": "node --import tsx src/pages/account-settings/document-storage-security.test.ts",
+    "test:verification-flow": "node --import tsx src/pages/account-settings/verification-flow.test.ts",
     "test:openapi-example-security": "node --import tsx src/pages/openapi-example-security.test.ts",
-    "test": "npm run test:api-key-storage && npm run test:account-approval-security && npm run test:document-storage-security && npm run test:openapi-example-security",
+    "test:landing-page": "node --import tsx src/landing-page.test.ts",
+    "test:signup-page-layout": "node --import tsx src/signup-page-layout.test.ts",
+    "test": "npm run test:api-key-storage && npm run test:fetch-credentials-security && npm run test:account-approval-security && npm run test:account-review-validation && npm run test:document-storage-security && npm run test:verification-flow && npm run test:openapi-example-security && npm run test:landing-page && npm run test:signup-page-layout",
     "preview": "vite preview"
   },
   "dependencies": {

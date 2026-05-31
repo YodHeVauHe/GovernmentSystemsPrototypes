@@ -1,8 +1,11 @@
 backend/node_modules/
 node_modules/
-.env
-backend/.env
-frontend/.env
+.env*
+!.env.example
+backend/.env*
+!backend/.env.example
+frontend/.env*
+!frontend/.env.example
 playwright-report/
 test-results/
 docs/

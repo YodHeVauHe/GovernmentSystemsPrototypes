@@ -8,6 +8,7 @@ const imageName = process.env.GOVHUB_POSTGRES_IMAGE || 'postgres:16-alpine';
 const databaseName = process.env.GOVHUB_POSTGRES_DB || 'govhub';
 const databaseUser = process.env.GOVHUB_POSTGRES_USER || 'govhub_admin';
 const databasePassword = process.env.GOVHUB_POSTGRES_PASSWORD || 'GovHubAdmin#PV3ycqEB';
+const databasePort = process.env.GOVHUB_POSTGRES_PORT || '5432';
 const waitAttempts = Number.parseInt(process.env.GOVHUB_POSTGRES_WAIT_ATTEMPTS || '30', 10);
 const waitDelayMs = Number.parseInt(process.env.GOVHUB_POSTGRES_WAIT_MS || '1000', 10);
 
@@ -218,7 +219,7 @@ function up() {
       '-e',
       'POSTGRES_INITDB_ARGS=--no-sync',
       '-p',
-      '5432:5432',
+      `127.0.0.1:${databasePort}:5432`,
       '-v',
       'uganda_govhub_postgres_data:/var/lib/postgresql/data',
       '-d',

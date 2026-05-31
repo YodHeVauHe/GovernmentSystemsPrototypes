@@ -3,6 +3,21 @@ import { adminUsersRouter } from './routes/auth';
 import { getBearerToken, sanitizeUser, SESSION_COOKIE_NAME, type AuthUser } from './auth';
 import type { Db, DbClient } from './db';
 
+let csrfProtection: null | {
+  isCookieAuthenticatedMutationAllowed: (
+    method: string,
+    cookieHeader: string,
+    origin: string | undefined,
+    allowedOrigins: string[],
+  ) => boolean;
+} = null;
+
+try {
+  csrfProtection = require('./csrf');
+} catch {
+  csrfProtection = null;
+}
+
 type MockRequest = {
   params: Record<string, string>;
   body: Record<string, unknown>;
@@ -119,6 +134,41 @@ function runSessionCookieParsingSecurityTests() {
   );
 }
 
+function runCookieCsrfBoundaryTests() {
+  const allowedOrigins = ['https://portal.govhub.example'];
+  const sessionCookie = `${SESSION_COOKIE_NAME}=valid-session-token`;
+
+  assert.equal(
+    csrfProtection?.isCookieAuthenticatedMutationAllowed('GET', sessionCookie, undefined, allowedOrigins),
+    true,
+    'safe methods with a session cookie should not require an Origin header',
+  );
+
+  assert.equal(
+    csrfProtection?.isCookieAuthenticatedMutationAllowed('POST', '', undefined, allowedOrigins),
+    true,
+    'unsafe requests without the session cookie should remain available to bearer-token clients and login flows',
+  );
+
+  assert.equal(
+    csrfProtection?.isCookieAuthenticatedMutationAllowed('POST', sessionCookie, 'https://portal.govhub.example', allowedOrigins),
+    true,
+    'cookie-authenticated mutations should allow the configured frontend origin',
+  );
+
+  assert.equal(
+    csrfProtection?.isCookieAuthenticatedMutationAllowed('POST', sessionCookie, 'https://evil.govhub.example', allowedOrigins),
+    false,
+    'cookie-authenticated mutations must reject untrusted same-site sibling origins',
+  );
+
+  assert.equal(
+    csrfProtection?.isCookieAuthenticatedMutationAllowed('POST', sessionCookie, undefined, allowedOrigins),
+    false,
+    'cookie-authenticated mutations must reject missing Origin headers',
+  );
+}
+
 function runSanitizeUserSecurityTests() {
   const publicUser = sanitizeUser(authUser({
     password_hash: 'scrypt:sensitive-hash',
@@ -223,6 +273,7 @@ class AuthSessionSecurityDb implements Db {
 async function runAuthSessionSecurityTest() {
   runSessionCookieParsingSecurityTests();
   runSanitizeUserSecurityTests();
+  runCookieCsrfBoundaryTests();
 
   const db = new AuthSessionSecurityDb();
   const response = await invokeRoute(adminUsersRouter(db), '/:id/suspend', 'post', {

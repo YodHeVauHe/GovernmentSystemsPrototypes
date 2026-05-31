@@ -1,7 +1,6 @@
-import yaml from 'js-yaml';
 import type { DbClient } from './db';
 import { one } from './db';
-import { slugifyVersion } from './versioning';
+import { slugifyVersion, validateOpenApiSpec } from './versioning';
 
 export type StoredOpenApiSpec = {
   api_id: string;
@@ -78,5 +77,5 @@ export async function getVersionSpecForApi(db: DbClient, apiId: string, version:
 }
 
 export function parseStoredOpenApiSpec(specText: string) {
-  return yaml.load(specText);
+  return validateOpenApiSpec(specText).parsed;
 }

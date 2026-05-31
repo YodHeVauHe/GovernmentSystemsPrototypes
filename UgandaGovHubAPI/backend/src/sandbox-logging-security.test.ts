@@ -4,12 +4,15 @@ import { computeApiKeyHash } from './admin';
 import type { Db, DbClient } from './db';
 
 const defaultIdentityApiId = 'api-nira-000c9306-9410-4889-8392-0bb746edbbe6';
-const approvedSandboxApiKey = 'govhub_test_key_disabled_static_api';
+const approvedSandboxApiKey = `ghk_${'a'.repeat(64)}`;
+const unknownWellFormedSandboxApiKey = `ghk_${'b'.repeat(64)}`;
 
 class SandboxPathResolutionDb implements Db {
   sawUnboundedSandboxMappingQuery = false;
   sandboxApiLookupIds: unknown[] = [];
+  apiKeyLookupCount = 0;
   disabledSandboxApiIds = new Set<string>();
+  accessRequestEnvironment: 'sandbox' | 'production' | null = 'sandbox';
 
   async query<T = any>(sql: string, params: unknown[] = []): Promise<{ rows: T[]; rowCount: number | null }> {
     const normalizedSql = sql.replace(/\s+/g, ' ').trim();
@@ -31,6 +34,7 @@ class SandboxPathResolutionDb implements Db {
     }
 
     if (normalizedSql.includes('FROM access_requests r LEFT JOIN users u ON u.id = r.consumer_user_id WHERE r.api_key_hash = $1')) {
+      this.apiKeyLookupCount += 1;
       if (params[0] !== computeApiKeyHash(approvedSandboxApiKey)) {
         return { rows: [], rowCount: 0 };
       }
@@ -44,6 +48,7 @@ class SandboxPathResolutionDb implements Db {
           api_key_status: 'ACTIVE',
           api_key_expires_at: null,
           api_key_revoked_at: null,
+          environment: this.accessRequestEnvironment,
         } as T],
         rowCount: 1,
       };
@@ -182,6 +187,22 @@ assert.deepEqual(
   'sandbox audit redaction must cover common PII aliases from request and response examples',
 );
 
+assert.deepEqual(
+  redactSandboxLogValue({
+    identifiers: ['CM99021234567X', '1000123456', 'BRN12345', 'WP30219'],
+    nestedValues: {
+      unlabelled: ['plain status', 'john.doe@example.com', '+256700000000'],
+    },
+  }),
+  {
+    identifiers: ['[REDACTED]', '[REDACTED]', '[REDACTED]', '[REDACTED]'],
+    nestedValues: {
+      unlabelled: ['plain status', '[REDACTED]', '[REDACTED]'],
+    },
+  },
+  'sandbox audit redaction must redact sensitive identifier values even when field names are generic',
+);
+
 void (async () => {
   const db = new SandboxPathResolutionDb();
   const { res, nextCalled } = await invokeSandboxMiddleware(db, '/api/v1/not-registered/status');
@@ -201,14 +222,91 @@ void (async () => {
   assert.equal(dynamicResult.res.statusCode, 401);
   assert.deepEqual(
     dynamicDb.sandboxApiLookupIds,
-    ['api-custom-1'],
-    'dynamic sandbox paths must verify only the requested API id before API-key validation',
+    [],
+    'dynamic sandbox paths with missing API keys must not query catalog availability before invalid-key throttling',
   );
   assert.equal(
     dynamicDb.sawUnboundedSandboxMappingQuery,
     false,
     'dynamic sandbox paths must not scan every sandbox-enabled API before API-key validation',
   );
+
+  const missingStaticKeyDb = new SandboxPathResolutionDb();
+  const missingStaticKeyResult = await invokeSandboxMiddleware(
+    missingStaticKeyDb,
+    '/api/v1/identity/status/CM99021234567X',
+  );
+
+  assert.equal(missingStaticKeyResult.nextCalled, false);
+  assert.equal(missingStaticKeyResult.res.statusCode, 401);
+  assert.deepEqual(
+    missingStaticKeyDb.sandboxApiLookupIds,
+    [],
+    'built-in sandbox paths with missing API keys must not query catalog availability before invalid-key throttling',
+  );
+
+  const malformedKeyDb = new SandboxPathResolutionDb();
+  const malformedKeyResult = await invokeSandboxMiddleware(
+    malformedKeyDb,
+    '/api/v1/identity/status/CM99021234567X',
+    { 'x-govhub-api-key': 'not-a-govhub-key' },
+  );
+
+  assert.equal(malformedKeyResult.nextCalled, false);
+  assert.equal(
+    malformedKeyResult.res.statusCode,
+    401,
+    'malformed sandbox API keys must be rejected as invalid credentials before database lookups',
+  );
+  assert.deepEqual(
+    malformedKeyDb.sandboxApiLookupIds,
+    [],
+    'malformed sandbox API keys must not query catalog availability before invalid-key throttling',
+  );
+  assert.equal(
+    malformedKeyDb.apiKeyLookupCount,
+    0,
+    'malformed sandbox API keys must not query access_requests before invalid-key throttling',
+  );
+
+  const unknownKeyDb = new SandboxPathResolutionDb();
+  const unknownKeyResult = await invokeSandboxMiddleware(
+    unknownKeyDb,
+    '/api/v1/identity/status/CM99021234567X',
+    { 'x-govhub-api-key': unknownWellFormedSandboxApiKey },
+  );
+
+  assert.equal(unknownKeyResult.nextCalled, false);
+  assert.equal(
+    unknownKeyResult.res.statusCode,
+    401,
+    'well-formed unknown sandbox API keys must be rejected as invalid credentials',
+  );
+  assert.equal(
+    unknownKeyDb.apiKeyLookupCount,
+    1,
+    'well-formed sandbox API keys still require one access_requests lookup to distinguish unknown keys from valid keys',
+  );
+  assert.deepEqual(
+    unknownKeyDb.sandboxApiLookupIds,
+    [],
+    'well-formed unknown sandbox API keys must not query catalog availability before invalid-key throttling',
+  );
+
+  const productionKeyDb = new SandboxPathResolutionDb();
+  productionKeyDb.accessRequestEnvironment = 'production';
+  const productionKeyResult = await invokeSandboxMiddleware(
+    productionKeyDb,
+    '/api/v1/identity/status/CM99021234567X',
+    { 'x-govhub-api-key': approvedSandboxApiKey },
+  );
+
+  assert.equal(
+    productionKeyResult.nextCalled,
+    false,
+    'production-scoped access request keys must not authorize sandbox endpoint execution',
+  );
+  assert.equal(productionKeyResult.res.statusCode, 403);
 
   const disabledStaticDb = new SandboxPathResolutionDb();
   disabledStaticDb.disabledSandboxApiIds.add(defaultIdentityApiId);

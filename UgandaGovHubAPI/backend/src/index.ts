@@ -27,6 +27,7 @@ import { apiErrorHandler, jsonBodyErrorHandler } from './http-errors';
 import { positiveIntegerEnv } from './env';
 import { validateProductionSecurityEnv } from './security-config';
 import { securityHeadersMiddleware } from './security-headers';
+import { cookieCsrfProtectionMiddleware } from './csrf';
 
 dotenv.config();
 
@@ -53,6 +54,7 @@ app.use(cors({
   ],
 }));
 app.use(securityHeadersMiddleware(() => getTlsConfig().enabled || process.env.GOVHUB_TRUST_TLS_TERMINATION === 'true'));
+app.use(cookieCsrfProtectionMiddleware(allowedOrigins));
 app.use(express.json({ limit: process.env.GOVHUB_JSON_LIMIT || '1mb' }));
 app.use(jsonBodyErrorHandler);
 

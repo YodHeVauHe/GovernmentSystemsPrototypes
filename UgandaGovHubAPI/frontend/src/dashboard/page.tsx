@@ -20,7 +20,7 @@ import { AccountsPanel } from './page-components/AccountsPanel';
 import { AdminDashboardSideMenu } from './page-components/AdminDashboardSideMenu';
 import { AnalyticsPanel } from './page-components/AnalyticsPanel';
 import { AuditPanel } from './page-components/AuditPanel';
-import { createAccountReviewActions } from './page-components/account-review-actions';
+import { createAccountReviewActions, type AccountActionDialogState } from './page-components/account-review-actions';
 import { CredentialsPanel } from './page-components/CredentialsPanel';
 import { DashboardDialogs } from './page-components/DashboardDialogs';
 import { DashboardDrawers } from './page-components/DashboardDrawers';
@@ -49,11 +49,16 @@ export default function DashboardPage() {
   const [matrix, setMatrix] = useState<any[]>([]);
   const [selectedLog, setSelectedLog] = useState<any>(null);
   const [selectedAccessRequest, setSelectedAccessRequest] = useState<any>(null);
+  const [selectedAccount, setSelectedAccount] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<DashboardViewTab>('approvals');
   const [approving, setApproving] = useState<string | null>(null);
   const [accountReviewing, setAccountReviewing] = useState<string | null>(null);
   const [accountRoleInputs, setAccountRoleInputs] = useState<Record<string, string>>({});
   const [accountMdaInputs, setAccountMdaInputs] = useState<Record<string, string>>({});
+  const [accountActionDialog, setAccountActionDialog] = useState<AccountActionDialogState>(null);
+  const [accountActionText, setAccountActionText] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [accountActionBusy, setAccountActionBusy] = useState(false);
   const [filterMda, setFilterMda] = useState<string>('ALL');
   const [accountStatusFilter, setAccountStatusFilter] = useState<string>('ALL');
   const [accountViewMode, setAccountViewMode] = useDashboardViewModePreference('accounts');
@@ -84,7 +89,7 @@ export default function DashboardPage() {
   ), [mdaId, user?.id]);
 
   const claimPendingOneTimeApiKey = useCallback((request: any) => {
-    if (!['admin', 'developer'].includes(role) || !hasPendingOneTimeApiKeyReveal(request) || oneTimeApiKeyOpenRef.current) return;
+    if (role !== 'developer' || !hasPendingOneTimeApiKeyReveal(request) || oneTimeApiKeyOpenRef.current) return;
 
     const requestId = String(request.id || '');
     if (!requestId || pendingKeyRevealClaims.current.has(requestId)) return;
@@ -243,11 +248,21 @@ export default function DashboardPage() {
     handleNeedsInfoAccount,
     handleSuspendAccount,
     handleDeleteAccount,
+    closeAccountActionDialog,
+    confirmAccountAction,
   } = createAccountReviewActions({
     accountRoleInputs,
     accountMdaInputs,
     mdas,
     setAccountReviewing,
+    accountActionDialog,
+    setAccountActionDialog,
+    accountActionText,
+    setAccountActionText,
+    accountActionBusy,
+    setAccountActionBusy,
+    deleteConfirmation,
+    setDeleteConfirmation,
     addNotification,
     fetchDashboardData,
   });
@@ -520,6 +535,7 @@ export default function DashboardPage() {
           setAccountMdaInputs={setAccountMdaInputs}
           accountReviewing={accountReviewing}
           mdas={mdas}
+          setSelectedAccount={setSelectedAccount}
           handleApproveAccount={handleApproveAccount}
           handleNeedsInfoAccount={handleNeedsInfoAccount}
           handleRejectAccount={handleRejectAccount}
@@ -621,10 +637,21 @@ export default function DashboardPage() {
         keyActionRequest={keyActionRequest}
         confirmKeyAction={confirmKeyAction}
         keyActionButtonLabel={keyActionButtonLabel}
+        accountActionDialog={accountActionDialog}
+        accountActionText={accountActionText}
+        setAccountActionText={setAccountActionText}
+        deleteConfirmation={deleteConfirmation}
+        setDeleteConfirmation={setDeleteConfirmation}
+        accountActionBusy={accountActionBusy}
+        closeAccountActionDialog={closeAccountActionDialog}
+        confirmAccountAction={confirmAccountAction}
       />
       <DashboardDrawers
         selectedAccessRequest={selectedAccessRequest}
         setSelectedAccessRequest={setSelectedAccessRequest}
+        selectedAccount={selectedAccount}
+        setSelectedAccount={setSelectedAccount}
+        mdas={mdas}
         selectedLog={selectedLog}
         setSelectedLog={setSelectedLog}
       />

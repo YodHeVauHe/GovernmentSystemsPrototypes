@@ -136,6 +136,7 @@ export async function buildAccessMatrix(
       consumer_mda_id,
       consumer_user_id,
       consumer_type,
+      environment,
       api_id,
       status,
       api_key_expires_at
@@ -162,17 +163,20 @@ export async function findBlockingAccessRequest(
     apiId: string;
     consumerMdaId?: string | null;
     consumerUserId?: string | null;
+    environment?: string | null;
   }
 ): Promise<BlockingAccessRequest | undefined> {
   const identityValue = input.consumerMdaId || input.consumerUserId;
   if (!identityValue) return undefined;
 
   const identityColumn = input.consumerMdaId ? 'consumer_mda_id' : 'consumer_user_id';
+  const environment = input.environment || 'sandbox';
   return one<BlockingAccessRequest>(db, `
     SELECT id, status, api_key_status
     FROM access_requests
     WHERE api_id = $1
       AND ${identityColumn} = $2
+      AND COALESCE(environment, 'sandbox') = $3
       AND (
         status = 'PENDING'
         OR (
@@ -180,12 +184,12 @@ export async function findBlockingAccessRequest(
           AND api_key_hash IS NOT NULL
           AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
           AND api_key_revoked_at IS NULL
-          AND (api_key_expires_at IS NULL OR api_key_expires_at > $3)
+          AND (api_key_expires_at IS NULL OR api_key_expires_at > $4)
         )
       )
     ORDER BY created_at DESC
     LIMIT 1
-  `, [input.apiId, identityValue, new Date().toISOString()]);
+  `, [input.apiId, identityValue, environment, new Date().toISOString()]);
 }
 
 export interface AuditLogPage {

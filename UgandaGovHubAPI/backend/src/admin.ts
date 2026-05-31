@@ -9,6 +9,7 @@ export type ApiKeyRecord = {
   api_key_status?: string | null;
   api_key_expires_at?: string | null;
   api_key_revoked_at?: string | null;
+  environment?: string | null;
   api_id: string;
   consumer_mda_id: string;
   consumer_user_id?: string | null;
@@ -75,6 +76,9 @@ export function computeApiKeyAccess(record: ApiKeyRecord | undefined | null, api
   }
   if (record.consumer_user_id && record.consumer_user_status !== 'APPROVED') {
     return { allowed: false, code: 'ACCOUNT_NOT_APPROVED', message: 'The API key owner account is not approved.' };
+  }
+  if ((record.environment || 'sandbox') !== 'sandbox') {
+    return { allowed: false, code: 'ENVIRONMENT_NOT_ALLOWED', message: 'The provided API key is not scoped for sandbox use.' };
   }
   if (record.api_id !== apiId) {
     return { allowed: false, code: 'UNAUTHORIZED_ENDPOINT', message: 'The provided API key is not authorized to access this API.' };

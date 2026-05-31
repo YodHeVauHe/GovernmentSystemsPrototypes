@@ -134,6 +134,8 @@ const governmentEmployeeProfile = {
 class AccountRoleSecurityDb implements Db {
   insertedSignupUser: AuthUser | null = null;
   applicantProfile: Record<string, string | null> = publicDeveloperProfile;
+  approvalUpdateCount = 0;
+  reviewUpdateCount = 0;
 
   async query<T = any>(sql: string, params: unknown[] = []): Promise<{ rows: T[]; rowCount: number | null }> {
     return this.querySql<T>(sql, params);
@@ -213,10 +215,17 @@ class AccountRoleSecurityDb implements Db {
     }
 
     if (normalizedSql.includes("UPDATE users SET status = 'APPROVED'")) {
+      this.approvalUpdateCount += 1;
       return { rows: [], rowCount: 1 };
     }
 
     if (normalizedSql.includes("UPDATE user_profiles SET verification_status = 'verified'")) {
+      this.reviewUpdateCount += 1;
+      return { rows: [], rowCount: 1 };
+    }
+
+    if (normalizedSql.includes("UPDATE user_profiles SET verification_status = 'needs_more_information'")) {
+      this.reviewUpdateCount += 1;
       return { rows: [], rowCount: 1 };
     }
 
@@ -286,6 +295,33 @@ async function runAccountRoleSecurityTests() {
   });
   assert.equal(governmentApprovalResponse.status, 400);
   assert.match(String(governmentApprovalResponse.body.error || ''), /mda_id is required/i);
+
+  const junkMdaDb = new AccountRoleSecurityDb();
+  junkMdaDb.applicantProfile = governmentEmployeeProfile;
+  const junkMdaResponse = await invokeRoute(adminUsersRouter(junkMdaDb), '/:id/approve', 'post', {
+    params: { id: tamperedReviewerApplicant.id },
+    headers: { authorization: 'Bearer admin-session' },
+    body: {
+      role: 'reviewer',
+      mda_id: '   ',
+    },
+  });
+  assert.equal(junkMdaResponse.status, 400);
+  assert.match(String(junkMdaResponse.body.error || ''), /mda_id/i);
+  assert.equal(junkMdaDb.approvalUpdateCount, 0);
+  assert.equal(junkMdaDb.reviewUpdateCount, 0);
+
+  const junkNotesDb = new AccountRoleSecurityDb();
+  const junkNotesResponse = await invokeRoute(adminUsersRouter(junkNotesDb), '/:id/needs-more-information', 'post', {
+    params: { id: tamperedReviewerApplicant.id },
+    headers: { authorization: 'Bearer admin-session' },
+    body: {
+      notes: 'Missing authorization letter\u0000',
+    },
+  });
+  assert.equal(junkNotesResponse.status, 400);
+  assert.equal(junkNotesResponse.body.code, 'INVALID_REVIEW_NOTES');
+  assert.equal(junkNotesDb.reviewUpdateCount, 0);
 }
 
 runAccountRoleSecurityTests();

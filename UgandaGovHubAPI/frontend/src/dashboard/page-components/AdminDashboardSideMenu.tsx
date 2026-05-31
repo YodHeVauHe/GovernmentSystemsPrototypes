@@ -2,12 +2,10 @@ import {
   IconChartBar,
   IconCircleCheck,
   IconGridPattern,
-  IconInnerShadowTop,
   IconKey,
   IconListDetails,
   IconShield,
 } from '@tabler/icons-react';
-import type { ReactNode } from 'react';
 import type { DashboardViewTab } from '../view-helpers';
 
 type AdminDashboardSideMenuProps = {
@@ -53,23 +51,6 @@ const adminMenuSections: AdminDashboardMenuGroup[] = [
     ],
   },
 ];
-
-function ProductMenuBar({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full w-full flex-col bg-[#141414]">
-      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-[#2e2e2e] px-3">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-          <IconInnerShadowTop className="size-4" />
-        </div>
-        <div className="min-w-0 text-left text-sm leading-tight">
-          <div className="truncate font-semibold text-white">Uganda GovHub API</div>
-          <div className="truncate text-xs text-[#8b8b8b]">Developer Portal</div>
-        </div>
-      </div>
-      <div className="min-h-0 grow overflow-y-auto">{children}</div>
-    </div>
-  );
-}
 
 function ProductMenu({
   activeTab,
@@ -138,9 +119,9 @@ export function AdminDashboardSideMenu({
 
   return (
     <aside className="flex w-full shrink-0 border-b border-[#2e2e2e] md:h-full md:w-[208px] md:border-b-0 md:border-r">
-      <ProductMenuBar>
+      <div className="min-h-0 grow overflow-y-auto bg-[#141414]">
         <ProductMenu activeTab={activeTab} setActiveTab={setActiveTab} counts={counts} />
-      </ProductMenuBar>
+      </div>
     </aside>
   );
 }

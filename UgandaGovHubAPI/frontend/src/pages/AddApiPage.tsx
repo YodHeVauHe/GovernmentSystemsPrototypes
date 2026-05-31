@@ -146,7 +146,7 @@ export function AddApiPage() {
         title: 'API created',
         message: `${name} was added to the API catalog.`,
       });
-      navigate('/');
+      navigate('/catalog');
     } catch (err: any) {
       toast.error(err.message || 'Registration failed.');
     } finally {
@@ -160,11 +160,11 @@ export function AddApiPage() {
     <div className="h-full overflow-hidden">
       <div className="w-full max-w-[1280px] h-full mx-auto p-3 lg:p-5 text-[#ededed] flex flex-col">
       <div className="mb-3 flex shrink-0 items-center justify-between">
-        <Link to="/" className="inline-flex items-center gap-1.5 text-[12px] text-[#8b8b8b] hover:text-white transition-colors">
+        <Link to="/catalog" className="inline-flex items-center gap-1.5 text-[12px] text-[#8b8b8b] hover:text-white transition-colors">
           <IconArrowLeft className="w-3.5 h-3.5" />
           Back to API Catalog
         </Link>
-        <Link to="/" className="h-[32px] px-3 border border-[#2e2e2e] hover:bg-[#2e2e2e] text-[#ededed] rounded-md text-[13px] transition-colors inline-flex items-center justify-center">
+        <Link to="/catalog" className="h-[32px] px-3 border border-[#2e2e2e] hover:bg-[#2e2e2e] text-[#ededed] rounded-md text-[13px] transition-colors inline-flex items-center justify-center">
           Cancel
         </Link>
       </div>

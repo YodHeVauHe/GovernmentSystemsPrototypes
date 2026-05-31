@@ -1,7 +1,10 @@
 import assert from 'assert';
 import dns from 'dns/promises';
+import http from 'http';
+import { Readable } from 'stream';
 import { resolveCatalogSpecInput } from './catalog-spec-input';
 import { fetchSpecFromUrl } from './catalog-spec-url';
+import { parseStoredOpenApiSpec } from './openapi-store';
 import { validateOpenApiSpec } from './versioning';
 
 const originalEnv = {
@@ -12,9 +15,53 @@ const originalEnv = {
 };
 const originalLookup = dns.lookup;
 const originalFetch = globalThis.fetch;
+const originalHttpRequest = http.request;
 
 function mockPublicSpecHost() {
   (dns as any).lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+}
+
+function readableResponse(chunks: string[], statusCode = 200, headers: Record<string, string> = {}) {
+  const response = Readable.from(chunks) as any;
+  response.statusCode = statusCode;
+  response.statusMessage = 'OK';
+  response.headers = headers;
+  return response;
+}
+
+function mockHttpResponse({
+  chunks,
+  headers = {},
+  onRequest,
+  statusCode = 200,
+}: {
+  chunks: string[];
+  headers?: Record<string, string>;
+  onRequest?: (url: URL, options: any) => void;
+  statusCode?: number;
+}) {
+  let destroyWasCalled = false;
+  (http as any).request = (urlOrOptions: URL | any, optionsOrCallback: any, maybeCallback?: any) => {
+    const url = urlOrOptions instanceof URL
+      ? urlOrOptions
+      : new URL(`${urlOrOptions.protocol}//${urlOrOptions.hostname}${urlOrOptions.path}`);
+    const options = urlOrOptions instanceof URL ? optionsOrCallback : urlOrOptions;
+    const callback = urlOrOptions instanceof URL ? maybeCallback : optionsOrCallback;
+
+    onRequest?.(url, options);
+    queueMicrotask(() => callback(readableResponse(chunks, statusCode, headers)));
+    return {
+      on: () => undefined,
+      setTimeout: () => undefined,
+      destroy: () => {
+        destroyWasCalled = true;
+      },
+      end: () => undefined,
+    };
+  };
+  return {
+    wasDestroyed: () => destroyWasCalled,
+  };
 }
 
 function restoreProcessEnv() {
@@ -40,36 +87,69 @@ async function runCatalogSpecUrlSecurityTests() {
 
   process.env.NODE_ENV = 'test';
   process.env.GOVHUB_SPEC_URL_HOSTS = 'spec.example.test';
-  process.env.GOVHUB_SPEC_MAX_BYTES = '10';
+  process.env.GOVHUB_SPEC_MAX_BYTES = '1024';
   mockPublicSpecHost();
 
-  let textWasCalled = false;
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode('x'.repeat(11)));
-      controller.close();
+  let requestCalled = false;
+  let fetchWasCalled = false;
+  let pinnedLookupAddress: string | undefined;
+  let pinnedLookupFamily: number | undefined;
+  const validOpenApiSpec = `
+openapi: 3.0.0
+info:
+  title: Remote spec
+  version: 1.0.0
+paths:
+  /status:
+    get:
+      responses:
+        '200':
+          description: ok
+`;
+  mockHttpResponse({
+    chunks: [validOpenApiSpec],
+    onRequest: (url, options) => {
+      requestCalled = true;
+      assert.equal(url.hostname, 'spec.example.test');
+      assert.equal(typeof options.lookup, 'function', 'spec URL imports must pin the vetted DNS address for the HTTP request');
+      options.lookup('spec.example.test', {}, (error: Error | null, address: string, family: number) => {
+        assert.ifError(error);
+        pinnedLookupAddress = address;
+        pinnedLookupFamily = family;
+      });
     },
   });
-  globalThis.fetch = (async () => ({
-    ok: true,
-    statusText: 'OK',
-    headers: { get: () => null },
-    body,
-    text: async () => {
-      textWasCalled = true;
-      return 'x'.repeat(11);
-    },
-  })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => {
+    fetchWasCalled = true;
+    throw new Error('fetch should not be used for spec URL imports after DNS preflight');
+  }) as unknown as typeof fetch;
+
+  const fetchedSpec = await fetchSpecFromUrl('http://spec.example.test/openapi.yaml');
+  assert.equal(fetchedSpec, validOpenApiSpec);
+  assert.equal(requestCalled, true, 'Spec URL imports must use the HTTP client configured with pinned DNS lookup.');
+  assert.equal(fetchWasCalled, false, 'Spec URL imports must not resolve the host a second time through fetch.');
+  assert.equal(pinnedLookupAddress, '93.184.216.34');
+  assert.equal(pinnedLookupFamily, 4);
+
+  process.env.GOVHUB_SPEC_MAX_BYTES = '10';
+
+  let oversizedFetchWasCalled = false;
+  const oversizedRequest = mockHttpResponse({ chunks: ['x'.repeat(11)] });
+  globalThis.fetch = (async () => {
+    oversizedFetchWasCalled = true;
+    throw new Error('fetch should not be called for spec URL imports');
+  }) as unknown as typeof fetch;
 
   await assert.rejects(
     () => fetchSpecFromUrl('http://spec.example.test/openapi.yaml'),
     /Specification content is too large/
   );
   assert.equal(
-    textWasCalled,
+    oversizedFetchWasCalled,
     false,
-    'Spec URL import must enforce byte limits while streaming instead of buffering the full response body.',
+    'Spec URL import must enforce byte limits on the pinned HTTP request instead of falling back to fetch.',
   );
+  assert.equal(oversizedRequest.wasDestroyed(), true, 'oversized spec URL responses must be aborted while streaming.');
 
   await assert.rejects(
     () => resolveCatalogSpecInput(
@@ -143,6 +223,24 @@ paths:
       'OpenAPI server URLs must not be allowed to become external authority URLs in the sandbox console.',
     );
   }
+
+  assert.throws(
+    () => parseStoredOpenApiSpec(`
+openapi: 3.0.0
+info:
+  title: Circular spec
+  version: 1.0.0
+paths:
+  /status: &statusPath
+    get:
+      responses:
+        '200':
+          description: ok
+      x-cycle: *statusPath
+`),
+    /circular YAML aliases are not allowed/,
+    'stored OpenAPI specs with cyclic YAML aliases must be rejected before they can break JSON spec responses.',
+  );
 }
 
 runCatalogSpecUrlSecurityTests()
@@ -150,4 +248,5 @@ runCatalogSpecUrlSecurityTests()
     restoreProcessEnv();
     (dns as any).lookup = originalLookup;
     globalThis.fetch = originalFetch;
+    (http as any).request = originalHttpRequest;
   });

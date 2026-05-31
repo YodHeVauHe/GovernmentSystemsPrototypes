@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import { Router } from 'express';
-import yaml from 'js-yaml';
 import type { Db, DbClient } from '../db';
 import { one, run } from '../db';
 import { requireAuth, optionalAuth, type AuthUser } from '../auth';
@@ -8,7 +7,7 @@ import { canTransferApiOwnership, requireApiManager } from '../access-control';
 import { canViewApiDocs, listVisibleDocsApis } from '../docs-access';
 import { generatePublicId } from '../ids';
 import { getSpecSha, parseSpecMetadata, slugifyVersion, validateOpenApiSpec } from '../versioning';
-import { getCurrentSpecForApi, getVersionSpecForApi } from '../openapi-store';
+import { getCurrentSpecForApi, getVersionSpecForApi, parseStoredOpenApiSpec } from '../openapi-store';
 import { enforceInlineSpecSizeLimit, resolveCatalogSpecInput } from '../catalog-spec-input';
 import { UPDATE_API_SQL } from '../catalog-sql';
 import { fetchSpecFromUrl } from '../catalog-spec-url';
@@ -200,7 +199,7 @@ export function catalogRouter(db: Db) {
         return res.status(404).json({ error: 'API spec not found' });
       }
 
-      res.json(yaml.load(spec.openapi_spec_text));
+      res.json(parseStoredOpenApiSpec(spec.openapi_spec_text));
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Failed to parse spec' });

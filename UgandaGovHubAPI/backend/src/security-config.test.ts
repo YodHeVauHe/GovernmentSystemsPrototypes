@@ -161,7 +161,8 @@ assert.throws(
   /GOVHUB_ALLOWED_ORIGINS must contain valid HTTPS origins in production/
 );
 
-assert.doesNotThrow(() => validateProductionSecurityEnv({
+assert.throws(
+  () => validateProductionSecurityEnv({
   NODE_ENV: 'production',
   GOVHUB_DEMO_MODE: 'true',
   GOVHUB_ADMIN_PASSWORD: 'AdminPass123!',
@@ -170,4 +171,6 @@ assert.doesNotThrow(() => validateProductionSecurityEnv({
   GOVHUB_TURNSTILE_SECRET_KEY: '0xrealistic-production-turnstile-secret',
   GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES: 'govhub.example.go.ug',
   GOVHUB_ALLOWED_ORIGINS: 'https://govhub.example.go.ug',
-} as NodeJS.ProcessEnv));
+} as NodeJS.ProcessEnv),
+  /GOVHUB_DEMO_MODE=true is not allowed in production/
+);

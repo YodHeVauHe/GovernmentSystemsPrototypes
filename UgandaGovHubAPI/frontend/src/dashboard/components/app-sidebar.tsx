@@ -41,7 +41,7 @@ const data = {
     },
     {
       title: "API Catalog",
-      url: "/",
+      url: "/catalog",
       icon: IconDatabase,
     },
     {

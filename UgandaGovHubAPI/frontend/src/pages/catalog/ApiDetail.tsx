@@ -131,9 +131,16 @@ export function ApiDetail() {
   const currentApiAccessRequests = accessRequests.filter(request =>
     isAccessRequestForConsumer(request, api.id, mdaId, user?.id)
   );
-  const requestAccessButtonState = getRequestAccessButtonState(currentApiAccessRequests);
+  const canRequestApiAccess = role === 'developer';
+  const requestAccessButtonState = canRequestApiAccess
+    ? getRequestAccessButtonState(currentApiAccessRequests)
+    : {
+        disabled: true,
+        label: 'Request Access',
+        title: 'Only developer accounts can request API access.',
+      };
   const openRequestAccessModal = () => {
-    if (!requestAccessButtonState.disabled) setIsModalOpen(true);
+    if (canRequestApiAccess && !requestAccessButtonState.disabled) setIsModalOpen(true);
   };
   const requestAccessButtonClassName = requestAccessButtonState.disabled
     ? 'h-[30px] px-3 bg-[#2e2e2e] text-[#8b8b8b] font-medium rounded-[6px] text-[12.5px] transition-colors cursor-not-allowed'
@@ -228,7 +235,7 @@ export function ApiDetail() {
       {/* Header Area */}
       <div className="shrink-0 px-3 lg:px-5 py-3 border-b border-[#2e2e2e] bg-[#1c1c1c]">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
-          <Link to="/" className="inline-flex items-center gap-2 text-[13px] text-[#8b8b8b] hover:text-white transition-colors">
+          <Link to="/catalog" className="inline-flex items-center gap-2 text-[13px] text-[#8b8b8b] hover:text-white transition-colors">
             <IconArrowLeft className="w-4 h-4" /> Back to Catalog
           </Link>
 

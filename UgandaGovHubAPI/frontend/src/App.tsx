@@ -13,6 +13,8 @@ import { NotificationProvider } from './context/NotificationContext';
 import { Toaster } from '@/components/ui/sonner';
 import { Spinner } from '@/components/ui/spinner';
 import { HumanVerificationGate } from '@/components/HumanVerificationGate';
+import { isKnownAppRoute, isPublicAppRoute } from './app-routes';
+import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { AccountStatusPage } from './pages/AccountStatusPage';
@@ -23,19 +25,6 @@ import { HelpPage } from './pages/HelpPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 const authRoutes = ['/login', '/signup', '/account-status'];
-const knownRoutes = [
-  '/',
-  '/catalog/add',
-  '/dashboard',
-  '/account/settings',
-  '/docs',
-  '/help',
-];
-
-function isKnownAppRoute(pathname: string) {
-  return knownRoutes.includes(pathname) || pathname.startsWith('/docs/') || pathname.startsWith('/api/');
-}
-
 function RouteLoadingBar() {
   const location = useLocation();
   const [loading, setLoading] = useState(false);
@@ -103,23 +92,35 @@ function AppShell() {
   const location = useLocation();
   const { loading, isAuthenticated, isApproved, role } = useUser();
   const authPage = authRoutes.includes(location.pathname);
-  const publicDocsPage = location.pathname === '/docs' || location.pathname.startsWith('/docs/');
+  const landingPage = location.pathname === '/';
+  const publicAppRoute = isPublicAppRoute(location.pathname);
   const dashboardPage = location.pathname === '/dashboard';
   const knownAppRoute = isKnownAppRoute(location.pathname);
-  const [sidebarOpen, setSidebarOpen] = useState(!publicDocsPage);
+  const [sidebarOpen, setSidebarOpen] = useState(!publicAppRoute);
 
   useEffect(() => {
-    if (publicDocsPage || (dashboardPage && role === 'admin')) {
+    if (publicAppRoute || (dashboardPage && role === 'admin')) {
       setSidebarOpen(false);
     }
-  }, [dashboardPage, publicDocsPage, role]);
+  }, [dashboardPage, publicAppRoute, role]);
 
   if (authPage) {
     return (
+      <HumanVerificationGate>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/account-status" element={<AccountStatusPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </HumanVerificationGate>
+    );
+  }
+
+  if (landingPage) {
+    return (
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route path="/account-status" element={<AccountStatusPage />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     );
@@ -129,47 +130,49 @@ function AppShell() {
     return <SessionLoadingState fullScreen />;
   }
 
-  if (!isAuthenticated && knownAppRoute && !publicDocsPage) {
+  if (!isAuthenticated && knownAppRoute && !publicAppRoute) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  if (!isApproved && knownAppRoute && location.pathname !== "/account/settings" && !publicDocsPage) {
+  if (!isApproved && knownAppRoute && location.pathname !== "/account/settings" && !publicAppRoute) {
     return <Navigate to="/account-status" replace />;
   }
 
   return (
-    <SidebarProvider
-      open={sidebarOpen}
-      onOpenChange={setSidebarOpen}
-      style={
-        {
-          "--sidebar-width": "224px",
-          "--sidebar-width-icon": "56px",
-          "--header-height": "48px",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar collapsible="icon" />
-      <SidebarInset className="bg-[#181818] flex flex-col h-dvh overflow-hidden">
-        <div className="flex flex-col overflow-hidden w-full h-full">
-          <RouteLoadingBar />
-          <SiteHeader />
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <Routes>
-              <Route path="/" element={<Catalog />} />
-              <Route path="/docs" element={<DocsPage />} />
-              <Route path="/docs/:apiId" element={<ApiDocsPage />} />
-              <Route path="/catalog/add" element={<ProtectedRoute><AddApiPage /></ProtectedRoute>} />
-              <Route path="/api/:id" element={<ApiDetail />} />
-              <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-              <Route path="/account/settings" element={<AuthenticatedRoute><AccountSettingsPage /></AuthenticatedRoute>} />
-              <Route path="/help" element={<AuthenticatedRoute><HelpPage /></AuthenticatedRoute>} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Routes>
+    <HumanVerificationGate>
+      <SidebarProvider
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+        style={
+          {
+            "--sidebar-width": "224px",
+            "--sidebar-width-icon": "56px",
+            "--header-height": "48px",
+          } as React.CSSProperties
+        }
+      >
+        <AppSidebar collapsible="icon" />
+        <SidebarInset className="bg-[#181818] flex flex-col h-dvh overflow-hidden">
+          <div className="flex flex-col overflow-hidden w-full h-full">
+            <RouteLoadingBar />
+            <SiteHeader />
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <Routes>
+                <Route path="/catalog" element={<Catalog />} />
+                <Route path="/docs" element={<DocsPage />} />
+                <Route path="/docs/:apiId" element={<ApiDocsPage />} />
+                <Route path="/catalog/add" element={<ProtectedRoute><AddApiPage /></ProtectedRoute>} />
+                <Route path="/api/:id" element={<ApiDetail />} />
+                <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+                <Route path="/account/settings" element={<AuthenticatedRoute><AccountSettingsPage /></AuthenticatedRoute>} />
+                <Route path="/help" element={<AuthenticatedRoute><HelpPage /></AuthenticatedRoute>} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Routes>
+            </div>
           </div>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+        </SidebarInset>
+      </SidebarProvider>
+    </HumanVerificationGate>
   );
 }
 
@@ -178,9 +181,7 @@ function App() {
     <UserProvider>
       <NotificationProvider>
         <BrowserRouter>
-          <HumanVerificationGate>
-            <AppShell />
-          </HumanVerificationGate>
+          <AppShell />
         </BrowserRouter>
         <Toaster position="bottom-right" richColors />
         <Analytics />

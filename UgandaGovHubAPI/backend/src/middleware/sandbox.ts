@@ -100,6 +100,21 @@ function isSensitiveLogKey(key: string) {
     || (normalizedKey.length > 'key'.length && normalizedKey.endsWith('key'));
 }
 
+const sensitiveLogValuePatterns = [
+  /^[a-z]{2}\d{11}[a-z]$/i,
+  /^\d{10}$/,
+  /^\d{14}$/,
+  /^brn\d{5,}$/i,
+  /^wp\d{5}[a-z]*$/i,
+  /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i,
+  /^\+\d[\d\s().-]{7,}\d$/,
+];
+
+function redactSensitiveLogString(value: string) {
+  const trimmedValue = value.trim();
+  return sensitiveLogValuePatterns.some(pattern => pattern.test(trimmedValue)) ? '[REDACTED]' : value;
+}
+
 const sensitivePathSegmentPatterns = [
   /^\/api\/v1\/identity\/(?:status|card-status|death-status)\/[^/?#]+/,
   /^\/api\/v1\/tax\/(?:tin-status|clearance|vat-status|importer-status|filing-obligations|withholding-exemption)\/[^/?#]+/,
@@ -119,6 +134,7 @@ function redactCanonicalDrivingPermitPath(pathname: string) {
 }
 
 export function redactSandboxLogValue(value: unknown): unknown {
+  if (typeof value === 'string') return redactSensitiveLogString(value);
   if (Array.isArray(value)) return value.map(item => redactSandboxLogValue(item));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => {
@@ -164,6 +180,7 @@ export function normalizeSandboxLogPath(pathWithQuery: string) {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SANDBOX_API_KEY_RE = /^ghk_[0-9a-f]{64}$/;
 
 type SandboxApiKeyHeader =
   | { ok: true; apiKey: string }
@@ -171,10 +188,14 @@ type SandboxApiKeyHeader =
 
 function parseSandboxApiKeyHeader(header: string | string[] | undefined): SandboxApiKeyHeader {
   if (typeof header === 'string') {
-    if (header.trim().length === 0) {
+    const apiKey = header.trim();
+    if (apiKey.length === 0) {
       return { ok: false, code: 'MISSING_API_KEY', message: 'The X-GovHub-API-Key header is missing.' };
     }
-    return { ok: true, apiKey: header };
+    if (!SANDBOX_API_KEY_RE.test(apiKey)) {
+      return { ok: false, code: 'INVALID_API_KEY', message: 'The X-GovHub-API-Key header is invalid.' };
+    }
+    return { ok: true, apiKey };
   }
   if (Array.isArray(header)) {
     return { ok: false, code: 'INVALID_API_KEY', message: 'The X-GovHub-API-Key header must be a single value.' };
@@ -246,16 +267,14 @@ export function sandboxMiddleware(db: Db) {
 
     // Enforce API Key
     const apiKeyHeader = parseSandboxApiKeyHeader(req.headers['x-govhub-api-key']);
-    const apiId = await getApiIdFromPath(db, req.originalUrl);
-    res.locals.sandboxApiId = apiId;
-
     if (!apiKeyHeader.ok) {
+      res.locals.sandboxApiId = null;
       const invalidQuota = await consumeInvalidSandboxQuota(db, req, res);
       if (!invalidQuota.allowed) {
         recordSandboxAudit({
           eventType: 'SANDBOX_CALL_DENIED',
           mdaId: null,
-          apiId,
+          apiId: null,
           correlationId,
           details: {
             reason: 'Too many invalid sandbox API key attempts.',
@@ -268,7 +287,7 @@ export function sandboxMiddleware(db: Db) {
       recordSandboxAudit({
         eventType: 'SANDBOX_CALL_DENIED',
         mdaId: null,
-        apiId,
+        apiId: null,
         correlationId,
         details: {
           reason: apiKeyHeader.message,
@@ -290,19 +309,21 @@ export function sandboxMiddleware(db: Db) {
         r.status,
         r.api_key_status,
         r.api_key_expires_at,
-        r.api_key_revoked_at
+        r.api_key_revoked_at,
+        r.environment
       FROM access_requests r
       LEFT JOIN users u ON u.id = r.consumer_user_id
       WHERE r.api_key_hash = $1
     `, [apiKeyHash]);
-    const accessDecision = computeApiKeyAccess(requestRecord, apiId);
+
     if (!requestRecord) {
+      res.locals.sandboxApiId = null;
       const invalidQuota = await consumeInvalidSandboxQuota(db, req, res);
       if (!invalidQuota.allowed) {
         recordSandboxAudit({
           eventType: 'SANDBOX_CALL_DENIED',
           mdaId: null,
-          apiId,
+          apiId: null,
           correlationId,
           details: {
             reason: 'Too many invalid sandbox API key attempts.',
@@ -313,27 +334,46 @@ export function sandboxMiddleware(db: Db) {
         });
         return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'Too many invalid sandbox API key attempts.', 429);
       }
-    } else {
-      const quota = await consumeRateLimit(db, 'sandbox', apiKeyHash, SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
-      res.setHeader('X-RateLimit-Limit', String(SANDBOX_RATE_LIMIT));
-      res.setHeader('X-RateLimit-Remaining', String(Math.max(0, quota.remaining)));
-      res.setHeader('X-RateLimit-Reset', Math.floor(quota.resetAt / 1000));
-      if (!quota.allowed) {
-        recordSandboxAudit({
-          eventType: 'SANDBOX_CALL_DENIED',
-          mdaId: requestRecord.consumer_mda_id,
-          apiId,
-          correlationId,
-          details: {
-            consumer_user_id: requestRecord.consumer_user_id,
-            reason: 'The sandbox rate limit for this API key has been exceeded.',
-            path: auditPath,
-            method: req.method,
-          },
-        });
-        return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'The sandbox rate limit for this API key has been exceeded.', 429);
-      }
+      recordSandboxAudit({
+        eventType: 'SANDBOX_CALL_DENIED',
+        mdaId: null,
+        apiId: null,
+        correlationId,
+        details: {
+          reason: 'The provided API key is invalid or not approved.',
+          path: auditPath,
+          method: req.method,
+          provided_key: getApiKeyPreview(apiKey),
+        },
+      });
+      return sendSandboxError(res, 'INVALID_API_KEY', 'The provided API key is invalid or not approved.', 401);
     }
+
+    const apiId = await getApiIdFromPath(db, req.originalUrl);
+    res.locals.sandboxApiId = apiId;
+
+    const quota = await consumeRateLimit(db, 'sandbox', apiKeyHash, SANDBOX_RATE_LIMIT, SANDBOX_RATE_WINDOW_MS);
+    res.setHeader('X-RateLimit-Limit', String(SANDBOX_RATE_LIMIT));
+    res.setHeader('X-RateLimit-Remaining', String(Math.max(0, quota.remaining)));
+    res.setHeader('X-RateLimit-Reset', Math.floor(quota.resetAt / 1000));
+    if (!quota.allowed) {
+      recordSandboxAudit({
+        eventType: 'SANDBOX_CALL_DENIED',
+        mdaId: requestRecord.consumer_mda_id,
+        apiId,
+        correlationId,
+        details: {
+          consumer_user_id: requestRecord.consumer_user_id,
+          reason: 'The sandbox rate limit for this API key has been exceeded.',
+          path: auditPath,
+          method: req.method,
+        },
+      });
+      return sendSandboxError(res, 'RATE_LIMIT_EXCEEDED', 'The sandbox rate limit for this API key has been exceeded.', 429);
+    }
+
+    const accessDecision = computeApiKeyAccess(requestRecord, apiId);
+
     if (accessDecision.allowed === false && accessDecision.code !== 'UNAUTHORIZED_ENDPOINT') {
       recordSandboxAudit({
         eventType: 'SANDBOX_CALL_DENIED',
