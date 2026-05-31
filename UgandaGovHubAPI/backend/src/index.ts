@@ -26,6 +26,7 @@ import { catalogRouter } from './routes/catalog';
 import { apiErrorHandler, jsonBodyErrorHandler } from './http-errors';
 import { positiveIntegerEnv } from './env';
 import { validateProductionSecurityEnv } from './security-config';
+import { securityHeadersMiddleware } from './security-headers';
 
 dotenv.config();
 
@@ -51,13 +52,7 @@ app.use(cors({
     'X-RateLimit-Reset',
   ],
 }));
-app.use(async (req, res, next) => {
-  const tlsEnabled = getTlsConfig().enabled || process.env.GOVHUB_TRUST_TLS_TERMINATION === 'true';
-  if (tlsEnabled) {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
-  next();
-});
+app.use(securityHeadersMiddleware(() => getTlsConfig().enabled || process.env.GOVHUB_TRUST_TLS_TERMINATION === 'true'));
 app.use(express.json({ limit: process.env.GOVHUB_JSON_LIMIT || '1mb' }));
 app.use(jsonBodyErrorHandler);
 

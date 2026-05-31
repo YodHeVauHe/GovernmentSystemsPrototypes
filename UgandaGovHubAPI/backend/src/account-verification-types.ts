@@ -30,6 +30,8 @@ export type VerificationDocument = {
   uploaded_at: string;
 };
 
+export type PublicVerificationDocument = Omit<VerificationDocument, 'storage_ref'>;
+
 export type AccountProfile = {
   user_id: string;
   verification_status: VerificationStatus;
@@ -90,7 +92,7 @@ export type VerificationProgress = {
 export type AccountSnapshot = {
   user: PublicUser;
   profile: AccountProfile;
-  documents: VerificationDocument[];
+  documents: PublicVerificationDocument[];
   requirements: AccountRequirement;
   privileges: PrivilegeSummary;
   verification_progress: VerificationProgress;

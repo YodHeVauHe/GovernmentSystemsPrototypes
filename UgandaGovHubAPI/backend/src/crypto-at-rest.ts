@@ -33,9 +33,18 @@ export function isEncryptedAtRest(value: unknown): value is string {
   return typeof value === 'string' && value.startsWith(PREFIX);
 }
 
+function canDecryptAtRest(value: string) {
+  try {
+    decryptAtRest(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function encryptAtRest(value: string | null | undefined): string | null {
   if (value === null || value === undefined || value === '') return value ?? null;
-  if (isEncryptedAtRest(value)) return value;
+  if (isEncryptedAtRest(value) && canDecryptAtRest(value)) return value;
   const iv = asUint8Array(crypto.randomBytes(12));
   const cipher = crypto.createCipheriv('aes-256-gcm', getEncryptionKeyObject(), iv);
   const ciphertext = cipher.update(value, 'utf8', 'base64url') + cipher.final('base64url');

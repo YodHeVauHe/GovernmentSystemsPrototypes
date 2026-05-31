@@ -9,6 +9,12 @@ import { getCurrentSpecForApi } from '../openapi-store';
 
 const visibilityValues = new Set<DocsVisibility>(['public', 'authenticated', 'restricted']);
 
+function integerQueryParam(value: unknown, fallback: number) {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function statusForCode(code: string) {
   if (code === 'NOT_FOUND') return 404;
   if (code === 'UNAUTHENTICATED') return 401;
@@ -20,7 +26,9 @@ export function docsRouter(db: DbClient) {
 
   router.get('/', optionalAuth(db), async (req, res) => {
     try {
-      res.json(await listVisibleDocsApis(db, req.user));
+      const limit = integerQueryParam(req.query.limit, 100);
+      const offset = integerQueryParam(req.query.offset, 0);
+      res.json(await listVisibleDocsApis(db, req.user, limit, offset));
     } catch (err: any) {
       console.error('[docs fetch]', err);
       res.status(500).json({ error: 'Failed to fetch API docs. Please try again.' });

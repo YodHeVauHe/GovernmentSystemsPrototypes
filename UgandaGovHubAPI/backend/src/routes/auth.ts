@@ -16,6 +16,7 @@ import {
   sanitizeUser,
   setUserMfaSecret,
   setSessionCookie,
+  USER_STATUSES,
   verifyTotpCode,
   verifyPassword,
 } from '../auth';
@@ -25,6 +26,7 @@ import {
   ensureUserProfile,
   encryptProfileForStorage,
   getAccountSnapshot,
+  isRoleAllowedForAccountType,
   normalizeAccountType,
   upsertVerificationDocument,
   validateVerificationDocumentInput,
@@ -33,7 +35,7 @@ import { clearRateLimit, consumeRateLimit } from '../rate-limit';
 import type { Db, DbClient } from '../db';
 import { many, one, run, tableExists } from '../db';
 import { positiveIntegerEnv } from '../env';
-import { validateTurnstileToken } from '../turnstile';
+import { configuredTurnstileSecret, validateTurnstileToken } from '../turnstile';
 
 async function getUserByEmail(db: DbClient, email: string) {
   return one(db, 'SELECT * FROM users WHERE email = $1', [normalizeEmail(email)]);
@@ -89,6 +91,7 @@ const PASSWORD_UPPERCASE_RE = /[A-Z]/;
 const PASSWORD_LOWERCASE_RE = /[a-z]/;
 const PASSWORD_DIGIT_RE = /[0-9]/;
 const PASSWORD_SYMBOL_RE = /[^A-Za-z0-9]/;
+const PASSWORD_MAX_LENGTH = 1024;
 const SIGNUP_ACCOUNT_TYPES = new Set(
   Object.keys(ACCOUNT_TYPE_REQUIREMENTS).filter(accountType => accountType !== 'admin')
 );
@@ -108,6 +111,7 @@ function validateSignup(body: any) {
   if (!EMAIL_RE.test(String(body.email).trim())) return 'A valid email address is required.';
   const pwd: string = body.password;
   if (pwd.length < 10) return 'Password must be at least 10 characters.';
+  if (pwd.length > PASSWORD_MAX_LENGTH) return `Password must be ${PASSWORD_MAX_LENGTH} characters or fewer.`;
   if (!PASSWORD_UPPERCASE_RE.test(pwd)) return 'Password must contain at least one uppercase letter.';
   if (!PASSWORD_LOWERCASE_RE.test(pwd)) return 'Password must contain at least one lowercase letter.';
   if (!PASSWORD_DIGIT_RE.test(pwd)) return 'Password must contain at least one digit.';
@@ -120,6 +124,9 @@ function validateSignup(body: any) {
   }
   if (!isUserRole(body.requested_role)) return 'requested_role is invalid.';
   if (body.requested_role === 'admin') return 'Admin accounts must be created by an existing administrator.';
+  if (!isRoleAllowedForAccountType(normalizedAccountType, body.requested_role)) {
+    return 'requested_role is not allowed for this account_type.';
+  }
   if (body.requested_mda_id !== undefined && body.requested_mda_id !== null && body.requested_mda_id !== '') {
     if (typeof body.requested_mda_id !== 'string') return 'requested_mda_id must be a string.';
     if (body.requested_mda_id.trim().length > 200) return 'requested_mda_id must be 200 characters or fewer.';
@@ -129,14 +136,60 @@ function validateSignup(body: any) {
 
 const LOGIN_LIMIT = positiveIntegerEnv('GOVHUB_LOGIN_RATE_LIMIT', 10);
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const MFA_LIMIT = positiveIntegerEnv('GOVHUB_MFA_RATE_LIMIT', 5);
+const MFA_WINDOW_MS = 10 * 60 * 1000;
+const HUMAN_VERIFICATION_DEFAULT_LIMIT = 60;
+const HUMAN_VERIFICATION_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_EMAIL_MAX_LENGTH = 320;
-const LOGIN_PASSWORD_MAX_LENGTH = 1024;
 const PROFILE_FIELD_MAX_LENGTH = 2000;
 const REVIEW_TEXT_MAX_LENGTH = 2000;
+const ADMIN_USERS_LIST_DEFAULT_LIMIT = 100;
+const ADMIN_USERS_LIST_MAX_LIMIT = 100;
+const ADMIN_USERS_LIST_MAX_OFFSET = 10000;
+const ADMIN_USER_STATUSES = new Set<string>(USER_STATUSES);
+type MfaRateLimitAction = 'setup' | 'enable' | 'disable';
 
 type ProfilePatchValidation =
   | { ok: true; value: Record<string, string | null> }
   | { ok: false; message: string };
+
+type AdminUsersListQueryValidation =
+  | { ok: true; value: { status: string | null; limit: number; offset: number } }
+  | { ok: false; code: 'INVALID_USER_STATUS'; message: string };
+
+function boundedPositiveIntegerParam(value: unknown, fallback: number, max: number) {
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, max);
+}
+
+function boundedNonNegativeIntegerParam(value: unknown, fallback: number, max: number) {
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) return fallback;
+  return Math.min(parsed, max);
+}
+
+function parseAdminUsersListQuery(query: Record<string, unknown>): AdminUsersListQueryValidation {
+  const rawStatus = typeof query.status === 'string' ? query.status.trim() : '';
+  if (rawStatus && !ADMIN_USER_STATUSES.has(rawStatus)) {
+    return {
+      ok: false,
+      code: 'INVALID_USER_STATUS',
+      message: 'status must be PENDING_REVIEW, APPROVED, REJECTED, or SUSPENDED.',
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      status: rawStatus || null,
+      limit: boundedPositiveIntegerParam(query.limit, ADMIN_USERS_LIST_DEFAULT_LIMIT, ADMIN_USERS_LIST_MAX_LIMIT),
+      offset: boundedNonNegativeIntegerParam(query.offset, 0, ADMIN_USERS_LIST_MAX_OFFSET),
+    },
+  };
+}
 
 function validateProfilePatchInput(body: any, allowedFields: string[]): ProfilePatchValidation {
   const sanitized: Record<string, string | null> = {};
@@ -171,6 +224,40 @@ function mfaCodeFromBody(value: unknown) {
   return typeof value === 'string' ? value : '';
 }
 
+function mfaRateLimitGroup(action: MfaRateLimitAction) {
+  return `mfa:${action}`;
+}
+
+async function consumeMfaRateLimit(db: Db, userId: string, action: MfaRateLimitAction) {
+  return consumeRateLimit(db, mfaRateLimitGroup(action), userId, MFA_LIMIT, MFA_WINDOW_MS);
+}
+
+async function clearMfaRateLimit(db: DbClient, userId: string, action: MfaRateLimitAction) {
+  await clearRateLimit(db, mfaRateLimitGroup(action), userId);
+}
+
+function configuredHumanVerificationRateLimit() {
+  return positiveIntegerEnv('GOVHUB_TURNSTILE_RATE_LIMIT', HUMAN_VERIFICATION_DEFAULT_LIMIT);
+}
+
+function sendMfaRateLimitError(res: any, quota: Awaited<ReturnType<typeof consumeMfaRateLimit>>) {
+  if (quota.allowed) return false;
+  res.status(429).json({
+    error: 'Too many multi-factor authentication attempts. Try again later.',
+    code: 'MFA_RATE_LIMITED',
+  });
+  return true;
+}
+
+function sendPasswordConfirmationInputError(res: any, password: unknown) {
+  if (typeof password !== 'string' || password.length <= PASSWORD_MAX_LENGTH) return false;
+  res.status(400).json({
+    error: `Password must be ${PASSWORD_MAX_LENGTH} characters or fewer.`,
+    code: 'INVALID_PASSWORD_INPUT',
+  });
+  return true;
+}
+
 function validateLoginCredentials(body: any) {
   const email = body?.email;
   const password = body?.password;
@@ -180,7 +267,7 @@ function validateLoginCredentials(body: any) {
       message: 'Email and password must be strings.',
     };
   }
-  if (email.trim().length > LOGIN_EMAIL_MAX_LENGTH || password.length > LOGIN_PASSWORD_MAX_LENGTH) {
+  if (email.trim().length > LOGIN_EMAIL_MAX_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
     return {
       ok: false as const,
       message: 'Email or password is too long.',
@@ -220,7 +307,28 @@ function optionalReviewTextFromBody(
   return { ok: true, value: trimmed };
 }
 
-async function verifyHumanRequest(req: any, action: 'app_load' | 'login' | 'signup') {
+async function consumeHumanVerificationRateLimit(db: Db, req: any, action: 'app_load' | 'login' | 'signup') {
+  if (!configuredTurnstileSecret()) return null;
+  const quota = await consumeRateLimit(
+    db,
+    `turnstile:${action}`,
+    req.ip || 'unknown',
+    configuredHumanVerificationRateLimit(),
+    HUMAN_VERIFICATION_WINDOW_MS,
+  );
+  if (quota.allowed) return null;
+  return {
+    ok: false as const,
+    status: 429,
+    code: 'HUMAN_VERIFICATION_RATE_LIMITED',
+    message: 'Too many human verification attempts. Try again later.',
+    errors: undefined,
+  };
+}
+
+async function verifyHumanRequest(db: Db, req: any, action: 'app_load' | 'login' | 'signup') {
+  const rateLimitResult = await consumeHumanVerificationRateLimit(db, req, action);
+  if (rateLimitResult) return rateLimitResult;
   return validateTurnstileToken({
     token: turnstileTokenFromBody(req.body || {}),
     action,
@@ -228,7 +336,7 @@ async function verifyHumanRequest(req: any, action: 'app_load' | 'login' | 'sign
   });
 }
 
-function sendTurnstileError(res: any, result: Awaited<ReturnType<typeof validateTurnstileToken>>) {
+function sendTurnstileError(res: any, result: Awaited<ReturnType<typeof verifyHumanRequest>>) {
   if (result.ok) return false;
   res.status(result.status).json({
     error: result.message,
@@ -397,13 +505,13 @@ export function authRouter(db: Db) {
   const router = Router();
 
   router.post('/human-verification', async (req, res) => {
-    const turnstile = await verifyHumanRequest(req, 'app_load');
+    const turnstile = await verifyHumanRequest(db, req, 'app_load');
     if (sendTurnstileError(res, turnstile)) return;
     res.json({ verified: true });
   });
 
   router.post('/signup', async (req, res) => {
-    const turnstile = await verifyHumanRequest(req, 'signup');
+    const turnstile = await verifyHumanRequest(db, req, 'signup');
     if (sendTurnstileError(res, turnstile)) return;
 
     const error = validateSignup(req.body || {});
@@ -441,7 +549,7 @@ export function authRouter(db: Db) {
   });
 
   router.post('/login', async (req, res) => {
-    const turnstile = await verifyHumanRequest(req, 'login');
+    const turnstile = await verifyHumanRequest(db, req, 'login');
     if (sendTurnstileError(res, turnstile)) return;
 
     const loginInput = validateLoginCredentials(req.body || {});
@@ -506,17 +614,21 @@ export function authRouter(db: Db) {
   router.post('/mfa/setup', requireAuth(db), async (req, res) => {
     const user = await getUserById(db, req.user!.id);
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
-    if (!password || !verifyPassword(password, user.password_hash)) {
-      return res.status(401).json({ error: 'Password confirmation failed.', code: 'INVALID_PASSWORD' });
-    }
     if (user.mfa_enabled_at) {
       return res.status(409).json({
         error: 'MFA is already enabled. Disable MFA before starting a new setup.',
         code: 'MFA_ALREADY_ENABLED',
       });
     }
+    if (sendPasswordConfirmationInputError(res, password)) return;
+    const quota = await consumeMfaRateLimit(db, req.user!.id, 'setup');
+    if (sendMfaRateLimitError(res, quota)) return;
+    if (!password || !verifyPassword(password, user.password_hash)) {
+      return res.status(401).json({ error: 'Password confirmation failed.', code: 'INVALID_PASSWORD' });
+    }
     const secret = generateTotpSecret();
     await setUserMfaSecret(db, req.user!.id, secret);
+    await clearMfaRateLimit(db, req.user!.id, 'setup');
     const issuer = encodeURIComponent('Uganda GovHub API');
     const label = encodeURIComponent(`${req.user!.email}`);
     res.json({
@@ -531,10 +643,13 @@ export function authRouter(db: Db) {
     if (!secret) {
       return res.status(400).json({ error: 'Start MFA setup before enabling MFA.', code: 'MFA_SETUP_REQUIRED' });
     }
+    const quota = await consumeMfaRateLimit(db, req.user!.id, 'enable');
+    if (sendMfaRateLimitError(res, quota)) return;
     if (!verifyTotpCode(secret, mfaCodeFromBody(req.body?.code))) {
       return res.status(400).json({ error: 'Invalid multi-factor authentication code.', code: 'INVALID_MFA_CODE' });
     }
     await enableUserMfa(db, req.user!.id);
+    await clearMfaRateLimit(db, req.user!.id, 'enable');
     res.json({ user: sanitizeUser(await getUserById(db, req.user!.id)) });
   });
 
@@ -542,6 +657,9 @@ export function authRouter(db: Db) {
     const { password, code } = req.body || {};
     const user = await getUserById(db, req.user!.id);
     const secret = getMfaSecret(user);
+    if (sendPasswordConfirmationInputError(res, password)) return;
+    const quota = await consumeMfaRateLimit(db, req.user!.id, 'disable');
+    if (sendMfaRateLimitError(res, quota)) return;
     if (!password || !verifyPassword(password, user.password_hash)) {
       return res.status(401).json({ error: 'Password confirmation failed.', code: 'INVALID_PASSWORD' });
     }
@@ -549,6 +667,7 @@ export function authRouter(db: Db) {
       return res.status(400).json({ error: 'Invalid multi-factor authentication code.', code: 'INVALID_MFA_CODE' });
     }
     await run(db, 'UPDATE users SET mfa_enabled_at = NULL, mfa_secret_encrypted = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [req.user!.id]);
+    await clearMfaRateLimit(db, req.user!.id, 'disable');
     res.json({ user: sanitizeUser(await getUserById(db, req.user!.id)) });
   });
 
@@ -651,7 +770,7 @@ export function authRouter(db: Db) {
   });
 
   router.post('/account/documents', requireAuth(db), async (req, res) => {
-    const { type, label, file_name, mime_type, storage_ref } = req.body || {};
+    const { type, file_name, mime_type } = req.body || {};
     const current = await getAccountSnapshot(db, req.user!.id);
     if (!current) return res.status(404).json({ error: 'Account not found.' });
     const closedVerificationDecision = rejectClosedVerificationMutation(current.profile.verification_status);
@@ -662,7 +781,7 @@ export function authRouter(db: Db) {
     if (adminMutationDecision?.allowed === false) {
       return res.status(400).json({ error: adminMutationDecision.message, code: adminMutationDecision.code });
     }
-    const documentInput = validateVerificationDocumentInput(current.profile.account_category, { type, label, file_name, mime_type, storage_ref });
+    const documentInput = validateVerificationDocumentInput(current.profile.account_category, { type, file_name, mime_type });
     if (!documentInput.ok) {
       return res.status(400).json({ error: documentInput.message, code: documentInput.code });
     }
@@ -720,10 +839,15 @@ export function adminUsersRouter(db: Db) {
   router.use(requireAuth(db, ['admin']));
 
   router.get('/', async (req, res) => {
-    const status = typeof req.query.status === 'string' ? req.query.status : null;
+    const listQuery = parseAdminUsersListQuery(req.query as Record<string, unknown>);
+    if (!listQuery.ok) {
+      return res.status(400).json({ error: listQuery.message, code: listQuery.code });
+    }
+
+    const { status, limit, offset } = listQuery.value;
     const users = status
-      ? await many(db, 'SELECT * FROM users WHERE status = $1 ORDER BY created_at DESC', [status])
-      : await many(db, 'SELECT * FROM users ORDER BY created_at DESC');
+      ? await many(db, 'SELECT * FROM users WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3', [status, limit, offset])
+      : await many(db, 'SELECT * FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]);
     const usersWithAccounts = [];
     for (const user of users) {
       usersWithAccounts.push({
@@ -733,6 +857,8 @@ export function adminUsersRouter(db: Db) {
     }
     res.json({
       users: usersWithAccounts,
+      limit,
+      offset,
     });
   });
 
@@ -754,8 +880,14 @@ export function adminUsersRouter(db: Db) {
     if (!snapshot || snapshot.profile.verification_status !== 'submitted_for_review') {
       return res.status(400).json({ error: 'User verification must be submitted for review before approval.', code: 'VERIFICATION_NOT_SUBMITTED' });
     }
+    const accountCategory = normalizeAccountType(snapshot.profile.account_category);
+    if (!isRoleAllowedForAccountType(accountCategory, role)) {
+      return res.status(400).json({
+        error: 'The requested role is not allowed for this verified account category.',
+        code: 'ROLE_ACCOUNT_CATEGORY_MISMATCH',
+      });
+    }
     if (role === 'admin') {
-      const accountCategory = normalizeAccountType(snapshot.profile.account_category);
       if (!['government_employee', 'mda_api_owner', 'admin'].includes(accountCategory)) {
         return res.status(400).json({
           error: 'Administrator accounts require verified government or MDA operator identity.',
@@ -764,7 +896,7 @@ export function adminUsersRouter(db: Db) {
       }
     }
 
-    const needsMda = approvalRequiresMda(existing.account_type, role);
+    const needsMda = approvalRequiresMda(accountCategory, role);
     const approvedMdaId = needsMda ? mda_id || existing.requested_mda_id || null : null;
     if (needsMda && (!approvedMdaId || typeof approvedMdaId !== 'string')) {
       return res.status(400).json({ error: 'mda_id is required for this account type and role.' });
@@ -937,6 +1069,7 @@ export function adminUsersRouter(db: Db) {
           WHERE id = $3
         `, [req.user!.id, new Date().toISOString(), req.params.id]);
         await run(client, "UPDATE user_profiles SET verification_status = 'suspended', updated_at = CURRENT_TIMESTAMP WHERE user_id = $1", [req.params.id]);
+        await run(client, 'UPDATE sessions SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL', [new Date().toISOString(), mutationDecision.target.id]);
         await revokeUserApiKeys(client, req.params.id);
       });
     } catch (err: any) {

@@ -39,6 +39,12 @@ function catalogRegistrationStaleError() {
   });
 }
 
+function integerQueryParam(value: unknown, fallback: number) {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 const CATALOG_SHORT_TEXT_MAX_LENGTH = 200;
 const CATALOG_LONG_TEXT_MAX_LENGTH = 2000;
 
@@ -69,6 +75,17 @@ type CatalogMetadataValidation =
   | { ok: false; message: string };
 
 const catalogMetadataFields = Object.keys(catalogTextFieldLimits) as CatalogTextField[];
+
+const CATALOG_DETAIL_SELECT = `
+  SELECT
+    id, name, owning_mda_id, sector, description, lifecycle_status,
+    sensitivity_level, sandbox_available, openapi_spec_path, required_approval_level,
+    contact_office, technical_owner, personal_data_categories, purpose_limitation,
+    data_minimization_note, retention_class, statutory_basis, security_classification,
+    sla_target, compliance_status, docs_visibility
+  FROM apis
+  WHERE id = $1
+`;
 
 function validateCatalogMetadataInput(
   body: any,
@@ -140,7 +157,9 @@ export function catalogRouter(db: Db) {
 
   router.get('/', optionalAuth(db), async (req, res) => {
     try {
-      const apis = await listVisibleDocsApis(db, req.user);
+      const limit = integerQueryParam(req.query.limit, 100);
+      const offset = integerQueryParam(req.query.offset, 0);
+      const apis = await listVisibleDocsApis(db, req.user, limit, offset);
       res.json(apis);
     } catch (err) {
       res.status(500).json({ error: 'Database not initialized' });
@@ -156,7 +175,7 @@ export function catalogRouter(db: Db) {
       if (decision.allowed === false) {
         return res.status(statusForDocsDecision(decision.code)).json({ error: decision.message, code: decision.code });
       }
-      const api = await one(db, 'SELECT * FROM apis WHERE id = $1', [apiId]);
+      const api = await one(db, CATALOG_DETAIL_SELECT, [apiId]);
       if (!api) {
         return res.status(404).json({ error: 'API not found' });
       }

@@ -12,6 +12,7 @@ import type {
   AccountSnapshot,
   AccountType,
   PrivilegeSummary,
+  PublicVerificationDocument,
   VerificationDocument,
   VerificationProgress,
   VerificationStatus,
@@ -26,11 +27,13 @@ export type {
   AccountSnapshot,
   AccountType,
   PrivilegeSummary,
+  PublicVerificationDocument,
   VerificationDocument,
   VerificationProgress,
   VerificationStatus,
 } from './account-verification-types';
 export { ACCOUNT_TYPE_REQUIREMENTS, normalizeAccountType } from './account-verification-policy';
+export { isRoleAllowedForAccountType } from './account-verification-policy';
 
 export function encryptProfileForStorage(profile: Record<string, any>) {
   return encryptFields(profile, ENCRYPTED_PROFILE_FIELDS as string[]);
@@ -42,6 +45,11 @@ function decryptProfileFromStorage(profile: AccountProfile): AccountProfile {
 
 function decryptDocumentFromStorage(document: VerificationDocument): VerificationDocument {
   return decryptFields(document, ENCRYPTED_DOCUMENT_FIELDS as string[]) as VerificationDocument;
+}
+
+export function sanitizeVerificationDocumentForSnapshot(document: VerificationDocument): PublicVerificationDocument {
+  const { storage_ref, ...publicDocument } = document;
+  return publicDocument;
 }
 
 type VerificationDocumentUploadInput = {
@@ -57,7 +65,6 @@ type ValidVerificationDocumentInput = {
   label: string;
   file_name: string;
   mime_type: string;
-  storage_ref?: string;
 };
 
 type VerificationDocumentInputValidation =
@@ -65,9 +72,7 @@ type VerificationDocumentInputValidation =
   | { ok: false; code: string; message: string };
 
 const DOCUMENT_FILE_NAME_MAX_LENGTH = 255;
-const DOCUMENT_STORAGE_REF_MAX_LENGTH = 2048;
 const MIME_TYPE_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i;
-const ALLOWED_STORAGE_REF_PREFIXES = ['s3://govhub-vault/docs/', 'metadata://', 'local/'];
 
 function trimmedString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -97,19 +102,6 @@ function isSafeDocumentFileName(fileName: string) {
   return !/[\\/]/.test(fileName);
 }
 
-function isAllowedStorageRef(storageRef: string) {
-  if (!storageRef || storageRef.length > DOCUMENT_STORAGE_REF_MAX_LENGTH) return false;
-  if (hasControlCharacters(storageRef)) return false;
-  return ALLOWED_STORAGE_REF_PREFIXES.some(prefix => {
-    if (!storageRef.startsWith(prefix)) return false;
-    const relativePath = storageRef.slice(prefix.length);
-    if (!relativePath) return false;
-    return relativePath
-      .split('/')
-      .every(segment => segment && segment !== '.' && segment !== '..' && !segment.includes('\\'));
-  });
-}
-
 export function validateVerificationDocumentInput(
   accountType: AccountType,
   input: VerificationDocumentUploadInput,
@@ -118,7 +110,6 @@ export function validateVerificationDocumentInput(
   const type = trimmedString(input.type);
   const fileName = trimmedString(input.file_name);
   const mimeType = trimmedString(input.mime_type).toLowerCase();
-  const storageRef = typeof input.storage_ref === 'string' ? input.storage_ref.trim() : undefined;
   const documentRequirement = requirements.requiredDocuments.find(document => document.type === type);
 
   if (!documentRequirement) {
@@ -142,13 +133,6 @@ export function validateVerificationDocumentInput(
       message: `Document mime_type must match ${documentRequirement.accepts}.`,
     };
   }
-  if (storageRef !== undefined && !isAllowedStorageRef(storageRef)) {
-    return {
-      ok: false,
-      code: 'INVALID_DOCUMENT_STORAGE_REF',
-      message: 'Document storage_ref must point to GovHub document storage metadata.',
-    };
-  }
 
   return {
     ok: true,
@@ -157,7 +141,6 @@ export function validateVerificationDocumentInput(
       label: documentRequirement.label,
       file_name: fileName,
       mime_type: mimeType,
-      ...(storageRef ? { storage_ref: storageRef } : {}),
     },
   };
 }
@@ -367,7 +350,7 @@ export function getPrivilegeSummary(user: Pick<AuthUser, 'status' | 'role'>): Pr
 
 export function getVerificationProgress(
   profile: AccountProfile,
-  documents: VerificationDocument[],
+  documents: Array<Pick<VerificationDocument, 'status' | 'type'>>,
   requirements: AccountRequirement
 ): VerificationProgress {
   const missingFields = requirements.requiredFields
@@ -490,12 +473,13 @@ export async function getAccountSnapshot(db: DbClient, userId: string): Promise<
   const profile = decryptProfileFromStorage(await one<AccountProfile>(db, 'SELECT * FROM user_profiles WHERE user_id = $1', [userId]) as AccountProfile);
   const documents = (await many<VerificationDocument>(db, 'SELECT * FROM verification_documents WHERE user_id = $1 ORDER BY uploaded_at DESC', [userId]))
     .map(decryptDocumentFromStorage);
+  const publicDocuments = documents.map(sanitizeVerificationDocumentForSnapshot);
   const accountType = normalizeAccountType(profile.account_category || user.account_type);
   const requirements = ACCOUNT_TYPE_REQUIREMENTS[accountType];
   return {
     user: sanitizeUser(user),
     profile,
-    documents,
+    documents: publicDocuments,
     requirements,
     privileges: getPrivilegeSummary(user),
     verification_progress: getVerificationProgress(profile, documents, requirements),

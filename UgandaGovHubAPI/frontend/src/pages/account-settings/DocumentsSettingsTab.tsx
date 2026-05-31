@@ -6,7 +6,7 @@ import type { AccountSnapshot } from './types';
 
 type DocumentsSettingsTabProps = {
   account: AccountSnapshot;
-  onSaveDocument: (type: string, label: string, fileName: string, mimeType: string, storageRef: string) => void;
+  onSaveDocument: (type: string, label: string, fileName: string, mimeType: string) => void;
   onSubmitVerification: () => void;
 };
 
@@ -39,12 +39,11 @@ export function DocumentsSettingsTab({ account, onSaveDocument, onSubmitVerifica
           return (
             <DocumentUploader
               key={docReq.type}
-              type={docReq.type}
               label={docReq.label}
               accepts={docReq.accepts}
               submittedDoc={submittedDoc}
-              onUploadComplete={(fileName, mimeType, storageRef) => {
-                onSaveDocument(docReq.type, docReq.label, fileName, mimeType, storageRef);
+              onUploadComplete={(fileName, mimeType) => {
+                onSaveDocument(docReq.type, docReq.label, fileName, mimeType);
               }}
             />
           );

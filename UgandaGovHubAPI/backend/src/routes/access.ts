@@ -3,7 +3,7 @@ import { logAuditEvent } from '../audit';
 import { generateApiKey, generatePublicId } from '../ids';
 import { computeApiKeyHash, getApiKeyPreview, normalizeExpiryInput } from '../admin';
 import { requireAuth } from '../auth';
-import { buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, findBlockingAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
+import { buildAccessMatrix, buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, findBlockingAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
 import { decryptAtRest, encryptAtRest } from '../crypto-at-rest';
 import type { DbClient } from '../db';
 import { many, one, run } from '../db';
@@ -17,6 +17,12 @@ function parseApiKeyExpiry(input?: unknown) {
       message: error instanceof Error ? error.message : 'API key expiry must be a valid future ISO date.',
     };
   }
+}
+
+function integerQueryParam(value: unknown, fallback: number) {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 async function mdaExists(db: DbClient, mdaId: string) {
@@ -266,7 +272,9 @@ router.post('/', requireAuth(db, ['developer', 'admin']), async (req, res) => {
 // List all access requests (Simulates Admin action)
 router.get('/', requireAuth(db, ['admin', 'api_owner', 'reviewer', 'developer']), async (req, res) => {
   try {
-    res.json(await buildAccessRequestList(db, req.user!));
+    const limit = integerQueryParam(req.query.limit, 100);
+    const offset = integerQueryParam(req.query.offset, 0);
+    res.json(await buildAccessRequestList(db, req.user!, limit, offset));
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch requests' });
   }
@@ -599,8 +607,8 @@ router.post('/audit-logs', requireAuth(db, ['admin']), (req, res) => {
 // Get Audit Logs
 router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), async (req, res) => {
   try {
-    const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 100;
-    const offset = typeof req.query.offset === 'string' ? parseInt(req.query.offset, 10) : 0;
+    const limit = integerQueryParam(req.query.limit, 100);
+    const offset = integerQueryParam(req.query.offset, 0);
     const scope = req.query.scope === 'api-calls' ? 'api-calls' : 'all';
     res.json(await listAuditLogs(db, req.user!, limit, offset, { scope }));
   } catch (err: any) {
@@ -613,21 +621,9 @@ router.get('/audit-logs', requireAuth(db, ['admin', 'reviewer', 'developer']), a
 router.get('/matrix', requireAuth(db, ['admin', 'reviewer']), async (req, res) => {
   try {
     // Include both MDA-type and user-type consumers so the full access picture is visible
-    const permissions = await many(db, `
-      SELECT
-        consumer_mda_id,
-        consumer_user_id,
-        consumer_type,
-        api_id,
-        status,
-        api_key_expires_at
-      FROM access_requests
-      WHERE status = 'APPROVED'
-        AND api_key_hash IS NOT NULL
-        AND COALESCE(api_key_status, 'ACTIVE') = 'ACTIVE'
-        AND api_key_revoked_at IS NULL
-        AND (api_key_expires_at IS NULL OR api_key_expires_at > $1)
-    `, [new Date().toISOString()]);
+    const limit = integerQueryParam(req.query.limit, 100);
+    const offset = integerQueryParam(req.query.offset, 0);
+    const permissions = await buildAccessMatrix(db, limit, offset);
     res.json(permissions);
   } catch (err) {
     console.error(err);

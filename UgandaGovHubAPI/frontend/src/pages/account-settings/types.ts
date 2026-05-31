@@ -31,7 +31,6 @@ export type AccountDocument = {
   label: string;
   file_name: string;
   mime_type: string;
-  storage_ref: string;
 };
 
 export type AccountRequirement = {

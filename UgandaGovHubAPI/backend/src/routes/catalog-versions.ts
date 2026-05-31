@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import type { Db } from '../db';
+import type { Db, DbClient } from '../db';
 import { many, one, run } from '../db';
-import { requireAuth } from '../auth';
+import { requireAuth, type AuthUser } from '../auth';
 import { requireApiManager } from '../access-control';
 import { generatePublicId } from '../ids';
 import { getSpecSha, parseSpecMetadata, slugifyVersion } from '../versioning';
@@ -24,6 +24,30 @@ function isOpenApiValidationError(err: any) {
 type OptionalVersionTextResult =
   | { ok: true; value: string | null }
   | { ok: false; message: string };
+
+const CATALOG_VERSION_LIST_DEFAULT_LIMIT = 100;
+const CATALOG_VERSION_LIST_MAX_LIMIT = 100;
+const CATALOG_VERSION_LIST_MAX_OFFSET = 10000;
+
+function integerQueryParam(value: unknown, fallback: number) {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function boundedPositiveInteger(value: number, fallback: number, max: number) {
+  if (!Number.isFinite(value)) return fallback;
+  const integer = Math.trunc(value);
+  if (integer < 1) return fallback;
+  return Math.min(integer, max);
+}
+
+function boundedNonNegativeInteger(value: number, fallback: number, max: number) {
+  if (!Number.isFinite(value)) return fallback;
+  const integer = Math.trunc(value);
+  if (integer < 0) return fallback;
+  return Math.min(integer, max);
+}
 
 function optionalVersionText(value: unknown, fieldName: string, maxLength: number): OptionalVersionTextResult {
   if (value === undefined || value === null || value === '') {
@@ -72,6 +96,24 @@ function isVersionPublishStaleError(err: any) {
     || err?.code === '23505';
 }
 
+async function ensureVersionMutationActorCurrent(
+  db: DbClient,
+  apiId: string,
+  user: Pick<AuthUser, 'role' | 'mda_id'>,
+  staleError: () => Error,
+) {
+  const api = await one(db, `
+    SELECT id
+    FROM apis
+    WHERE id = $1
+      AND ($2 = TRUE OR owning_mda_id = $3)
+    FOR UPDATE
+  `, [apiId, user.role === 'admin', user.mda_id]);
+  if (!api) {
+    throw staleError();
+  }
+}
+
 export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../docs-access').canViewApiDocs) {
   const router = Router({ mergeParams: true });
 
@@ -83,6 +125,10 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
         return res.status(statusForDocsDecision(decision.code)).json({ error: decision.message, code: decision.code });
       }
 
+      const requestedLimit = integerQueryParam(req.query.limit, CATALOG_VERSION_LIST_DEFAULT_LIMIT);
+      const requestedOffset = integerQueryParam(req.query.offset, 0);
+      const limit = boundedPositiveInteger(requestedLimit, CATALOG_VERSION_LIST_DEFAULT_LIMIT, CATALOG_VERSION_LIST_MAX_LIMIT);
+      const offset = boundedNonNegativeInteger(requestedOffset, 0, CATALOG_VERSION_LIST_MAX_OFFSET);
       const current = await one(db, 'SELECT spec_sha FROM api_versions WHERE api_id = $1 AND is_current = TRUE', [apiId]) as any;
       const versions = await many(db, `
         SELECT
@@ -91,7 +137,8 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
         FROM api_versions
         WHERE api_id = $1
         ORDER BY is_current DESC, created_at DESC
-      `, [apiId]) as any[];
+        LIMIT $2 OFFSET $3
+      `, [apiId, limit, offset]) as any[];
 
       res.json(versions.map(version => ({
         ...version,
@@ -139,6 +186,8 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
       const relativeSpecPath = `/openapi/${specFilename}`;
       const shouldMakeCurrent = make_current === true;
       const transaction = db.transaction(async client => {
+        await ensureVersionMutationActorCurrent(client, apiId, req.user!, versionPublishStaleError);
+
         if (shouldMakeCurrent) {
           await run(client, 'UPDATE api_versions SET is_current = FALSE WHERE api_id = $1', [apiId]);
           const apiUpdate = await run(client, 'UPDATE apis SET openapi_spec_path = $1, openapi_spec_text = $2 WHERE id = $3', [relativeSpecPath, openapiSpec, apiId]);
@@ -209,6 +258,8 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
       }
 
       const transaction = db.transaction(async client => {
+        await ensureVersionMutationActorCurrent(client, apiId, req.user!, versionPromotionStaleError);
+
         await run(client, 'UPDATE api_versions SET is_current = FALSE WHERE api_id = $1', [apiId]);
         const promoteUpdate = await run(client, `
           UPDATE api_versions
@@ -253,6 +304,8 @@ export function catalogVersionsRouter(db: Db, canViewApiDocs: typeof import('../
       }
 
       await db.transaction(async client => {
+        await ensureVersionMutationActorCurrent(client, apiId, req.user!, versionDeleteStaleError);
+
         const deleteUpdate = await run(client, `
           DELETE FROM api_versions
           WHERE id = $1

@@ -381,7 +381,8 @@ export function resolveAccountApprovalDefaults(
   mdas: Array<{ id: string }>
 ) {
   const selectedRole = accountRoleInputs[account.id] || account.role || account.requested_role || 'developer';
-  const needsMda = approvalRequiresMda(account.account_type, selectedRole);
+  const approvalAccountCategory = account.account?.profile?.account_category || account.account_type;
+  const needsMda = approvalRequiresMda(approvalAccountCategory, selectedRole);
   const selectedMda = accountMdaInputs[account.id]
     || account.mda_id
     || account.requested_mda_id

@@ -1,6 +1,7 @@
 import dns from 'dns/promises';
 import net from 'net';
 import { positiveIntegerEnv } from './env';
+import { isProductionEnv } from './security-config';
 
 function normalizeIpAddress(address: string) {
   const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
@@ -77,6 +78,52 @@ function isBlockedIp(address: string) {
   return true;
 }
 
+function specContentTooLargeError() {
+  return new Error('Specification content is too large.');
+}
+
+function parsedContentLength(value: string | null) {
+  if (!value) return null;
+  if (!/^\d+$/.test(value)) {
+    throw new Error('Specification content length is invalid.');
+  }
+  return Number(value);
+}
+
+async function readResponseTextWithinLimit(response: Response, maxBytes: number) {
+  if (!response.body) {
+    const content = await response.text();
+    if (Buffer.byteLength(content, 'utf8') > maxBytes) {
+      throw specContentTooLargeError();
+    }
+    return content;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw specContentTooLargeError();
+      }
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+    chunks.push(decoder.decode());
+    return chunks.join('');
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 /**
  * Resolve, validate, and fetch a remote OpenAPI spec.
  *
@@ -87,6 +134,9 @@ export async function fetchSpecFromUrl(specUrl: string): Promise<string> {
   const parsed = new URL(specUrl);
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     throw new Error('Only http and https spec URLs are supported.');
+  }
+  if (isProductionEnv() && parsed.protocol !== 'https:') {
+    throw new Error('Spec URL imports must use https in production.');
   }
 
   const allowedHosts = (process.env.GOVHUB_SPEC_URL_HOSTS || '')
@@ -124,15 +174,11 @@ export async function fetchSpecFromUrl(specUrl: string): Promise<string> {
     }
 
     const maxBytes = positiveIntegerEnv('GOVHUB_SPEC_MAX_BYTES', 1024 * 1024);
-    const contentLength = response.headers.get('content-length');
-    if (contentLength && Number(contentLength) > maxBytes) {
-      throw new Error('Specification content is too large.');
+    const contentLength = parsedContentLength(response.headers.get('content-length'));
+    if (contentLength !== null && contentLength > maxBytes) {
+      throw specContentTooLargeError();
     }
-    const content = await response.text();
-    if (Buffer.byteLength(content, 'utf8') > maxBytes) {
-      throw new Error('Specification content is too large.');
-    }
-    return content;
+    return readResponseTextWithinLimit(response, maxBytes);
   } finally {
     clearTimeout(timer);
   }
