@@ -18,7 +18,7 @@ export function NotFoundPage() {
           className="mt-6 inline-flex h-9 items-center gap-2 rounded-md bg-[#3ecf8e] px-3 text-sm font-medium text-[#111] transition hover:bg-[#58dba0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3ecf8e]"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Return to catalog
+          Return home
         </Link>
       </section>
     </main>

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import { fetchInputUrl, isCredentialedApiRequest } from '@/lib/api-credentials';
 
 export type UserRole = 'developer' | 'api_owner' | 'admin' | 'reviewer';
 export type UserStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
@@ -89,8 +90,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
     window.fetch = (input, init = {}) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-      const isApiRequest = url.startsWith('/api') || url.startsWith(API_BASE);
+      const isApiRequest = isCredentialedApiRequest(fetchInputUrl(input), API_BASE);
       const headers = new Headers(init.headers);
 
       return originalFetch(input, { ...init, headers, credentials: isApiRequest ? 'include' : init.credentials });

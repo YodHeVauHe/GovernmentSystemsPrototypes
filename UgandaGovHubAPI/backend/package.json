@@ -9,6 +9,8 @@
     "seed": "ts-node src/seed.ts",
     "test:security-config": "ts-node src/security-config.test.ts",
     "test:db-security": "ts-node src/db-security.test.ts",
+    "test:local-env-security": "ts-node src/local-env-security.test.ts",
+    "test:local-postgres-security": "ts-node src/local-postgres-security.test.ts",
     "test:catalog-spec-url-security": "ts-node src/catalog-spec-url-security.test.ts",
     "test:catalog-versions-security": "ts-node src/catalog-versions-security.test.ts",
     "test:catalog-detail-security": "ts-node src/catalog-detail-security.test.ts",
@@ -30,7 +32,7 @@
     "test:crypto-at-rest-security": "ts-node src/crypto-at-rest-security.test.ts",
     "test:sandbox-fixtures": "ts-node src/sandbox-fixtures.test.ts",
     "test:auth-demo-users": "ts-node src/auth-demo-users.test.ts",
-    "test": "npm run typecheck && npm run test:security-config && npm run test:db-security && npm run test:catalog-spec-url-security && npm run test:catalog-versions-security && npm run test:catalog-detail-security && npm run test:docs-access-security && npm run test:access-control-security && npm run test:security-headers && npm run test:admin-users-list-security && npm run test:account-role-security && npm run test:account-verification-security && npm run test:sandbox-logging-security && npm run test:turnstile-security && npm run test:auth-turnstile-rate-limit-security && npm run test:auth-signup-security && npm run test:auth-password-confirmation-security && npm run test:auth-mfa-rate-limit-security && npm run test:auth-session-security && npm run test:auth-production-admin-mfa && npm run test:crypto-at-rest-production && npm run test:crypto-at-rest-security && npm run test:sandbox-fixtures && npm run test:auth-demo-users"
+    "test": "npm run typecheck && npm run test:security-config && npm run test:db-security && npm run test:local-env-security && npm run test:local-postgres-security && npm run test:catalog-spec-url-security && npm run test:catalog-versions-security && npm run test:catalog-detail-security && npm run test:docs-access-security && npm run test:access-control-security && npm run test:security-headers && npm run test:admin-users-list-security && npm run test:account-role-security && npm run test:account-verification-security && npm run test:sandbox-logging-security && npm run test:turnstile-security && npm run test:auth-turnstile-rate-limit-security && npm run test:auth-signup-security && npm run test:auth-password-confirmation-security && npm run test:auth-mfa-rate-limit-security && npm run test:auth-session-security && npm run test:auth-production-admin-mfa && npm run test:crypto-at-rest-production && npm run test:crypto-at-rest-security && npm run test:sandbox-fixtures && npm run test:auth-demo-users"
   },
   "keywords": [],
   "author": "",

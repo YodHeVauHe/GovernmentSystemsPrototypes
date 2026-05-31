@@ -3,6 +3,7 @@ import { IconLock, IconPlayerPlay, IconTerminal2 } from '@tabler/icons-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { API_BASE } from '@/lib/api-base';
+import { redactHeaderMap } from '@/lib/header-redaction';
 import { formatHttpStatusLabel, isSuccessStatus } from '@/lib/http-status';
 import { generatePublicId } from '@/lib/utils';
 import { useUser } from '../../context/UserContext';
@@ -14,6 +15,10 @@ import {
   getServerBasePath,
   type SandboxParameterRow,
 } from './api-detail-helpers';
+
+export function redactSandboxRequestHeaders(headers: Record<string, string>) {
+  return redactHeaderMap(headers);
+}
 
 export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoints: any[], spec: any }) {
   const { user, mdaId } = useUser();
@@ -257,8 +262,8 @@ export function SandboxTryItConsole({ api, endpoints, spec }: { api: any, endpoi
       setResponse({
         status,
         statusText: res.statusText,
-        headers: headersObj,
-        requestHeaders: sentHeaders,
+        headers: redactHeaderMap(headersObj),
+        requestHeaders: redactSandboxRequestHeaders(sentHeaders),
         body: data
       });
     })

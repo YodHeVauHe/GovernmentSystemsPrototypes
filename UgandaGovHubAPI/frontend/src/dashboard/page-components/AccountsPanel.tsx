@@ -26,6 +26,7 @@ export function AccountsPanel({
   setAccountMdaInputs,
   accountReviewing,
   mdas,
+  setSelectedAccount,
   handleApproveAccount,
   handleNeedsInfoAccount,
   handleRejectAccount,
@@ -118,10 +119,15 @@ export function AccountsPanel({
                             return (
                               <div key={account.id} className="flex min-h-[236px] flex-col rounded-lg border border-[#2e2e2e] bg-[#181818] p-4">
                                 <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="truncate text-[14px] font-semibold text-white" title={account.full_name}>{account.full_name}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedAccount(account)}
+                                    className="min-w-0 text-left"
+                                    aria-label={`Open account details for ${account.full_name}`}
+                                  >
+                                    <div className="truncate text-[14px] font-semibold text-white transition-colors hover:text-[#3ecf8e]" title={account.full_name}>{account.full_name}</div>
                                     <div className="mt-0.5 truncate text-[12px] text-[#8b8b8b]" title={account.email}>{account.email}</div>
-                                  </div>
+                                  </button>
                                   <div className="text-right">
                                     <AccountStatusBadge status={account.status} />
                                     <div className="mt-1 text-[11px] capitalize text-[#8b8b8b]">{verificationStatusLabel(verificationStatus)}</div>
@@ -221,8 +227,15 @@ export function AccountsPanel({
                           return (
                             <TableRow key={user.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
                               <TableCell className="py-3.5 px-3">
-                                <div className="font-semibold text-[13px] text-[#ededed]">{user.full_name}</div>
-                                <div className="mt-0.5 text-[12px] text-[#8b8b8b]">{user.email}</div>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedAccount(user)}
+                                  className="max-w-[220px] text-left"
+                                  aria-label={`Open account details for ${user.full_name}`}
+                                >
+                                  <div className="truncate font-semibold text-[13px] text-[#ededed] transition-colors hover:text-[#3ecf8e]" title={user.full_name}>{user.full_name}</div>
+                                  <div className="mt-0.5 truncate text-[12px] text-[#8b8b8b]" title={user.email}>{user.email}</div>
+                                </button>
                               </TableCell>
                               <TableCell className="py-3.5 px-3 text-[13px] text-[#ededed]">
                                 <div className="capitalize">{String(user.account_type || '').replace(/_/g, ' ')}</div>

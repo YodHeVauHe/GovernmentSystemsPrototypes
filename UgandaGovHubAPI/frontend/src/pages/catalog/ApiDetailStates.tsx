@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 export function ApiDetailErrorState({ message }: { message: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#181818] p-5 text-left text-[#ededed]">
-      <Link to="/" className="inline-flex items-center gap-2 text-sm text-[#8b8b8b] hover:text-white">
+      <Link to="/catalog" className="inline-flex items-center gap-2 text-sm text-[#8b8b8b] hover:text-white">
         <IconArrowLeft className="size-4" />
         Back to API Catalog
       </Link>

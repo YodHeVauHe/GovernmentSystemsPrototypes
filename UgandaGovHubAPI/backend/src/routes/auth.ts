@@ -143,10 +143,13 @@ const HUMAN_VERIFICATION_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_EMAIL_MAX_LENGTH = 320;
 const PROFILE_FIELD_MAX_LENGTH = 2000;
 const REVIEW_TEXT_MAX_LENGTH = 2000;
+const MDA_ID_MAX_LENGTH = 200;
 const ADMIN_USERS_LIST_DEFAULT_LIMIT = 100;
 const ADMIN_USERS_LIST_MAX_LIMIT = 100;
 const ADMIN_USERS_LIST_MAX_OFFSET = 10000;
 const ADMIN_USER_STATUSES = new Set<string>(USER_STATUSES);
+const MDA_ID_RE = /^[A-Za-z0-9_-]+$/;
+const DISALLOWED_TEXT_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 type MfaRateLimitAction = 'setup' | 'enable' | 'disable' | 'login';
 
 type ProfilePatchValidation =
@@ -285,6 +288,38 @@ type ReviewTextValidation =
   | { ok: true; value: string }
   | { ok: false; code: string; message: string };
 
+type OptionalMdaIdValidation =
+  | { ok: true; value: string | null }
+  | { ok: false; code: 'INVALID_MDA_ID'; message: string };
+
+function validateMdaIdString(value: string): OptionalMdaIdValidation {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { ok: false, code: 'INVALID_MDA_ID', message: 'mda_id cannot be blank.' };
+  }
+  if (trimmed.length > MDA_ID_MAX_LENGTH) {
+    return { ok: false, code: 'INVALID_MDA_ID', message: `mda_id must be ${MDA_ID_MAX_LENGTH} characters or fewer.` };
+  }
+  if (!MDA_ID_RE.test(trimmed)) {
+    return { ok: false, code: 'INVALID_MDA_ID', message: 'mda_id may contain only letters, numbers, underscores, and hyphens.' };
+  }
+  return { ok: true, value: trimmed };
+}
+
+function optionalMdaIdFromBody(body: any): OptionalMdaIdValidation {
+  if (!Object.prototype.hasOwnProperty.call(body || {}, 'mda_id')) {
+    return { ok: true, value: null };
+  }
+  const value = body.mda_id;
+  if (value === null || value === undefined || value === '') {
+    return { ok: true, value: null };
+  }
+  if (typeof value !== 'string') {
+    return { ok: false, code: 'INVALID_MDA_ID', message: 'mda_id must be a string.' };
+  }
+  return validateMdaIdString(value);
+}
+
 function optionalReviewTextFromBody(
   body: any,
   fieldName: 'notes' | 'reason',
@@ -303,6 +338,9 @@ function optionalReviewTextFromBody(
   const trimmed = value.trim();
   if (trimmed.length > REVIEW_TEXT_MAX_LENGTH) {
     return { ok: false, code: invalidCode, message: `${fieldName} must be ${REVIEW_TEXT_MAX_LENGTH} characters or fewer.` };
+  }
+  if (DISALLOWED_TEXT_CONTROL_RE.test(trimmed)) {
+    return { ok: false, code: invalidCode, message: `${fieldName} contains unsupported control characters.` };
   }
   return { ok: true, value: trimmed };
 }
@@ -866,9 +904,13 @@ export function adminUsersRouter(db: Db) {
   });
 
   router.post('/:id/approve', async (req, res) => {
-    const { role, mda_id } = req.body || {};
+    const { role } = req.body || {};
     if (!isUserRole(role)) {
       return res.status(400).json({ error: 'A valid role is required.' });
+    }
+    const mdaIdInput = optionalMdaIdFromBody(req.body);
+    if (!mdaIdInput.ok) {
+      return res.status(400).json({ error: mdaIdInput.message, code: mdaIdInput.code });
     }
 
     const existing = await getUserById(db, req.params.id);
@@ -900,7 +942,13 @@ export function adminUsersRouter(db: Db) {
     }
 
     const needsMda = approvalRequiresMda(accountCategory, role);
-    const approvedMdaId = needsMda ? mda_id || existing.requested_mda_id || null : null;
+    const requestedMdaId = typeof existing.requested_mda_id === 'string' && existing.requested_mda_id
+      ? validateMdaIdString(existing.requested_mda_id)
+      : { ok: true as const, value: null };
+    if (!requestedMdaId.ok) {
+      return res.status(400).json({ error: 'requested_mda_id saved on this account is invalid.', code: 'INVALID_MDA_ID' });
+    }
+    const approvedMdaId = needsMda ? mdaIdInput.value || requestedMdaId.value : null;
     if (needsMda && (!approvedMdaId || typeof approvedMdaId !== 'string')) {
       return res.status(400).json({ error: 'mda_id is required for this account type and role.' });
     }

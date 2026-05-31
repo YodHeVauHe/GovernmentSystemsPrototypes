@@ -1,4 +1,5 @@
 import {
+  IconAlertTriangle,
   IconBell,
   IconBuildingBank,
   IconClipboardCheck,
@@ -10,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { AuthUser } from '@/context/UserContext';
 import type { AccountSettingsTabId, AccountSnapshot } from './types';
+import { resolveNextVerificationTab } from './verification-flow';
 
 const tabs = [
   ['profile', IconId, 'Profile'],
@@ -94,7 +96,7 @@ function VerificationPrompt({ account, onSelectTab }: { account: AccountSnapshot
 
   const progress = account.verification_progress;
   const missing = [...(progress?.missing_fields || []), ...(progress?.missing_documents || [])];
-  const nextTab = progress?.missing_documents.length ? 'documents' : 'profile';
+  const nextTab = resolveNextVerificationTab(account);
 
   return (
     <div className="mb-6 rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 p-4">
@@ -105,7 +107,15 @@ function VerificationPrompt({ account, onSelectTab }: { account: AccountSnapshot
             {progress?.message || 'Complete your profile, upload required documents, then submit for administrator review.'}
           </div>
           {missing.length > 0 && (
-            <div className="mt-2 text-[11px] text-foreground-muted">Missing: {missing.slice(0, 5).join(', ')}</div>
+            <div
+              role="alert"
+              className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold text-amber-300"
+            >
+              <IconAlertTriangle className="size-3.5 shrink-0" />
+              <span className="min-w-0 leading-4">
+                Missing: <span className="text-amber-200">{missing.slice(0, 5).join(', ')}</span>
+              </span>
+            </div>
           )}
         </div>
         <div className="flex shrink-0 gap-2">

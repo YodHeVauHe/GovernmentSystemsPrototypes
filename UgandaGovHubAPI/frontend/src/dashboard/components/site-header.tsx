@@ -2,6 +2,7 @@ import { Separator } from "@/components/ui/separator"
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import { IconBell, IconSearch, IconUserCircle } from "@tabler/icons-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { getSearchFallbackPathname, getShellTitle, isSearchableAppRoute } from "@/app-routes"
 import { useUser } from "../../context/UserContext"
 import { useNotifications } from "../../context/NotificationContext"
 import {
@@ -46,14 +47,9 @@ export function SiteHeader() {
   const { notifications, unreadCount, markAllRead, clearNotifications } = useNotifications()
   const search = searchParams.get("q") || ""
   
-  let title = "API Catalog"
-  if (location.pathname === "/dashboard") title = "Dashboard"
-  else if (location.pathname === "/catalog/add") title = "Add API"
-  else if (location.pathname.startsWith("/api/")) title = "API Details"
-  else if (location.pathname.startsWith("/docs/")) title = "API Docs"
-  else if (location.pathname === "/docs") title = "API Docs"
+  const title = getShellTitle(location.pathname)
 
-  const isSearchablePage = location.pathname === "/" || location.pathname === "/docs" || location.pathname === "/dashboard"
+  const isSearchablePage = isSearchableAppRoute(location.pathname)
   const searchPlaceholder =
     location.pathname === "/docs" ? "Search docs..." :
     location.pathname === "/dashboard" ? "Search dashboard..." :
@@ -62,7 +58,7 @@ export function SiteHeader() {
   const updatePageSearch = (value: string) => {
     if (!isSearchablePage) {
       navigate({
-        pathname: "/",
+        pathname: getSearchFallbackPathname(),
         search: value.trim() ? `q=${encodeURIComponent(value.trim())}` : "",
       })
       return

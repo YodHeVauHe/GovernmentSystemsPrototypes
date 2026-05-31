@@ -1,11 +1,10 @@
 import { Router } from 'express';
-import yaml from 'js-yaml';
 import { optionalAuth, requireAuth } from '../auth';
 import { canManageApi } from '../access-control';
 import { canViewApiDocs, listVisibleDocsApis, resolveDocsVisibility, type DocsVisibility } from '../docs-access';
 import type { DbClient } from '../db';
 import { one, run } from '../db';
-import { getCurrentSpecForApi } from '../openapi-store';
+import { getCurrentSpecForApi, parseStoredOpenApiSpec } from '../openapi-store';
 
 const visibilityValues = new Set<DocsVisibility>(['public', 'authenticated', 'restricted']);
 
@@ -84,7 +83,7 @@ export function docsRouter(db: DbClient) {
         return res.status(404).json({ error: 'OpenAPI document is missing for this API.', code: 'SPEC_NOT_FOUND' });
       }
 
-      res.json(yaml.load(spec.openapi_spec_text));
+      res.json(parseStoredOpenApiSpec(spec.openapi_spec_text));
     } catch (err: any) {
       console.error('[docs/:id/spec fetch]', err);
       res.status(500).json({ error: 'Failed to parse API documentation. Please try again.' });

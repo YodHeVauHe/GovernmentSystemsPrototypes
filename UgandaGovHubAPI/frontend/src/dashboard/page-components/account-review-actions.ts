@@ -6,12 +6,32 @@ import {
   notificationRoleLabel,
   resolveAccountApprovalDefaults,
 } from './dashboard-page-helpers';
+import {
+  isDeleteConfirmationMatch,
+  sanitizeReviewPromptText,
+  validateAccountApprovalInput,
+} from './account-review-validation';
+
+type AccountActionType = 'reject' | 'needs-info' | 'suspend' | 'delete';
+
+export type AccountActionDialogState = {
+  type: AccountActionType;
+  user: any;
+} | null;
 
 export function createAccountReviewActions({
   accountRoleInputs,
   accountMdaInputs,
   mdas,
   setAccountReviewing,
+  accountActionDialog,
+  setAccountActionDialog,
+  accountActionText,
+  setAccountActionText,
+  accountActionBusy,
+  setAccountActionBusy,
+  deleteConfirmation,
+  setDeleteConfirmation,
   addNotification,
   fetchDashboardData,
 }: any) {
@@ -35,12 +55,23 @@ export function createAccountReviewActions({
         });
         return;
       }
+      const approvalInput = validateAccountApprovalInput({
+        role: nextRole,
+        needsMda,
+        mdaId: nextMda,
+      });
+      if (!approvalInput.ok) {
+        toast.error('Check account approval input', {
+          description: approvalInput.message,
+        });
+        return;
+      }
       setAccountReviewing(user.id);
 
       fetch(`${API_BASE}/api/admin/users/${user.id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: nextRole, mda_id: needsMda ? nextMda : null }),
+        body: JSON.stringify({ role: approvalInput.role, mda_id: approvalInput.mdaId }),
       })
         .then(async res => {
           const result = await res.json();
@@ -54,7 +85,7 @@ export function createAccountReviewActions({
           addNotification({
             type: 'account',
             title: 'Account approved',
-            message: `Your account was approved as ${notificationRoleLabel(nextRole)}${needsMda ? ` for ${mdas.find((mda: any) => mda.id === nextMda)?.shortName || nextMda}` : ''}.`,
+            message: `Your account was approved as ${notificationRoleLabel(approvalInput.role)}${needsMda ? ` for ${mdas.find((mda: any) => mda.id === approvalInput.mdaId)?.shortName || approvalInput.mdaId}` : ''}.`,
             recipientUserId: user.id,
           });
           fetchDashboardData();
@@ -68,14 +99,51 @@ export function createAccountReviewActions({
     };
 
     const handleRejectAccount = (user: any) => {
-      const reason = prompt(`Reject ${user.full_name}'s account? Add a short reason:`);
-      if (reason === null) return;
+      setAccountActionText('');
+      setDeleteConfirmation('');
+      setAccountActionDialog({ type: 'reject', user });
+    };
+
+    const handleNeedsInfoAccount = (user: any) => {
+      setAccountActionText(user.account?.profile?.review_notes || '');
+      setDeleteConfirmation('');
+      setAccountActionDialog({ type: 'needs-info', user });
+    };
+
+    const handleSuspendAccount = (user: any) => {
+      setAccountActionText('');
+      setDeleteConfirmation('');
+      setAccountActionDialog({ type: 'suspend', user });
+    };
+
+    const handleDeleteAccount = (user: any) => {
+      setAccountActionText('');
+      setDeleteConfirmation('');
+      setAccountActionDialog({ type: 'delete', user });
+    };
+
+    const closeAccountActionDialog = () => {
+      if (accountActionBusy) return;
+      setAccountActionDialog(null);
+      setAccountActionText('');
+      setDeleteConfirmation('');
+    };
+
+    const confirmRejectAccount = (user: any) => {
+      const sanitizedReason = sanitizeReviewPromptText(accountActionText);
+      if (sanitizedReason === null) {
+        toast.error('Invalid rejection reason', {
+          description: 'Use plain text under 2000 characters without unsupported control characters.',
+        });
+        return;
+      }
       setAccountReviewing(user.id);
+      setAccountActionBusy(true);
 
       fetch(`${API_BASE}/api/admin/users/${user.id}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason: sanitizedReason }),
       })
         .then(async res => {
           const result = await res.json();
@@ -89,9 +157,10 @@ export function createAccountReviewActions({
           addNotification({
             type: 'account',
             title: 'Account rejected',
-            message: `Your account request was rejected${reason ? `: ${reason}` : '.'}`,
+            message: 'Your account request was rejected. Open account settings for reviewer guidance.',
             recipientUserId: user.id,
           });
+          closeAccountActionDialog();
           fetchDashboardData();
         })
         .catch(err => {
@@ -99,18 +168,27 @@ export function createAccountReviewActions({
             description: err instanceof Error ? err.message : 'Failed to reject account',
           });
         })
-        .finally(() => setAccountReviewing(null));
+        .finally(() => {
+          setAccountReviewing(null);
+          setAccountActionBusy(false);
+        });
     };
 
-    const handleNeedsInfoAccount = (user: any) => {
-      const notes = prompt(`Request more information from ${user.full_name}:`, user.account?.profile?.review_notes || '');
-      if (notes === null) return;
+    const confirmNeedsInfoAccount = (user: any) => {
+      const sanitizedNotes = sanitizeReviewPromptText(accountActionText);
+      if (sanitizedNotes === null) {
+        toast.error('Invalid review notes', {
+          description: 'Use plain text under 2000 characters without unsupported control characters.',
+        });
+        return;
+      }
       setAccountReviewing(user.id);
+      setAccountActionBusy(true);
 
       fetch(`${API_BASE}/api/admin/users/${user.id}/needs-more-information`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes }),
+        body: JSON.stringify({ notes: sanitizedNotes }),
       })
         .then(async res => {
           const result = await res.json();
@@ -124,9 +202,10 @@ export function createAccountReviewActions({
           addNotification({
             type: 'account',
             title: 'More information requested',
-            message: `Your verification profile needs more information${notes ? `: ${notes}` : '.'}`,
+            message: 'Your verification profile needs more information. Open account settings for reviewer guidance.',
             recipientUserId: user.id,
           });
+          closeAccountActionDialog();
           fetchDashboardData();
         })
         .catch(err => {
@@ -134,12 +213,15 @@ export function createAccountReviewActions({
             description: err instanceof Error ? err.message : 'Failed to request more information',
           });
         })
-        .finally(() => setAccountReviewing(null));
+        .finally(() => {
+          setAccountReviewing(null);
+          setAccountActionBusy(false);
+        });
     };
 
-    const handleSuspendAccount = (user: any) => {
-      if (!confirm(`Suspend ${user.full_name}'s account? They will lose platform access until restored.`)) return;
+    const confirmSuspendAccount = (user: any) => {
       setAccountReviewing(user.id);
+      setAccountActionBusy(true);
 
       fetch(`${API_BASE}/api/admin/users/${user.id}/suspend`, { method: 'POST' })
         .then(async res => {
@@ -157,6 +239,7 @@ export function createAccountReviewActions({
             message: 'Your GovHub account was suspended. Protected workflows are unavailable until an administrator restores access.',
             recipientUserId: user.id,
           });
+          closeAccountActionDialog();
           fetchDashboardData();
         })
         .catch(err => {
@@ -164,12 +247,21 @@ export function createAccountReviewActions({
             description: err instanceof Error ? err.message : 'Failed to suspend account',
           });
         })
-        .finally(() => setAccountReviewing(null));
+        .finally(() => {
+          setAccountReviewing(null);
+          setAccountActionBusy(false);
+        });
     };
 
-    const handleDeleteAccount = (user: any) => {
-      if (!confirm(`Permanently delete ${user.full_name}'s account? This removes their profile, documents, and sessions. This cannot be undone.`)) return;
+    const confirmDeleteAccount = (user: any) => {
+      if (!isDeleteConfirmationMatch(deleteConfirmation, user.full_name || '')) {
+        toast.error('Confirm permanent deletion', {
+          description: `Type DELETE or ${user.full_name}'s full name before deleting this account.`,
+        });
+        return;
+      }
       setAccountReviewing(user.id);
+      setAccountActionBusy(true);
 
       fetch(`${API_BASE}/api/admin/users/${user.id}`, { method: 'DELETE' })
         .then(async res => {
@@ -181,6 +273,7 @@ export function createAccountReviewActions({
         toast.success('Account deleted', {
           description: `${user.full_name}'s account was permanently removed.`,
         });
+        closeAccountActionDialog();
         fetchDashboardData();
       })
       .catch(err => {
@@ -188,7 +281,28 @@ export function createAccountReviewActions({
           description: err instanceof Error ? err.message : 'Failed to delete account',
         });
       })
-      .finally(() => setAccountReviewing(null));
+      .finally(() => {
+        setAccountReviewing(null);
+        setAccountActionBusy(false);
+      });
+  };
+
+  const confirmAccountAction = () => {
+    if (!accountActionDialog || accountActionBusy) return;
+    const { type, user } = accountActionDialog;
+    if (type === 'reject') {
+      confirmRejectAccount(user);
+      return;
+    }
+    if (type === 'needs-info') {
+      confirmNeedsInfoAccount(user);
+      return;
+    }
+    if (type === 'suspend') {
+      confirmSuspendAccount(user);
+      return;
+    }
+    confirmDeleteAccount(user);
   };
 
   return {
@@ -197,5 +311,7 @@ export function createAccountReviewActions({
     handleNeedsInfoAccount,
     handleSuspendAccount,
     handleDeleteAccount,
+    closeAccountActionDialog,
+    confirmAccountAction,
   };
 }

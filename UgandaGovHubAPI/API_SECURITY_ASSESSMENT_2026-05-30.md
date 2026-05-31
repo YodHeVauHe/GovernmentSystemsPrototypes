@@ -5,15 +5,15 @@ Remediation update: 2026-05-30
 Additional remediation update: 2026-05-31
 Scope: Static and configuration review of the local repository API surface (`backend/src`, API routing, auth/session logic, access approvals, sandbox API key enforcement, OpenAPI/catalog ingestion, docs access, dependency manifests, and local environment file handling).
 
-Method: OWASP API Security Top 10 guided review using the upstream cybersecurity skills `testing-api-security-with-owasp-top-10`, `testing-api-authentication-weaknesses`, `testing-api-for-broken-object-level-authorization`, `testing-api-for-mass-assignment-vulnerability`, `detecting-broken-object-property-level-authorization`, `testing-for-broken-access-control`, `testing-for-business-logic-vulnerabilities`, and `testing-for-sensitive-data-exposure`.
+Method: OWASP API Security Top 10 guided review using the upstream cybersecurity skills `testing-api-security-with-owasp-top-10`, `performing-ssrf-vulnerability-exploitation`, `testing-api-authentication-weaknesses`, `testing-api-for-broken-object-level-authorization`, `testing-api-for-mass-assignment-vulnerability`, `detecting-broken-object-property-level-authorization`, `testing-for-broken-access-control`, `testing-for-business-logic-vulnerabilities`, and `testing-for-sensitive-data-exposure`.
 
 ## Executive Summary
 
-The backend has several strong controls in place: parameterized database access, role-based route middleware, hashed sessions, hashed sandbox API keys, API key expiry/revocation checks, one-time API key reveal, CORS allow-listing, sandbox rate limiting, request size limits, redacted sandbox audit logging, OpenAPI URL SSRF controls with streamed size enforcement, and restricted API documentation visibility.
+The backend has several strong controls in place: parameterized database access, role-based route middleware, hashed sessions, hashed sandbox API keys, API key expiry/revocation checks, developer-only one-time API key reveal, CORS allow-listing, sandbox rate limiting, request size limits, redacted sandbox audit logging, OpenAPI URL SSRF controls with DNS-pinned outbound requests and streamed size enforcement, and restricted API documentation visibility.
 
 No production dependency vulnerabilities were reported by `npm audit --omit=dev` for either backend or frontend at assessment time.
 
-The original review identified operational hardening gaps rather than obvious exploitable code injection flaws. The implementation now remediates the tracked gaps: production admin MFA is fail-closed, authenticated MFA mutation attempts and login-time MFA code guesses are rate-limited per user, signup and MFA confirmation passwords are bounded before hashing or verification, public user responses omit password hashes, MFA secrets, and MFA enablement timestamps, suspended accounts have active sessions revoked, production startup rejects demo-mode and missing security secrets, production data encryption keys must be explicit 32-byte keys, malformed encrypted-field prefixes are re-encrypted instead of being trusted, full sandbox API keys are no longer persisted to browser session storage, the backend test command now runs tests that exist in the current worktree, production Turnstile configuration rejects test secrets and missing hostname validation, Turnstile upstream verification is bounded by a fail-closed timeout, Turnstile-backed login/signup/app-load verification is locally rate-limited before upstream calls, production database TLS rejects certificate-verification bypasses, production CORS requires explicit HTTPS non-localhost origins, production OpenAPI URL imports require trusted HTTPS hosts and enforce body-size limits while streaming, inline OpenAPI specs now use the same configured byte ceiling as URL imports, OpenAPI path keys and server URLs must remain safe relative inputs that cannot normalize into external authority URLs, recursive OpenAPI schemas are bounded during frontend example generation, API responses include defensive headers, docs/catalog/OpenAPI responses use no-store cache controls, account-verification snapshots no longer expose internal document storage locators, document uploads no longer accept client-supplied storage references, the frontend no longer generates or posts internal document storage locators, sandbox audit/log paths and bodies redact canonical and common alias identifiers plus common PII aliases, sandbox route resolution enforces catalog `sandbox_available` controls for built-in and dynamic APIs, privileged audit-log API-call filtering preserves cross-consumer review visibility, catalog version mutations re-check API ownership inside the write transaction, and account role assignment plus MDA assignment requirements are constrained by verified account category.
+The original review identified operational hardening gaps rather than obvious exploitable code injection flaws. The implementation now remediates the tracked gaps: production admin MFA is fail-closed, authenticated MFA mutation attempts and login-time MFA code guesses are rate-limited per user, signup and MFA confirmation passwords are bounded before hashing or verification, public user responses omit password hashes, MFA secrets, and MFA enablement timestamps, suspended accounts have active sessions revoked, production startup rejects demo-mode and missing security secrets, production data encryption keys must be explicit 32-byte keys, malformed encrypted-field prefixes are re-encrypted instead of being trusted, full sandbox API keys are no longer persisted to browser session storage or echoed in sandbox response headers, access request submission and one-time API key reveal are limited to developer consumers before key material can be claimed, sandbox and production access-request lifecycles are separated in duplicate-request checks, the backend test command now runs tests that exist in the current worktree, production Turnstile configuration rejects test secrets and missing hostname validation, Turnstile upstream verification is bounded by a fail-closed timeout, Turnstile-backed login/signup/app-load verification is locally rate-limited before upstream calls, production database TLS rejects certificate-verification bypasses, production CORS requires explicit HTTPS non-localhost origins, production OpenAPI URL imports require trusted HTTPS hosts, pin the outbound request to the DNS address vetted by SSRF preflight, and enforce body-size limits while streaming, inline OpenAPI specs now use the same configured byte ceiling as URL imports, OpenAPI path keys and server URLs must remain safe relative inputs that cannot normalize into external authority URLs, cyclic YAML aliases are rejected before OpenAPI specs are stored or parsed from existing rows for JSON responses, recursive OpenAPI schemas are bounded during frontend example generation, API responses include defensive headers, docs/catalog/OpenAPI responses use no-store cache controls, account-verification snapshots no longer expose internal document storage locators, document uploads no longer accept client-supplied storage references, the frontend no longer generates or posts internal document storage locators, sandbox audit/log paths and bodies redact canonical and common alias identifiers, common PII aliases, and unlabeled identifier/contact values, sandbox route resolution enforces catalog `sandbox_available` controls for built-in and dynamic APIs, sandbox runtime authorization rejects production-scoped access-request keys, missing or malformed sandbox API-key requests are throttled before catalog availability and access-request lookups, privileged audit-log API-call filtering preserves cross-consumer review visibility, catalog version mutations re-check API ownership inside the write transaction, account role assignment plus MDA assignment requirements are constrained by verified account category, and project-local ignore rules now cover root/backend/frontend env variants so production-style local secret files are less likely to be committed if this project is moved or split out.
 
 The additional session review also rejects duplicate `govhub_session` cookies so ambiguous cookie headers cannot silently select an attacker-controlled, stale, or path-confused session value.
 
@@ -858,11 +858,338 @@ Remediation:
 - Server URLs that are protocol-relative or contain backslashes/control characters are rejected before catalog registration, patching, validation, or version metadata parsing.
 - Covered by `backend/src/catalog-spec-url-security.test.ts`.
 
+### 45. Cyclic YAML Aliases Can Break JSON OpenAPI Spec Responses
+
+Severity: Low to Medium
+OWASP API mapping: API4 Unrestricted Resource Consumption, API10 Unsafe Consumption of APIs
+Status: Remediated
+
+Evidence:
+- `validateOpenApiSpec()` parsed YAML but did not reject YAML anchors/aliases that create circular JavaScript object graphs.
+- Docs/catalog spec endpoints parse stored YAML and return it via `res.json(...)`.
+- A cyclic object graph throws during JSON serialization, causing the spec endpoint to fail for every user allowed to view that API.
+
+Impact:
+An API owner or administrator could publish a YAML OpenAPI document that validates and stores successfully but later causes documentation/spec JSON endpoints to return 500 errors. That creates an availability issue on a user-supplied specification surface.
+
+Remediation:
+- OpenAPI validation now walks the parsed object graph and rejects circular YAML aliases before metadata extraction or storage.
+- Shared non-cyclic aliases are still allowed; only active recursion cycles are rejected.
+- Covered by `backend/src/catalog-spec-url-security.test.ts`.
+
+### 46. Stored OpenAPI JSON Routes Bypass The Validated Parser
+
+Severity: Low to Medium
+OWASP API mapping: API4 Unrestricted Resource Consumption, API10 Unsafe Consumption of APIs
+Status: Remediated
+
+Evidence:
+- `parseStoredOpenApiSpec()` used raw `yaml.load()`.
+- `/api/catalog/:id/spec` and `/api/docs/:id/spec` also parsed stored spec text directly with `yaml.load()`.
+- That bypassed the new OpenAPI validation path for existing database rows or specs accepted before the validator was hardened.
+
+Impact:
+Legacy stored specs containing cyclic YAML aliases, unsafe path keys, or unsafe server URLs could still reach JSON docs/catalog responses or sandbox OpenAPI fallback logic even after future ingestion was hardened. Cyclic aliases can break JSON serialization; unsafe URL fields can reappear in clients that render stored specs.
+
+Remediation:
+- `parseStoredOpenApiSpec()` now returns `validateOpenApiSpec(specText).parsed`.
+- Catalog and docs JSON spec routes now use `parseStoredOpenApiSpec()` instead of raw YAML parsing.
+- Covered by `backend/src/catalog-spec-url-security.test.ts`.
+
+### 47. Sandbox Response Console Echoes Credentials In Displayed Headers
+
+Severity: Low to Medium
+OWASP API mapping: API3 Broken Object Property Level Authorization, API2 Broken Authentication
+Status: Remediated
+
+Evidence:
+- `SandboxTryItConsole` copied outbound sandbox request headers into `sentHeaders`.
+- Successful responses stored `requestHeaders: sentHeaders`.
+- The response console also stored `headers: headersObj` from response headers.
+- The response console rendered request and response headers directly, which could display pasted `X-GovHub-API-Key`, custom `Authorization`, `Cookie`, password, credential, token, secret, or API-key-like headers.
+
+Impact:
+The key was not persisted to browser storage, but the UI could expose full credentials in the visible response console. Response headers from same-origin sandbox handlers or future integrations could create the same exposure. This increases risk from screen sharing, screenshots, shoulder-surfing, support captures, or accidental copy/paste of response output.
+
+Remediation:
+- Added display-only request and response header redaction for sensitive header names, including common password, credential, token, secret, and API-key variants.
+- The actual outbound `fetch` headers are unchanged; only the stored/rendered response-console copy is redacted.
+- Covered by `frontend/src/dashboard/api-key-storage.test.ts`.
+
+### 48. Missing Sandbox API Keys Trigger Catalog Lookups Before Invalid-Key Throttling
+
+Severity: Low
+OWASP API mapping: API4 Unrestricted Resource Consumption, API8 Security Misconfiguration
+Status: Remediated
+
+Evidence:
+- `sandboxMiddleware()` parsed `X-GovHub-API-Key` but resolved the sandbox API id with `getApiIdFromPath()` before handling missing or malformed API-key headers.
+- For known built-in paths and dynamic `/api/v1/sandbox/:apiId/...` paths, that performed a catalog availability lookup before the invalid-key rate-limit bucket was consumed.
+
+Impact:
+Unauthenticated clients could send missing-key requests to known sandbox paths and force avoidable pre-auth catalog reads. The previous full-catalog scan issue was already fixed, but this left a lower-cost amplification path on every missing or malformed API-key request.
+
+Remediation:
+- Missing or malformed sandbox API-key headers now consume the invalid-key rate-limit bucket and return before catalog API-id resolution.
+- Valid single-value API-key requests still resolve and enforce `sandbox_available` normally.
+- Covered by `backend/src/sandbox-logging-security.test.ts`.
+
+### 49. Admins Could Consume One-Time API Key Reveals For Legacy MDA Requests
+
+Severity: Medium
+OWASP API mapping: API5 Broken Function Level Authorization, API3 Broken Object Property Level Authorization
+Status: Remediated
+
+Evidence:
+- `POST /api/access/:id/reveal-key` allowed both `developer` and `admin` roles.
+- The atomic reveal query permits a claim when `consumer_user_id` matches the caller, or when `consumer_user_id IS NULL` and the caller's `mda_id` matches `consumer_mda_id`.
+- For legacy MDA-level approved requests with no `consumer_user_id`, an admin assigned to the same consumer MDA could reveal and atomically clear the encrypted one-time API key.
+
+Impact:
+A non-developer administrative user could consume a consumer's one-time sandbox API key reveal when their MDA matched a legacy request. That exposes a full credential to the wrong role and also prevents the intended developer from using the one-time reveal afterward.
+
+Remediation:
+- The reveal route is now restricted to `developer` users before the atomic claim/clear query can run.
+- The dashboard auto-reveal path now attempts one-time key claims only for developer sessions.
+- Covered by `backend/src/access-control-security.test.ts` and `frontend/src/dashboard/api-key-storage.test.ts`.
+
+### 50. Admin Access Requests Could Enter An Unclaimable One-Time Key Lifecycle
+
+Severity: Low to Medium
+OWASP API mapping: API5 Broken Function Level Authorization, API6 Unrestricted Access to Sensitive Business Flows
+Status: Remediated
+
+Evidence:
+- `POST /api/access` accepted both `developer` and `admin` roles even though the route models consumer access request submission.
+- Admin-submitted MDA requests stored the admin's user id as `consumer_user_id`.
+- After one-time key reveal was correctly narrowed to developers, an approved admin-submitted request could hold active key metadata that the admin could not reveal and a same-MDA developer could not claim because `consumer_user_id` was non-null.
+
+Impact:
+An admin could intentionally or accidentally create pending or approved access records that block the real consumer MDA from submitting a usable request for the same API. That creates a governance workflow denial-of-service and leaves unretrievable key material in the lifecycle.
+
+Remediation:
+- Access request submission is now restricted to developer users before the request validation and insert path runs.
+- The catalog request-access button is disabled for non-developer roles so the frontend does not send requests the backend will reject.
+- Covered by `backend/src/access-control-security.test.ts` and `frontend/src/dashboard/api-key-storage.test.ts`.
+
+### 51. Local Postgres Helpers Exposed The Dev Database On All Interfaces
+
+Severity: Low
+OWASP API mapping: API8 Security Misconfiguration, API3 Broken Object Property Level Authorization
+Status: Remediated
+
+Evidence:
+- `docker-compose.yml` published the local Postgres service as `5432:5432`.
+- `scripts/local-postgres.mjs` used the same Docker `-p 5432:5432` binding.
+- The local helper also has a committed development password default intended for convenience.
+
+Impact:
+On typical Docker setups, `5432:5432` binds the database port on all host interfaces. On a developer workstation or shared network, that can expose the local GovHub database to other machines using a committed development credential. This is a local-development exposure, not a production runtime flaw.
+
+Remediation:
+- Local Docker Compose now binds Postgres to `127.0.0.1:${GOVHUB_POSTGRES_PORT:-5432}:5432`.
+- The local Postgres helper now binds Docker `run` to `127.0.0.1:${GOVHUB_POSTGRES_PORT || '5432'}:5432`.
+- Covered by `backend/src/local-postgres-security.test.ts`.
+
+### 52. Local Production Environment File Contains Live-Looking Secrets
+
+Severity: Medium
+OWASP API mapping: API8 Security Misconfiguration, API3 Broken Object Property Level Authorization
+Status: Partially remediated in repository controls; operational rotation required
+
+Evidence:
+- A local ignored `.env.production.local` file exists in the project root and contains production-style database connection strings, database passwords, and Vercel token material.
+- The file is not tracked by git in this worktree, but the project-local `.gitignore` only covered `.env`, `backend/.env`, and `frontend/.env`; it relied on parent repository ignore rules to ignore `.env.production.local`.
+
+Impact:
+Even when not committed, live production credentials in a local project directory increase exposure through accidental archive sharing, copied project folders, editor sync, terminal history, support bundles, backups, or future repository restructuring. If any of the observed values were ever shared or committed elsewhere, ignore rules cannot revoke them.
+
+Remediation:
+- Project-local `.gitignore` now ignores `.env*`, `backend/.env*`, and `frontend/.env*`.
+- `.env.example`, `backend/.env.example`, and `frontend/.env.example` remain explicitly trackable.
+- Covered by `backend/src/local-env-security.test.ts`.
+
+Required operational action:
+- Rotate the database credentials and Vercel token material that were present in the local production env file, then replace the local file with freshly issued secrets from the deployment provider.
+
+### 53. Malformed Sandbox API Keys Triggered Pre-Throttle Database Lookups
+
+Severity: Low
+OWASP API mapping: API4 Unrestricted Resource Consumption, API8 Security Misconfiguration
+Status: Remediated
+
+Evidence:
+- `parseSandboxApiKeyHeader()` accepted any non-empty string as a candidate sandbox API key.
+- For obvious malformed values, `sandboxMiddleware()` still resolved catalog API availability and queried `access_requests` by hash before consuming the invalid-key rate-limit bucket and rejecting the request.
+
+Impact:
+Unauthenticated clients could send cheap malformed key values to force avoidable catalog and access-request database reads on sandbox routes. This did not grant access, but it created an unnecessary pre-throttle resource-consumption path.
+
+Remediation:
+- Sandbox API keys are now validated at the header boundary as the generated `ghk_` plus 64 lowercase hex characters format before any catalog or access-request lookup.
+- Malformed non-empty sandbox API-key headers now consume the invalid-key quota and return `INVALID_API_KEY` with HTTP 401 before database lookups.
+- Covered by `backend/src/sandbox-logging-security.test.ts`.
+
+### 54. Frontend API Credential Wrapper Used Prefix-Based Origin Matching
+
+Severity: Low
+OWASP API mapping: API8 Security Misconfiguration, API2 Broken Authentication
+Status: Remediated
+
+Evidence:
+- `UserProvider` globally wrapped `window.fetch` and set `credentials: 'include'` when the target URL string started with `/api` or `API_BASE`.
+- String prefix checks could classify lookalike origins or paths such as `https://api.govhub.example.evil.test/...` or `/backend.evil/...` as API requests when they shared the configured prefix text.
+
+Impact:
+The browser would not send GovHub host-only cookies to an unrelated hostname, but the wrapper still made the credential boundary depend on string prefixes instead of parsed URL origin/path identity. That creates avoidable risk if future cookies, subdomain deployments, or user-controlled fetch targets are introduced.
+
+Remediation:
+- Added `frontend/src/lib/api-credentials.ts` to parse request and API base URLs before deciding whether credentials should be included.
+- Credentialed fetches are now limited to relative `/api` paths or the exact configured API origin plus matching base path.
+- Covered by `frontend/src/context/fetch-credentials-security.test.ts`.
+
+### 55. Persistent Local Notifications Stored Free-Form Account Review Text
+
+Severity: Low
+OWASP API mapping: API3 Broken Object Property Level Authorization, API8 Security Misconfiguration
+Status: Remediated
+
+Evidence:
+- Account rejection and more-information workflows appended administrator-entered `reason` or `notes` into local notification messages.
+- Notifications are persisted in browser `localStorage` under `govhub_notifications:<userId>`, including when an administrator creates a notification for a reviewed user from the admin browser.
+
+Impact:
+Free-form review notes can contain sensitive account, document, or identity-review context. Persisting that text in browser storage expands exposure on shared devices and creates an unnecessary XSS/local forensic disclosure target. The authoritative review text already belongs in backend account-review fields.
+
+Remediation:
+- Rejection and more-information notifications now use generic local messages directing the user to account settings.
+- The backend still receives and stores the review reason/notes for the account workflow.
+- Covered by `frontend/src/dashboard/account-approval-security.test.ts`.
+
+### 56. Cookie-Authenticated Mutations Accepted Missing Origin Headers
+
+Severity: Medium
+OWASP API mapping: API2 Broken Authentication, API8 Security Misconfiguration
+Status: Remediated
+
+Evidence:
+- The API uses an `httpOnly` session cookie for browser authentication and CORS rejects untrusted explicit origins.
+- Requests without an `Origin` header were allowed globally so non-browser clients could call the API.
+- Unsafe methods carrying `govhub_session` did not have an additional Origin requirement before reaching state-changing routes such as logout, access-key operations, or admin account mutations.
+
+Impact:
+SameSite cookies and CORS substantially reduce browser CSRF exposure, but accepting no-Origin, cookie-authenticated unsafe requests leaves a weaker boundary for legacy/browser edge cases and cross-context request gadgets. State-changing cookie requests should prove they came from a configured frontend origin.
+
+Remediation:
+- Added `backend/src/csrf.ts` with a cookie-aware Origin guard for unsafe methods.
+- Requests using no session cookie, safe methods, and bearer-token/non-browser flows remain available.
+- Unsafe requests carrying `govhub_session` must include an Origin exactly present in `GOVHUB_ALLOWED_ORIGINS`.
+- Covered by `backend/src/auth-session-security.test.ts`.
+
+### 57. OpenAPI URL Import DNS Preflight Could Be Bypassed By Re-Resolution
+
+Severity: Medium
+OWASP API mapping: API7 Server-Side Request Forgery, API10 Unsafe Consumption of APIs
+Status: Remediated
+
+Evidence:
+- `fetchSpecFromUrl()` resolved the submitted hostname and rejected private, local, documentation, multicast, and reserved IP ranges.
+- After that preflight, it called `fetch(parsed.toString())`, allowing the HTTP client to resolve the hostname again during the actual outbound request.
+- A DNS-rebinding hostname could return a public address for the preflight and a private or link-local address for the subsequent request.
+
+Impact:
+An allowed spec import host, or a non-production environment that permits unlisted hosts, could potentially bypass the intended SSRF IP-range checks and make the server request internal services or cloud metadata endpoints.
+
+Remediation:
+- Remote spec fetching now uses `http`/`https` with a custom lookup function pinned to the DNS address already vetted by the SSRF preflight.
+- The request still uses the original parsed URL hostname for normal HTTP host handling and HTTPS certificate validation, but cannot perform a second DNS resolution to a different IP.
+- Redirects remain blocked by rejecting non-2xx responses, and response bodies remain size-capped while streaming.
+- Covered by `backend/src/catalog-spec-url-security.test.ts`.
+
+### 58. Well-Formed Unknown Sandbox API Keys Triggered Catalog Lookups Before Invalid-Key Throttling
+
+Severity: Low
+OWASP API mapping: API4 Unrestricted Resource Consumption, API8 Security Misconfiguration
+Status: Remediated
+
+Evidence:
+- Missing and malformed sandbox API-key headers were rejected before catalog API availability checks.
+- A syntactically valid but unknown `ghk_...` key still caused the middleware to resolve the requested catalog API id before it determined that no `access_requests` row matched the key hash.
+- The same path returned the generic access-denied branch with HTTP 403 instead of the invalid-credential HTTP 401 used for other invalid sandbox keys.
+
+Impact:
+Unauthenticated clients could send random well-formed sandbox key values to force avoidable catalog availability lookups before invalid-key throttling. The response status was also inconsistent with the credential failure, making invalid-key handling harder to reason about and monitor.
+
+Remediation:
+- Sandbox middleware now checks the key hash first.
+- Unknown well-formed keys consume the invalid-key throttle and return HTTP 401 before resolving catalog API availability.
+- Valid known keys still resolve the requested catalog API and enforce `sandbox_available` plus endpoint/API authorization before reaching sandbox handlers.
+- Covered by `backend/src/sandbox-logging-security.test.ts`.
+
+### 59. Production-Scoped Access Requests Could Mint Sandbox-Usable Keys
+
+Severity: Low to Medium
+OWASP API mapping: API5 Broken Function Level Authorization, API6 Unrestricted Access to Sensitive Business Flows
+Status: Remediated
+
+Evidence:
+- Access request submission accepts an `environment` value of either `sandbox` or `production`.
+- Access request approval generated the same `ghk_...` API key format for approved requests regardless of the requested environment.
+- Sandbox runtime authorization checked key status, expiry, owner approval, and API id, but did not check the stored `access_requests.environment` value.
+
+Impact:
+An explicitly production-scoped approval could still produce a key accepted by the sandbox middleware. This blurred the governance boundary between sandbox testing and production-access review, making environment-specific approvals and audits less reliable.
+
+Remediation:
+- Sandbox key lookup now carries the access-request environment into the runtime access decision.
+- Legacy rows with a missing environment remain sandbox-compatible, while explicit non-sandbox environments are rejected with `ENVIRONMENT_NOT_ALLOWED` before sandbox handlers execute.
+- Covered by `backend/src/sandbox-logging-security.test.ts`.
+
+### 60. Unlabeled Sandbox Identifier Values Could Bypass Audit Redaction
+
+Severity: Low to Medium
+OWASP API mapping: API3 Broken Object Property Level Authorization
+Status: Remediated
+
+Evidence:
+- `redactSandboxLogValue()` redacted sensitive fields primarily by key name.
+- Array entries and nested primitive values under generic keys such as `identifiers` or `values` were returned unchanged.
+- Sandbox request/response bodies containing values like NINs, TINs, BRNs, driving permits, email addresses, or phone numbers under generic field names could therefore be written to console output and audit details in clear text.
+
+Impact:
+Sandbox audit logs could persist personal identifiers or contact details from OpenAPI examples, user-entered request bodies, or sandbox response bodies when those values were not paired with a known sensitive key. This weakens the reliability of audit-log redaction and increases exposure risk in support exports, database access, or log aggregation.
+
+Remediation:
+- Sandbox body redaction now also checks high-confidence sensitive string value patterns for national IDs, tax IDs, business registration numbers, driving permits, email addresses, and international phone numbers.
+- Explicit `nin` and `tin` fields keep their existing partial-mask behavior before generic value-pattern redaction is applied.
+- Covered by `backend/src/sandbox-logging-security.test.ts`.
+
+### 61. Production Access Requests Blocked Separate Sandbox Access Requests
+
+Severity: Low to Medium
+OWASP API mapping: API6 Unrestricted Access to Sensitive Business Flows
+Status: Remediated
+
+Evidence:
+- Access request submission captures `environment` as either `sandbox` or `production`.
+- After runtime sandbox keys were correctly restricted to sandbox-scoped access requests, duplicate-request prechecks and atomic insert/approval guards still treated requests for the same consumer/API as duplicates regardless of environment.
+- A production-scoped pending or active request could therefore block a separate sandbox-scoped request for the same consumer/API, even though the production-scoped key would not authorize sandbox execution.
+
+Impact:
+The environment boundary became inconsistent across the approval workflow. A consumer could be denied sandbox testing because a production request already existed, or a production approval flow could be used to prevent the same consumer from obtaining the sandbox credential needed for lower-risk validation.
+
+Remediation:
+- Duplicate pending/active access-request checks now include `COALESCE(environment, 'sandbox')` so legacy rows remain sandbox-compatible while explicit sandbox and production requests are evaluated separately.
+- The same environment predicate is enforced in the atomic insert guard and approval duplicate guard to preserve race safety.
+- Access matrix rows now include `environment` so parallel sandbox/production approvals can be distinguished.
+- Covered by `backend/src/access-control-security.test.ts`.
+
 ## Positive Controls Observed
 
 - Sessions are random, stored as SHA-256 hashes, expire after 24 hours, and are revoked on logout and account suspension.
 - Passwords use per-user random salts with `crypto.scryptSync`, signup/login/MFA confirmation password inputs are bounded before hashing or verification, and public user responses expose only boolean MFA state rather than MFA secret or timestamp fields.
 - Session cookies are `httpOnly`, `sameSite=strict`, `secure` in production, path-scoped, and duplicate session cookie names are rejected.
+- Cookie-authenticated unsafe requests require an allowed frontend `Origin` header, while safe requests and non-cookie bearer-token/API-client flows remain available.
 - Login is rate-limited by IP and normalized email.
 - Authenticated MFA setup, enable, and disable attempts plus login-time MFA code guesses are rate-limited per user.
 - Signup/login/app-load human verification supports Cloudflare Turnstile, fails closed in production when not configured, and applies local per-IP rate limiting before upstream Siteverify calls.
@@ -870,19 +1197,23 @@ Remediation:
 - Cloudflare Turnstile Siteverify calls use a bounded timeout and fail closed if the upstream stalls.
 - Production data encryption requires an explicit 32-byte key instead of arbitrary passphrase input, malformed base64-like strings are rejected, and encrypted-looking client values are re-encrypted unless they are valid decryptable ciphertext.
 - Hosted Postgres connections default to SSL certificate verification, and production rejects unsafe database SSL overrides.
+- Local Postgres helper entry points bind the development database to loopback instead of all host interfaces.
+- Project-local ignore rules cover root, backend, and frontend `.env*` variants while explicitly allowing only env example files to be tracked.
 - Production CORS requires explicit HTTPS deployed origins and rejects localhost origins.
-- OpenAPI URL imports require HTTPS in production, production disallows unlisted spec URL hosts, fetched bodies are capped while streaming, inline OpenAPI specs honor the same configured byte ceiling, and OpenAPI path keys/server URLs cannot normalize into external authority URLs.
+- OpenAPI URL imports require HTTPS in production, production disallows unlisted spec URL hosts, outbound requests are pinned to the DNS address vetted by SSRF preflight, fetched bodies are capped while streaming, inline OpenAPI specs honor the same configured byte ceiling, OpenAPI path keys/server URLs cannot normalize into external authority URLs, and cyclic YAML aliases are rejected before specs are stored or parsed from existing rows for JSON responses.
 - Frontend OpenAPI example generation tracks visited `$ref` pointers and caps traversal depth before rendering docs/catalog samples.
 - Common defensive headers are centralized, and sensitive API, docs, catalog, and OpenAPI asset paths get no-store cache headers.
 - Account-verification document responses omit internal storage references, document uploads ignore client-supplied storage references, the frontend does not over-post storage locators, and encrypted server-side storage metadata is retained internally.
 - Sandbox audit/log path normalization redacts canonical and compatibility driving-permit identifiers.
-- Sandbox audit/log body redaction covers short identifier keys, common OpenAPI-style aliases for national IDs, tax IDs, business registration numbers, permits, common PII aliases, tokens, secrets, and key-like fields.
-- Sandbox path resolution avoids unauthenticated full-catalog scans by verifying only the requested registered or built-in sandbox API id, and it honors each API's `sandbox_available` flag.
+- Sandbox audit/log body redaction covers short identifier keys, common OpenAPI-style aliases for national IDs, tax IDs, business registration numbers, permits, common PII aliases, unlabeled sensitive identifier/contact values, tokens, secrets, and key-like fields.
+- Sandbox path resolution avoids unauthenticated full-catalog scans by verifying only the requested registered or built-in sandbox API id, honors each API's `sandbox_available` flag, rejects production-scoped access-request keys at runtime, skips catalog or access-request lookups entirely for missing or malformed API-key headers, and rejects well-formed unknown API keys before catalog availability lookups.
 - Admin and reviewer API-call audit filters preserve full sandbox event visibility while developer reads remain scoped to their own activity.
-- Sandbox API keys are random, stored hashed for runtime validation, previewed only partially, revocable, expirable, and rate-limited.
-- API key reveal is one-time and atomically clears the encrypted key material.
-- Sandbox audit paths and bodies redact identifiers, authorization headers, cookies, tokens, secrets, and key-like fields.
-- OpenAPI URL imports restrict hosts unless explicitly allowed, block private/local/reserved IP ranges after DNS resolution, reject redirects, apply timeouts, and enforce max response size without buffering oversized bodies.
+- Sandbox API keys are random, stored hashed for runtime validation, previewed only partially, revocable, expirable, rate-limited, and redacted with other credential-like headers before request or response headers are displayed in the frontend response console.
+- Frontend API credential inclusion parses URL origins and base paths instead of using string prefix matching.
+- Account review notifications stored in browser `localStorage` avoid free-form rejection reasons and review notes.
+- Access request submission and API key reveal are developer-only; key reveal is one-time and atomically clears the encrypted key material, and duplicate access-request checks are scoped by environment.
+- Sandbox audit paths and bodies redact identifiers, common contact values, authorization headers, cookies, tokens, secrets, and key-like fields.
+- OpenAPI URL imports restrict hosts unless explicitly allowed, block private/local/reserved IP ranges after DNS resolution, pin outbound requests to the vetted address, reject redirects, apply timeouts, and enforce max response size without buffering oversized bodies.
 - Documentation visibility supports public, authenticated, and restricted modes; restricted docs require admin/reviewer, owning MDA API owner, or approved consumer access.
 - Catalog detail responses use an explicit metadata field allowlist and omit stored OpenAPI spec text.
 - Route mutations use parameterized SQL and role/ownership checks for admin, API owner, reviewer, and developer workflows.
@@ -897,28 +1228,32 @@ Remediation:
 ## Verification Performed
 
 - `npm test` in `backend`: passed after additional remediation.
-- `npm run test:security-config` in `backend`: passed after additional production config and encryption-key hardening.
+- `npm run test:security-config` in `backend`: passed after production demo-mode rejection, additional production config, and encryption-key hardening.
 - `npm run test:db-security` in `backend`: passed after database TLS hardening.
-- `npm run test:catalog-spec-url-security` in `backend`: passed after OpenAPI URL import HTTPS, streamed-size hardening, inline spec size-limit hardening, and OpenAPI path/server authority normalization hardening.
+- `npm run test:local-env-security` in `backend`: passed after hardening project-local env ignore patterns.
+- `npm run test:local-postgres-security` in `backend`: passed after binding local Postgres helpers to loopback.
+- `npm run test:catalog-spec-url-security` in `backend`: passed after OpenAPI URL import HTTPS, DNS-pinned request hardening, streamed-size hardening, inline spec size-limit hardening, OpenAPI path/server authority normalization hardening, cyclic YAML alias rejection, and stored-spec parser hardening.
 - `npm run test:catalog-versions-security` in `backend`: passed after catalog version ownership race hardening and version list pagination hardening.
 - `npm run test:catalog-detail-security` in `backend`: passed after catalog detail response field allowlisting.
 - `npm run test:crypto-at-rest-security` in `backend`: passed after encrypted-field prefix hardening.
 - `npm run test:docs-access-security` in `backend`: passed after catalog/docs list pagination and developer N+1 access-check hardening.
-- `npm run test:access-control-security` in `backend`: passed after privileged API-call audit filter hardening, access request list pagination hardening, and access matrix pagination hardening.
+- `npm run test:access-control-security` in `backend`: passed after privileged API-call audit filter hardening, access request list pagination hardening, access matrix pagination hardening, non-developer one-time API key reveal rejection, non-developer access request submission rejection, and environment-scoped duplicate access-request lifecycle checks.
 - `npm run test:security-headers` in `backend`: passed after defensive header and protected docs/spec no-store hardening.
 - `npm run test:admin-users-list-security` in `backend`: passed after admin user list status validation and bounded pagination hardening.
 - `npm run test:account-role-security` in `backend`: passed after account role/category compatibility hardening.
-- `npm run test:account-approval-security` in `frontend`: passed after aligning approval MDA defaults with verified account category.
+- `npm run test:account-approval-security` in `frontend`: passed after aligning approval MDA defaults with verified account category and preventing free-form account-review text from being stored in persistent local notifications.
+- `npm run test:fetch-credentials-security` in `frontend`: passed after replacing frontend API credential prefix checks with parsed origin/base-path matching.
 - `npm run test:account-verification-security` in `backend`: passed after removing document `storage_ref` from account snapshots and stripping client-supplied `storage_ref` from validated document upload input.
 - `npm run test:document-storage-security` in `frontend`: passed after removing client-generated document storage references from upload payloads.
 - `npm run test:openapi-example-security` in `frontend`: passed after bounding recursive OpenAPI example generation.
-- `npm run test:sandbox-logging-security` in `backend`: passed after redacting canonical driving-permit sandbox paths, common identifier aliases, common PII aliases in sandbox audit bodies, hardening dynamic sandbox path resolution, and enforcing `sandbox_available` for built-in sandbox mappings.
+- `npm run test:sandbox-logging-security` in `backend`: passed after redacting canonical driving-permit sandbox paths, common identifier aliases, common PII aliases and unlabeled sensitive identifier/contact values in sandbox audit bodies, hardening dynamic sandbox path resolution, enforcing `sandbox_available` for built-in sandbox mappings, rejecting production-scoped access-request keys at the sandbox boundary, skipping catalog lookups for missing sandbox API keys, rejecting malformed sandbox API keys before catalog or access-request lookups, and rejecting well-formed unknown sandbox API keys before catalog availability lookups.
 - `npm run test:turnstile-security` in `backend`: passed after adding a bounded Turnstile Siteverify timeout.
 - `npm run test:auth-turnstile-rate-limit-security` in `backend`: passed after adding pre-upstream human-verification rate limiting.
 - `npm run test:auth-signup-security` in `backend`: passed after bounding signup passwords before hashing.
 - `npm run test:auth-password-confirmation-security` in `backend`: passed after bounding MFA password confirmations before rate-limit writes and password verification.
 - `npm run test:auth-mfa-rate-limit-security` in `backend`: passed after adding per-user MFA setup/enable/disable attempt limits and login-time MFA guess throttling.
-- `npm run test:auth-session-security` in `backend`: passed after adding session revocation to account suspension, duplicate session-cookie rejection, and public-user MFA timestamp stripping.
+- `npm run test:auth-session-security` in `backend`: passed after adding session revocation to account suspension, duplicate session-cookie rejection, public-user MFA timestamp stripping, and cookie-authenticated unsafe-method Origin checks.
+- `npm run test:api-key-storage` in `frontend`: passed after removing full-key browser persistence, redacting displayed sandbox request/response headers, preventing admin sessions from attempting one-time key auto-reveal, and disabling catalog access requests for non-developer sessions.
 - `npm test` in `frontend`: passed after remediation.
 - `npm test` at repository root: passed after additional remediation.
 - `npm run build` at repository root: passed after remediation; Vite reported the existing large chunk warning.
@@ -926,7 +1261,7 @@ Remediation:
 - Search verification found no `govhub_api_key` full-key persistence references in `frontend/src` or `backend/src`.
 - `npm audit --omit=dev` in `backend`: 0 vulnerabilities.
 - `npm audit --omit=dev` in `frontend`: 0 vulnerabilities.
-- Secret/config check: committed files include only `.env.example`, `backend/.env.example`, and `frontend/.env.example`; local secret-bearing `.env` files are not tracked by git.
+- Secret/config check: committed files include only `.env.example`, `backend/.env.example`, and `frontend/.env.example`; local secret-bearing `.env`, `.env.production.local`, backend `.env`, and frontend `.env` files are not tracked by git.
 
 ## Retest Checklist
 
@@ -934,7 +1269,7 @@ Remediation:
 2. In a production-like environment, verify startup succeeds only when `GOVHUB_DEMO_MODE=false`, `GOVHUB_DATA_ENCRYPTION_KEY` is a 32-byte hex or canonical standard base64 key, `GOVHUB_ADMIN_PASSWORD` is set, `GOVHUB_REQUIRE_ADMIN_MFA=true`, a non-test Turnstile secret is set, `GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES` is set, `GOVHUB_ALLOWED_ORIGINS` is set to deployed HTTPS frontend origins, and database SSL certificate verification is not disabled.
 3. Validate admin routes reject approved admin users without MFA in production.
 4. Reveal a sandbox API key and confirm frontend source and browser behavior do not persist full keys to `sessionStorage`.
-5. Test OpenAPI URL import with localhost, link-local metadata IPs, private IPs, redirects, oversized responses without `Content-Length`, invalid `Content-Length`, `http:` URLs in production, and an allowed HTTPS public host.
+5. Test OpenAPI URL import with localhost, link-local metadata IPs, private IPs, redirects, oversized responses without `Content-Length`, invalid `Content-Length`, a DNS-rebinding host that changes from public to private between preflight and request, `http:` URLs in production, and an allowed HTTPS public host.
 6. Race API ownership transfer against catalog version publish, promote, and delete operations; stale API owners should receive a conflict and no version state should change.
 7. Attempt signup and approval role tampering across account categories; incompatible reviewer, API owner, or admin assignments should be rejected server-side.
 8. Run sandbox requests and OpenAPI fallback examples with names, dates of birth, phone numbers, emails, addresses, NINs, TINs, BRNs, and permits; console/audit logs should redact those fields while preserving non-sensitive status fields.
@@ -965,3 +1300,19 @@ Remediation:
 33. Fetch `/api/auth/me` or `/api/admin/users` for an MFA-enabled account and confirm the user object includes `mfa_enabled: true` but omits `password_hash`, `mfa_secret_encrypted`, and `mfa_enabled_at`.
 34. Submit or validate an OpenAPI spec with a path key like `//attacker.example/collect` or `/\attacker.example/collect`; catalog registration, catalog patch, spec validation, and version parsing should reject it before the spec can reach docs or sandbox URL builders.
 35. Submit or validate an OpenAPI spec with `servers: [{ url: "//attacker.example" }]` or `servers: [{ url: "/\\attacker.example" }]`; catalog registration, catalog patch, spec validation, and version parsing should reject it before docs or sandbox URL builders use the server URL.
+36. Submit or validate a YAML OpenAPI spec where an anchored path item references itself through an alias; catalog registration, catalog patch, spec validation, and version parsing should reject it with a circular YAML alias error before it can be served through JSON spec endpoints.
+37. Seed an existing database row with a stored cyclic-alias OpenAPI spec and fetch `/api/catalog/:id/spec`, `/api/docs/:id/spec`, or sandbox OpenAPI fallback behavior; each parser path should reject via the shared stored-spec validator instead of raw `yaml.load()` serialization.
+38. Paste a full sandbox API key into the sandbox console, send a request, and confirm the response console displays `[REDACTED]` for `X-GovHub-API-Key`, `Authorization`, `Cookie`, password, credential, token, secret, and API-key-like request/response headers while the actual request still reaches the sandbox with the original header values.
+39. Call `/api/v1/identity/status/:nin` or `/api/v1/sandbox/:apiId/status` without `X-GovHub-API-Key`; the request should be invalid-key throttled and rejected without querying catalog API availability.
+40. Create an approved legacy MDA-level access request with `consumer_user_id` unset, then call `POST /api/access/:id/reveal-key` as an admin in the same consumer MDA; the response should be HTTP 403, the encrypted one-time key should remain available, no key-revealed audit record should be written, and the dashboard should not auto-call the reveal endpoint from an admin session.
+41. Attempt `POST /api/access` as an admin, reviewer, or API owner; each should return HTTP 403 before inserting an `access_requests` row, and catalog detail should keep the request-access action disabled for those roles.
+42. Start the local Postgres container through Docker Compose or `scripts/local-postgres.mjs` and confirm the published port is bound to `127.0.0.1` only; override `GOVHUB_POSTGRES_PORT` when a different loopback host port is needed.
+43. Run `git check-ignore -v .env.production.local backend/.env frontend/.env` from the project root and confirm production-style local env files are ignored; rotate any database or Vercel credentials that have existed in local production env files.
+44. Call a sandbox route with `X-GovHub-API-Key: not-a-govhub-key`; it should return HTTP 401 with `INVALID_API_KEY` and should not query catalog availability or `access_requests` before consuming the invalid-key quota.
+45. From the frontend, issue credentialed fetches to `/api/auth/me`, the exact configured `API_BASE`, a hostname that merely prefixes `API_BASE`, and a path that merely prefixes an API base path; only the relative `/api` and exact configured API origin/path should receive `credentials: 'include'`.
+46. Reject an account or request more verification information with sensitive free-form text, then inspect `localStorage` keys beginning with `govhub_notifications:`; the local notification should contain only the generic account-status message, while account settings should retrieve the authoritative backend review text.
+47. Send `POST /api/auth/logout` or another cookie-authenticated state-changing API request with a `govhub_session` cookie and no `Origin` header; it should return HTTP 403. Repeat with an Origin in `GOVHUB_ALLOWED_ORIGINS`; it should pass the CSRF boundary and reach normal route authorization.
+48. Call a sandbox route with a syntactically valid but unknown `X-GovHub-API-Key: ghk_<64 lowercase hex characters>`; it should return HTTP 401 with `INVALID_API_KEY`, consume invalid-key quota, and not query catalog API availability before rejecting the request.
+49. Approve an access request whose stored environment is `production`, reveal the key, and call a sandbox endpoint with that key; the request should return HTTP 403 with `ENVIRONMENT_NOT_ALLOWED` before the sandbox handler executes.
+50. Send a sandbox request or response body with generic array fields such as `{ "identifiers": ["CM99021234567X", "1000123456", "BRN12345", "WP30219", "john.doe@example.com", "+256700000000"] }`; console output and audit details should redact those sensitive values even though the field names are generic.
+51. Create a production-scoped pending or active access request for a consumer/API, then submit a sandbox-scoped request for the same consumer/API; the sandbox request should not be blocked by the production request, while a second sandbox request should still return `ACCESS_REQUEST_ALREADY_EXISTS`.

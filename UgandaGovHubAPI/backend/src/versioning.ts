@@ -16,6 +16,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function describeSpecPath(basePath: string, key: string | number) {
+  return `${basePath}.${String(key)}`;
+}
+
+function assertAcyclicOpenApiValue(value: unknown) {
+  const activeObjects = new WeakSet<object>();
+  const completedObjects = new WeakSet<object>();
+
+  function visit(node: unknown, path: string) {
+    if (!node || typeof node !== 'object') return;
+    if (activeObjects.has(node)) {
+      throw new Error(`Invalid specification: circular YAML aliases are not allowed at "${path}".`);
+    }
+    if (completedObjects.has(node)) return;
+
+    activeObjects.add(node);
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => visit(item, describeSpecPath(path, index)));
+    } else {
+      Object.entries(node).forEach(([key, item]) => visit(item, describeSpecPath(path, key)));
+    }
+    activeObjects.delete(node);
+    completedObjects.add(node);
+  }
+
+  visit(value, 'spec');
+}
+
 function readRequiredText(value: unknown, fieldName: string) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`Invalid specification: "${fieldName}" must be a non-empty string.`);
@@ -84,6 +112,7 @@ export function validateOpenApiSpec(specText: string) {
   if (!isRecord(parsed)) {
     throw new Error('Specification parsed to an invalid object.');
   }
+  assertAcyclicOpenApiValue(parsed);
   const hasOpenApiVersion = Object.prototype.hasOwnProperty.call(parsed, 'openapi');
   const rawOpenApiVersion = hasOpenApiVersion ? parsed.openapi : parsed.swagger;
   if (rawOpenApiVersion === undefined || rawOpenApiVersion === null || rawOpenApiVersion === '') {

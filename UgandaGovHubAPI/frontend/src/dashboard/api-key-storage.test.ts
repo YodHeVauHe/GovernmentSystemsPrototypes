@@ -11,6 +11,7 @@ import {
   getVisibleDashboardTabs,
 } from './view-helpers';
 import { formatHttpStatusLabel } from '../lib/http-status';
+import { redactHeaderMap } from '../lib/header-redaction';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const appShell = fs.readFileSync(path.join(currentDir, '..', 'App.tsx'), 'utf8');
@@ -24,11 +25,33 @@ const sandboxConsole = fs.readFileSync(
   path.join(currentDir, '..', 'pages', 'catalog', 'SandboxTryItConsole.tsx'),
   'utf8'
 );
+const apiDetail = fs.readFileSync(
+  path.join(currentDir, '..', 'pages', 'catalog', 'ApiDetail.tsx'),
+  'utf8'
+);
 
 assert.equal(
   dashboardPage.includes('sessionStorage.setItem'),
   false,
   'Dashboard must not persist full sandbox API keys in sessionStorage.'
+);
+
+assert.equal(
+  dashboardPage.includes("['admin', 'developer'].includes(role)"),
+  false,
+  'Dashboard must not attempt one-time API key reveal from admin sessions.'
+);
+
+assert.equal(
+  dashboardPage.includes("role !== 'developer'"),
+  true,
+  'Dashboard one-time API key reveal should be limited to developer sessions.'
+);
+
+assert.equal(
+  apiDetail.includes("const canRequestApiAccess = role === 'developer';"),
+  true,
+  'Catalog access requests should be initiated only by developer sessions.'
 );
 
 assert.equal(
@@ -41,6 +64,52 @@ assert.equal(
   sandboxConsole.includes("customApiKey.trim()"),
   true,
   'Sandbox console should send a pasted custom API key without surrounding whitespace.'
+);
+
+assert.equal(
+  sandboxConsole.includes('requestHeaders: sentHeaders'),
+  false,
+  'Sandbox response console must not display raw request headers that can contain pasted API keys or custom credentials.'
+);
+
+assert.equal(
+  sandboxConsole.includes('redactSandboxRequestHeaders(sentHeaders)'),
+  true,
+  'Sandbox response console should redact sensitive request headers before storing them for display.'
+);
+
+assert.equal(
+  sandboxConsole.includes('headers: headersObj'),
+  false,
+  'Sandbox response console must not display raw response headers that can contain credentials.'
+);
+
+assert.equal(
+  sandboxConsole.includes('headers: redactHeaderMap(headersObj)'),
+  true,
+  'Sandbox response console should redact sensitive response headers before storing them for display.'
+);
+
+assert.deepEqual(
+  redactHeaderMap({
+    'X-GovHub-API-Key': 'gh_live_secret',
+    Authorization: 'Bearer secret-token',
+    Cookie: 'govhub_session=session-secret',
+    Password: 'plain-password',
+    'X-Client-Secret': 'client-secret',
+    'X-Credential-ID': 'credential-id',
+    'X-Request-ID': 'request-id',
+  }),
+  {
+    'X-GovHub-API-Key': '[REDACTED]',
+    Authorization: '[REDACTED]',
+    Cookie: '[REDACTED]',
+    Password: '[REDACTED]',
+    'X-Client-Secret': '[REDACTED]',
+    'X-Credential-ID': '[REDACTED]',
+    'X-Request-ID': 'request-id',
+  },
+  'Header redaction should cover common custom credential header names without hiding safe request IDs.'
 );
 
 const sandboxLog = {

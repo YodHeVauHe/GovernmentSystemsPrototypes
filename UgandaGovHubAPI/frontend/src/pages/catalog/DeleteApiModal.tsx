@@ -66,7 +66,7 @@ export function DeleteApiModal({ api, onClose }: { api: any; onClose: () => void
             <p className="text-[14px] text-[#8b8b8b] mb-6">
               <span className="text-white font-medium">{api.name}</span> has been removed from the GovHub API catalog.
             </p>
-            <Link to="/" className="flex w-full h-[36px] items-center justify-center bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-md text-[13px] transition-all">
+            <Link to="/catalog" className="flex w-full h-[36px] items-center justify-center bg-[#3ecf8e] hover:bg-[#3ecf8e]/90 text-black font-medium rounded-md text-[13px] transition-all">
               Done
             </Link>
           </div>

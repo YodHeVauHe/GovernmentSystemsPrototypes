@@ -1,7 +1,15 @@
 import dns from 'dns/promises';
+import http from 'http';
+import https from 'https';
 import net from 'net';
+import { StringDecoder } from 'string_decoder';
 import { positiveIntegerEnv } from './env';
 import { isProductionEnv } from './security-config';
+
+type ResolvedAddress = {
+  address: string;
+  family: number;
+};
 
 function normalizeIpAddress(address: string) {
   const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
@@ -90,45 +98,120 @@ function parsedContentLength(value: string | null) {
   return Number(value);
 }
 
-async function readResponseTextWithinLimit(response: Response, maxBytes: number) {
-  if (!response.body) {
-    const content = await response.text();
-    if (Buffer.byteLength(content, 'utf8') > maxBytes) {
-      throw specContentTooLargeError();
+function firstHeaderValue(value: string | string[] | number | undefined) {
+  if (Array.isArray(value)) return value[0] ?? null;
+  if (typeof value === 'number') return String(value);
+  return value ?? null;
+}
+
+function pinnedLookupFor(resolvedAddress: ResolvedAddress): net.LookupFunction {
+  return (_hostname, options, callback) => {
+    if (options.all) {
+      const callbackWithAddresses = callback as (
+        error: NodeJS.ErrnoException | null,
+        addresses: ResolvedAddress[],
+      ) => void;
+      callbackWithAddresses(null, [resolvedAddress]);
+      return;
     }
-    return content;
-  }
+    const callbackWithAddress = callback as unknown as (
+      error: NodeJS.ErrnoException | null,
+      address: string,
+      family: number,
+    ) => void;
+    callbackWithAddress(null, resolvedAddress.address, resolvedAddress.family);
+  };
+}
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const chunks: string[] = [];
-  let totalBytes = 0;
+function requestSpecTextWithinLimit(
+  parsed: URL,
+  resolvedAddress: ResolvedAddress,
+  timeoutMs: number,
+  maxBytes: number,
+) {
+  const client = parsed.protocol === 'https:' ? https : http;
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    const succeed = (content: string) => {
+      if (settled) return;
+      settled = true;
+      resolve(content);
+    };
 
-      totalBytes += value.byteLength;
-      if (totalBytes > maxBytes) {
-        await reader.cancel();
-        throw specContentTooLargeError();
-      }
-      chunks.push(decoder.decode(value, { stream: true }));
-    }
-    chunks.push(decoder.decode());
-    return chunks.join('');
-  } finally {
-    reader.releaseLock();
-  }
+    const request = client.request(
+      parsed,
+      {
+        method: 'GET',
+        headers: {
+          accept: 'application/yaml,text/yaml,application/json,text/plain,*/*',
+        },
+        lookup: pinnedLookupFor(resolvedAddress),
+      },
+      response => {
+        const statusCode = response.statusCode ?? 0;
+        if (statusCode < 200 || statusCode >= 300) {
+          response.resume();
+          fail(new Error(`Failed to fetch spec from URL: ${response.statusMessage || `HTTP ${statusCode}`}`));
+          return;
+        }
+
+        let contentLength: number | null;
+        try {
+          contentLength = parsedContentLength(firstHeaderValue(response.headers['content-length']));
+        } catch (error) {
+          response.resume();
+          fail(error instanceof Error ? error : new Error('Specification content length is invalid.'));
+          return;
+        }
+        if (contentLength !== null && contentLength > maxBytes) {
+          response.resume();
+          fail(specContentTooLargeError());
+          return;
+        }
+
+        const decoder = new StringDecoder('utf8');
+        const chunks: string[] = [];
+        let totalBytes = 0;
+        response.on('data', chunk => {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          totalBytes += buffer.byteLength;
+          if (totalBytes > maxBytes) {
+            const error = specContentTooLargeError();
+            fail(error);
+            response.destroy(error);
+            request.destroy(error);
+            return;
+          }
+          chunks.push(decoder.write(buffer));
+        });
+        response.on('end', () => {
+          chunks.push(decoder.end());
+          succeed(chunks.join(''));
+        });
+        response.on('error', error => fail(error instanceof Error ? error : new Error(String(error))));
+      },
+    );
+
+    request.setTimeout(timeoutMs, () => {
+      request.destroy(new Error('Spec URL fetch timed out.'));
+    });
+    request.on('error', error => fail(error instanceof Error ? error : new Error(String(error))));
+    request.end();
+  });
 }
 
 /**
  * Resolve, validate, and fetch a remote OpenAPI spec.
  *
- * SSRF mitigation: resolve the hostname before fetch and reject local,
- * private, documentation, multicast, and reserved address ranges.
+ * SSRF mitigation: resolve the hostname before the request, reject local,
+ * private, documentation, multicast, and reserved address ranges, then pin
+ * the request to the already-vetted address to avoid DNS rebinding.
  */
 export async function fetchSpecFromUrl(specUrl: string): Promise<string> {
   const parsed = new URL(specUrl);
@@ -160,26 +243,7 @@ export async function fetchSpecFromUrl(specUrl: string): Promise<string> {
     throw new Error('Spec URL resolves to a blocked private or local address.');
   }
 
-  const controller = new AbortController();
   const timeoutMs = positiveIntegerEnv('GOVHUB_SPEC_FETCH_TIMEOUT_MS', 5000);
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(parsed.toString(), {
-      signal: controller.signal,
-      redirect: 'error',
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch spec from URL: ${response.statusText}`);
-    }
-
-    const maxBytes = positiveIntegerEnv('GOVHUB_SPEC_MAX_BYTES', 1024 * 1024);
-    const contentLength = parsedContentLength(response.headers.get('content-length'));
-    if (contentLength !== null && contentLength > maxBytes) {
-      throw specContentTooLargeError();
-    }
-    return readResponseTextWithinLimit(response, maxBytes);
-  } finally {
-    clearTimeout(timer);
-  }
+  const maxBytes = positiveIntegerEnv('GOVHUB_SPEC_MAX_BYTES', 1024 * 1024);
+  return requestSpecTextWithinLimit(parsed, addresses[0], timeoutMs, maxBytes);
 }
