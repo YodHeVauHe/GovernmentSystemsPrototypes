@@ -78,7 +78,14 @@ export function HumanVerificationGate({ children }: { children: React.ReactNode 
     <main className="flex min-h-dvh flex-col bg-black px-6 text-[#ededed] sm:px-10">
       <section className="mx-auto flex w-full max-w-5xl flex-1 items-center py-16">
         <div className="w-full max-w-3xl">
-          <h1 className="text-4xl font-semibold leading-tight text-white sm:text-5xl">{hostName}</h1>
+          <div className="flex items-center gap-3">
+            <img src="/favicon.svg" alt="" className="size-10 rounded-md" />
+            <span className="text-sm font-medium uppercase tracking-[0.18em] text-[#8b8b8b]">
+              Uganda GovHub API Portal
+            </span>
+          </div>
+
+          <h1 className="mt-8 text-4xl font-semibold leading-tight text-white sm:text-5xl">{hostName}</h1>
           <h2 className="mt-4 text-2xl font-semibold text-[#ededed]">Performing security verification</h2>
           <p className="mt-3 max-w-3xl text-base leading-7 text-[#a3a3a3]">
             This website uses a security service to protect against malicious bots. This page is displayed while
