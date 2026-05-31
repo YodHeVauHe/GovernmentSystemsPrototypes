@@ -20,6 +20,10 @@ const dashboardDrawers = fs.readFileSync(
   path.join(currentDir, 'page-components', 'DashboardDrawers.tsx'),
   'utf8',
 );
+const dashboardDialogs = fs.readFileSync(
+  path.join(currentDir, 'page-components', 'DashboardDialogs.tsx'),
+  'utf8',
+);
 
 assert.equal(
   dashboardHelpers.includes("normalizedAccountType === 'government_employee'"),
@@ -65,4 +69,13 @@ assert.equal(
     && dashboardDrawers.includes('Verification Documents'),
   true,
   'Selected account drawer should show account request and verification details.',
+);
+
+assert.equal(
+  dashboardDialogs.includes('accountActionDialog')
+    && dashboardDialogs.includes('confirmAccountAction')
+    && dashboardDialogs.includes('Reject account')
+    && dashboardDialogs.includes('Delete permanently'),
+  true,
+  'Account action dialogs should render for reject, needs-info, suspend, and delete actions.',
 );
