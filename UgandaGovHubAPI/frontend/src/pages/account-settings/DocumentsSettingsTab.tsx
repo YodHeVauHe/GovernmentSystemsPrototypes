@@ -20,6 +20,7 @@ export function DocumentsSettingsTab({ account, onSaveDocument, onSubmitVerifica
   ];
   const isVerified = status === 'verified';
   const isPendingReview = status === 'submitted_for_review';
+  const hasLockedDocuments = isVerified || isPendingReview;
 
   return (
     <SettingsTabFrame
@@ -44,6 +45,8 @@ export function DocumentsSettingsTab({ account, onSaveDocument, onSubmitVerifica
               label={docReq.label}
               accepts={docReq.accepts}
               submittedDoc={submittedDoc}
+              readOnly={hasLockedDocuments}
+              statusLabel={isVerified ? 'Approved' : 'Submitted'}
               onUploadComplete={(fileName, mimeType) => {
                 onSaveDocument(docReq.type, docReq.label, fileName, mimeType);
               }}
