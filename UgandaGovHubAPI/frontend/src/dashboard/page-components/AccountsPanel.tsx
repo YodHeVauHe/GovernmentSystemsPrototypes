@@ -5,10 +5,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import {
   AccountStatusBadge,
   accountActionLabel,
+  accountCategoryLabel,
   accountVerificationStatus,
   canPromoteAccountToAdmin,
   canRunAccountApproval,
   resolveAccountApprovalDefaults,
+  roleLabel,
   verificationStatusLabel,
 } from './dashboard-page-helpers';
 
@@ -136,7 +138,7 @@ export function AccountsPanel({
                                 <div className="mt-4 grid grid-cols-2 gap-3 text-[12px]">
                                   <div className="min-w-0">
                                     <div className="font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Account Type</div>
-                                    <div className="mt-1 truncate capitalize text-[#ededed]" title={String(account.account_type || '').replace(/_/g, ' ')}>{String(account.account_type || '').replace(/_/g, ' ')}</div>
+                                    <div className="mt-1 truncate text-[#ededed]" title={accountCategoryLabel(account.account_type)}>{accountCategoryLabel(account.account_type)}</div>
                                   </div>
                                   <div className="min-w-0">
                                     <div className="font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Organization</div>
@@ -238,8 +240,8 @@ export function AccountsPanel({
                                 </button>
                               </TableCell>
                               <TableCell className="py-3.5 px-3 text-[13px] text-[#ededed]">
-                                <div className="capitalize">{String(user.account_type || '').replace(/_/g, ' ')}</div>
-                                <div className="mt-0.5 text-[11px] text-[#8b8b8b]">Requested {user.requested_role}</div>
+                                <div>{accountCategoryLabel(user.account_type)}</div>
+                                <div className="mt-0.5 text-[11px] text-[#8b8b8b]">Requested {roleLabel(user.requested_role)}</div>
                               </TableCell>
                               <TableCell className="py-3.5 px-3">
                                 <AccountStatusBadge status={user.status} />

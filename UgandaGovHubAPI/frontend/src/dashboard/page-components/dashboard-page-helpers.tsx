@@ -359,7 +359,7 @@ export function normalizeAccountCategory(value?: string | null) {
 }
 
 export function verificationStatusLabel(status?: string | null) {
-  return String(status || 'draft_profile').replace(/_/g, ' ');
+  return formatDashboardLabel(status || 'draft_profile');
 }
 
 export function accountVerificationStatus(account: any) {
@@ -401,6 +401,52 @@ export function notificationRoleLabel(role: string) {
     reviewer: 'Compliance Reviewer',
   };
   return labels[role] || role;
+}
+
+export function accountCategoryLabel(category?: string | null) {
+  const labels: Record<string, string> = {
+    admin: 'Administrator',
+    business_name: 'Business Name',
+    civil_society: 'Civil Society',
+    government: 'Government Employee',
+    government_employee: 'Government Employee',
+    mda_api_owner: 'MDA API Owner',
+    private_company: 'Private Company',
+    public_developer: 'Public Developer',
+    research_institution: 'Research Institution',
+  };
+  return labels[String(category || '')] || formatDashboardLabel(category || 'public_developer');
+}
+
+export function roleLabel(role?: string | null) {
+  const labels: Record<string, string> = {
+    admin: 'Administrator',
+    api_owner: 'API Owner',
+    developer: 'Developer',
+    reviewer: 'Compliance Reviewer',
+  };
+  return labels[String(role || '')] || formatDashboardLabel(role || 'developer');
+}
+
+export function formatDashboardLabel(value?: string | null) {
+  const acronymLabels: Record<string, string> = {
+    api: 'API',
+    brn: 'BRN',
+    id: 'ID',
+    mda: 'MDA',
+    nin: 'NIN',
+    tin: 'TIN',
+    ura: 'URA',
+    ursb: 'URSB',
+  };
+
+  return String(value || '')
+    .replace(/[_-]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => acronymLabels[part.toLowerCase()] || `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(' ');
 }
 
 export function accountActionLabel(account: any, busy: boolean) {
