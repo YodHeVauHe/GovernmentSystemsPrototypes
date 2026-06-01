@@ -11,6 +11,7 @@ import {
   type DashboardViewTab,
   type ViewMode,
 } from '../view-helpers';
+import { createDashboardApiError } from './dashboard-api-error';
 
 function dateToDateTimeLocalValue(date: Date) {
   const offset = date.getTimezoneOffset() * 60000;
@@ -347,7 +348,7 @@ export async function fetchDashboardJson(path: string) {
   const response = await fetch(`${API_BASE}${path}`);
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.error || `${path} failed with ${response.status}`);
+    throw createDashboardApiError(path, response.status, body);
   }
   return body;
 }
