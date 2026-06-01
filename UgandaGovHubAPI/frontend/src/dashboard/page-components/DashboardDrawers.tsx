@@ -2,7 +2,10 @@ import { IconX } from '@tabler/icons-react';
 import {
   AccessRequestStatusBadge,
   AccountStatusBadge,
+  accountCategoryLabel,
   accountVerificationStatus,
+  formatDashboardLabel,
+  roleLabel,
   verificationStatusLabel,
 } from './dashboard-page-helpers';
 import { formatAuditLogDetails, getAuditLogEndpoint, getAuditLogResponseStatus, getAuditLogResponseStatusLabel } from '../view-helpers';
@@ -17,15 +20,34 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? 'Not provided' : date.toLocaleString();
 }
 
-function formatAccountType(value?: string | null) {
-  return String(value || 'public_developer').replace(/_/g, ' ');
-}
-
 function DetailField({ label, value, className = '' }: { label: string; value: unknown; className?: string }) {
   return (
     <div className={className}>
       <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">{label}</span>
       <span className="font-medium text-white">{formatValue(value)}</span>
+    </div>
+  );
+}
+
+function SectionTitle({ title, aside }: { title: string; aside?: string }) {
+  return (
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">{title}</span>
+      {aside && <span className="text-[11px] text-[#8b8b8b]">{aside}</span>}
+    </div>
+  );
+}
+
+function InlineList({ values, emptyLabel }: { values?: unknown[]; emptyLabel: string }) {
+  if (!values?.length) return <span className="text-[#8b8b8b]">{emptyLabel}</span>;
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {values.map(value => (
+        <span key={String(value)} className="rounded-md border border-[#2e2e2e] bg-[#1c1c1c] px-2 py-1 text-[11px] text-[#ededed]">
+          {formatDashboardLabel(String(value))}
+        </span>
+      ))}
     </div>
   );
 }
@@ -42,8 +64,16 @@ export function DashboardDrawers({
   const selectedAccountProfile = selectedAccount?.account?.profile;
   const selectedAccountRequirements = selectedAccount?.account?.requirements;
   const selectedAccountProgress = selectedAccount?.account?.verification_progress;
+  const selectedAccountPrivileges = selectedAccount?.account?.privileges;
   const selectedAccountDocuments = selectedAccount?.account?.documents || [];
   const selectedAccountMda = mdas.find((mda: any) => mda.id === (selectedAccount?.requested_mda_id || selectedAccount?.mda_id));
+  const selectedAccountRequiredDocumentCount = selectedAccountRequirements?.requiredDocuments?.length || 0;
+  const selectedAccountRequiredFieldCount = selectedAccountRequirements?.requiredFields?.length || 0;
+  const selectedAccountMissingDocuments = selectedAccountProgress?.missing_documents?.map((missingDocument: string) => {
+    const requirement = selectedAccountRequirements?.requiredDocuments?.find((document: any) => document.type === missingDocument);
+    return requirement?.label || missingDocument;
+  });
+  const selectedAccountMissingFields = selectedAccountProgress?.missing_fields || [];
 
   return (
     <>
@@ -91,15 +121,64 @@ export function DashboardDrawers({
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 text-[13px]">
-                    <DetailField label="Signup Category" value={formatAccountType(selectedAccount.account_type)} />
-                    <DetailField label="Verified Category" value={formatAccountType(selectedAccountProfile?.account_category || selectedAccount.account_type)} />
-                    <DetailField label="Requested Role" value={selectedAccount.requested_role} />
-                    <DetailField label="Current Role" value={selectedAccount.role || 'Not approved'} />
+                    <DetailField label="Signup Category" value={accountCategoryLabel(selectedAccount.account_type)} />
+                    <DetailField label="Verified Category" value={accountCategoryLabel(selectedAccountProfile?.account_category || selectedAccount.account_type)} />
+                    <DetailField label="Requested Role" value={roleLabel(selectedAccount.requested_role)} />
+                    <DetailField label="Current Role" value={selectedAccount.role ? roleLabel(selectedAccount.role) : 'Not Approved'} />
                     <DetailField label="Organization" value={selectedAccount.requested_organization} className="col-span-2 border-t border-[#2e2e2e] pt-3.5" />
                     <DetailField label="Requested MDA" value={selectedAccountMda ? `${selectedAccountMda.name} (${selectedAccountMda.shortName})` : selectedAccount.requested_mda_id} className="col-span-2" />
                     <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
                       <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Access Purpose</span>
                       <p className="mt-1 leading-5 text-white">{formatValue(selectedAccount.requested_purpose)}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5 text-[12px]">
+                    <SectionTitle title="Profile Details" />
+                    <div className="grid grid-cols-2 gap-3">
+                      <DetailField label="Contact Phone" value={selectedAccountProfile?.contact_phone} />
+                      <DetailField label="National ID / NIN" value={selectedAccountProfile?.national_id_number || selectedAccountProfile?.nin} />
+                      <DetailField label="Organization Name" value={selectedAccountProfile?.organization_name || selectedAccount.requested_organization} />
+                      <DetailField label="Organization Type" value={selectedAccountProfile?.organization_type && formatDashboardLabel(selectedAccountProfile.organization_type)} />
+                      <DetailField label="URSB Number" value={selectedAccountProfile?.ursb_number} />
+                      <DetailField label="BRN" value={selectedAccountProfile?.brn} />
+                      <DetailField label="TIN" value={selectedAccountProfile?.tin} />
+                      <DetailField label="Staff ID" value={selectedAccountProfile?.staff_id} />
+                      <DetailField label="Department" value={selectedAccountProfile?.department} />
+                      <DetailField label="Job Title" value={selectedAccountProfile?.job_title} />
+                      <DetailField label="Supervisor" value={selectedAccountProfile?.supervisor_name} />
+                      <DetailField label="Supervisor Email" value={selectedAccountProfile?.supervisor_email} />
+                      <DetailField label="Address" value={selectedAccountProfile?.address} className="col-span-2" />
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5 text-[12px]">
+                    <SectionTitle
+                      title="Requirement Status"
+                      aside={`${selectedAccountProgress?.completed_requirements || 0}/${selectedAccountProgress?.total_requirements || 0} complete`}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <DetailField
+                        label="Profile Fields"
+                        value={`${selectedAccountProgress?.completed_fields || 0}/${selectedAccountRequiredFieldCount}`}
+                      />
+                      <DetailField
+                        label="Documents"
+                        value={`${selectedAccountProgress?.completed_documents || selectedAccountDocuments.length}/${selectedAccountRequiredDocumentCount}`}
+                      />
+                      <DetailField
+                        label="Next Action"
+                        value={formatDashboardLabel(selectedAccountProgress?.next_action)}
+                        className="col-span-2"
+                      />
+                      <div className="col-span-2">
+                        <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Missing Fields</span>
+                        <InlineList values={selectedAccountMissingFields} emptyLabel="No Missing Fields" />
+                      </div>
+                      <div className="col-span-2">
+                        <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Missing Documents</span>
+                        <InlineList values={selectedAccountMissingDocuments} emptyLabel="No Missing Documents" />
+                      </div>
                     </div>
                   </div>
 
@@ -121,12 +200,7 @@ export function DashboardDrawers({
                   </div>
 
                   <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5 text-[12px]">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <span className="font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Verification Documents</span>
-                      <span className="text-[11px] text-[#8b8b8b]">
-                        {selectedAccountDocuments.length}/{selectedAccountRequirements?.requiredDocuments?.length || 0} uploaded
-                      </span>
-                    </div>
+                    <SectionTitle title="Verification Documents" aside={`${selectedAccountDocuments.length}/${selectedAccountRequiredDocumentCount} uploaded`} />
                     {selectedAccountDocuments.length === 0 ? (
                       <p className="text-[#8b8b8b]">No documents uploaded.</p>
                     ) : (
@@ -135,15 +209,34 @@ export function DashboardDrawers({
                           <div key={`${document.type}-${document.file_name}`} className="rounded-md border border-[#2e2e2e] bg-[#1c1c1c] p-2">
                             <div className="font-medium text-white">{document.label || document.type}</div>
                             <div className="mt-0.5 truncate font-mono text-[11px] text-[#8b8b8b]" title={document.file_name}>{document.file_name}</div>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#8b8b8b]">
+                              <span>Status: <span className="text-[#ededed]">{formatDashboardLabel(document.status)}</span></span>
+                              <span>Type: <span className="font-mono text-[#ededed]">{document.mime_type || 'Not Provided'}</span></span>
+                              <span>Uploaded: <span className="font-mono text-[#ededed]">{formatDateTime(document.uploaded_at)}</span></span>
+                            </div>
                           </div>
                         ))}
                       </div>
                     )}
-                    {selectedAccountProgress?.missing_documents?.length > 0 && (
+                    {selectedAccountMissingDocuments?.length > 0 && (
                       <p className="mt-3 text-orange-300">
-                        Missing: {selectedAccountProgress.missing_documents.join(', ')}
+                        Missing: {selectedAccountMissingDocuments.join(', ')}
                       </p>
                     )}
+                  </div>
+
+                  <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5 text-[12px]">
+                    <SectionTitle title="Access Privileges" aside={selectedAccountPrivileges?.accessGroup} />
+                    <div className="grid gap-3">
+                      <div>
+                        <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Allowed After Approval</span>
+                        <InlineList values={selectedAccountPrivileges?.permissions} emptyLabel="No Permissions Listed" />
+                      </div>
+                      <div>
+                        <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Restrictions</span>
+                        <InlineList values={selectedAccountPrivileges?.restrictions} emptyLabel="No Restrictions Listed" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
