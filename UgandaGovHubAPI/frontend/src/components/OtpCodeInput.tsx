@@ -36,7 +36,7 @@ export function OtpCodeInput({
         {digits.map((digit, index) => (
           <div
             key={index}
-            className="flex h-10 min-w-0 items-center justify-center rounded-md border border-border bg-background font-mono text-base font-semibold text-foreground transition-colors group-focus-within:border-[#3ecf8e]"
+            className="flex h-12 min-w-0 items-center justify-center rounded-md border border-border bg-background font-mono text-base font-semibold text-foreground transition-colors group-focus-within:border-[#3ecf8e]"
             aria-hidden="true"
           >
             {digit}
