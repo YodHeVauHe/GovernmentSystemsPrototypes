@@ -12,6 +12,8 @@ import { TurnstileWidget } from '@/components/TurnstileWidget';
 import { useUser } from '@/context/UserContext';
 import { hasValidationErrors, validateLoginForm, type LoginValidationErrors } from '@/lib/auth-validation';
 
+const MFA_SETUP_ROUTE = '/account/settings?tab=security';
+
 export function LoginPage() {
   const navigate = useNavigate();
   const { login } = useUser();
@@ -57,7 +59,13 @@ export function LoginPage() {
         mfaCode: mfaRequired ? mfaCode : undefined,
         turnstileToken,
       });
-      navigate(user.status === 'APPROVED' ? '/dashboard' : '/account-status');
+      if (user.status !== 'APPROVED') {
+        navigate('/account-status');
+      } else if (!user.mfa_enabled) {
+        navigate(MFA_SETUP_ROUTE);
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err: any) {
       if (err.code === 'MFA_REQUIRED') {
         setMfaRequired(true);

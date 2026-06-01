@@ -47,14 +47,14 @@ export function AccountSettingsShell({
         <VerificationPrompt account={account} onSelectTab={onSelectTab} />
         <MfaPrompt user={user} onSelectTab={onSelectTab} />
 
-        <div className="grid grid-cols-1 gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:overflow-hidden">
-          <aside className="space-y-6 lg:col-span-3 lg:overflow-hidden">
+        <div className="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:overflow-hidden">
+          <aside className="flex min-h-0 flex-col gap-4 lg:col-span-3 lg:overflow-hidden">
             <ProfileCard user={user} account={account} />
             <AccountSettingsNav activeTab={activeTab} unreadCount={unreadCount} onSelectTab={onSelectTab} />
           </aside>
 
           <main className="lg:col-span-9 lg:min-h-0 lg:overflow-hidden">
-            <div className="min-h-[500px] rounded-xl border border-border bg-card p-4 shadow-sm lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden">
+            <div className="min-h-[420px] rounded-xl border border-border bg-card p-4 shadow-sm lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden">
               {children}
             </div>
           </main>
@@ -69,7 +69,7 @@ function AccountSettingsHeader({ account }: { account: AccountSnapshot }) {
   const statusColor = status === 'verified' ? 'bg-[#3ecf8e]' : status === 'submitted_for_review' ? 'bg-amber-400' : 'bg-[#8b8b8b]';
 
   return (
-    <div className="mb-6 flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-center md:justify-between">
+    <div className="mb-4 flex flex-col gap-4 border-b border-border pb-4 md:flex-row md:items-center md:justify-between">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Account Settings</h1>
         <p className="mt-1 text-sm text-foreground-light">
@@ -99,7 +99,7 @@ function VerificationPrompt({ account, onSelectTab }: { account: AccountSnapshot
   const nextTab = resolveNextVerificationTab(account);
 
   return (
-    <div className="mb-6 rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 p-4">
+    <div className="mb-4 rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="text-sm font-semibold text-foreground">Finish verification to unlock dashboard and API access</div>
@@ -133,14 +133,14 @@ function MfaPrompt({ user, onSelectTab }: { user: AuthUser | null; onSelectTab: 
   const isAdmin = user.role === 'admin';
 
   return (
-    <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
       <div className="flex min-w-0 items-start gap-3">
         <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-300" />
         <div className="min-w-0">
           <div className="text-sm font-semibold text-amber-200">
             {isAdmin ? 'Administrator MFA is not enabled' : 'Multi-factor authentication is not enabled'}
           </div>
-          <div className="mt-1 text-xs leading-5 text-amber-300/80">
+          <div className="mt-0.5 text-xs leading-4 text-amber-300/80">
             {isAdmin
               ? 'Enable MFA to use privileged admin workflows.'
               : 'Enable MFA to protect your account sign-ins.'}
@@ -168,7 +168,7 @@ function ProfileCard({ user, account }: { user: AuthUser | null; account: Accoun
     .slice(0, 2) || 'UG';
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-card p-4 text-center shadow-sm">
+    <div className="relative shrink-0 overflow-hidden rounded-xl border border-border bg-card p-4 text-center shadow-sm">
       <div className="pointer-events-none absolute right-0 top-0 h-16 w-16 rounded-bl-full bg-[#3ecf8e]/5" />
       <div className="mb-3 flex justify-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-[#3ecf8e]/80 to-emerald-400 text-xl font-bold text-black shadow-sm">
@@ -198,7 +198,7 @@ function AccountSettingsNav({
   onSelectTab: (tab: AccountSettingsTabId) => void;
 }) {
   return (
-    <nav data-testid="account-settings-nav" className="flex flex-col space-y-1 rounded-xl border border-border bg-card p-2 shadow-sm">
+    <nav data-testid="account-settings-nav" className="flex min-h-0 flex-1 flex-col space-y-1 overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-sm">
       {tabs.map(([id, Icon, label]) => {
         const isActive = activeTab === id;
         return (

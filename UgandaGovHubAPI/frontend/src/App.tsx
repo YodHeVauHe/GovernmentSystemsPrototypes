@@ -25,6 +25,8 @@ import { HelpPage } from './pages/HelpPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 const authRoutes = ['/login', '/signup', '/account-status'];
+const MFA_SETUP_ROUTE = '/account/settings?tab=security';
+
 function RouteLoadingBar() {
   const location = useLocation();
   const [loading, setLoading] = useState(false);
@@ -60,7 +62,7 @@ function SessionLoadingState({ fullScreen = false }: { fullScreen?: boolean }) {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { loading, isAuthenticated, isApproved } = useUser();
+  const { loading, isAuthenticated, isApproved, user } = useUser();
   const location = useLocation();
 
   if (loading) {
@@ -71,6 +73,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
   if (!isApproved) {
     return <Navigate to="/account-status" replace />;
+  }
+  if (!user?.mfa_enabled && location.pathname !== '/account/settings') {
+    return <Navigate to={MFA_SETUP_ROUTE} replace />;
   }
   return children;
 }
@@ -90,7 +95,7 @@ function AuthenticatedRoute({ children }: { children: React.ReactNode }) {
 
 function AppShell() {
   const location = useLocation();
-  const { loading, isAuthenticated, isApproved, role } = useUser();
+  const { loading, isAuthenticated, isApproved, role, user } = useUser();
   const authPage = authRoutes.includes(location.pathname);
   const landingPage = location.pathname === '/';
   const publicAppRoute = isPublicAppRoute(location.pathname);
@@ -138,6 +143,17 @@ function AppShell() {
 
   if (!isApproved && knownAppRoute && location.pathname !== "/account/settings" && !publicAppRoute) {
     return <Navigate to="/account-status" replace />;
+  }
+
+  if (
+    isAuthenticated &&
+    isApproved &&
+    !user?.mfa_enabled &&
+    knownAppRoute &&
+    location.pathname !== '/account/settings' &&
+    !publicAppRoute
+  ) {
+    return <Navigate to={MFA_SETUP_ROUTE} replace />;
   }
 
   return (

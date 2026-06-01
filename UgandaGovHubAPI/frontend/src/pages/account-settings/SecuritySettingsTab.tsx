@@ -98,7 +98,7 @@ export function SecuritySettingsTab({
       title="Account Security"
       description="Manage sign-in controls for your GovHub account."
     >
-      <div className="rounded-xl border border-border bg-background/40 p-5">
+      <div className="rounded-xl border border-border bg-background/40 p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Multi-factor authentication</h3>
@@ -116,7 +116,7 @@ export function SecuritySettingsTab({
         </div>
 
         {!user?.mfa_enabled && !mfaSetup && (
-          <div className="mt-5 w-full max-w-xs space-y-2 md:ml-auto md:text-right">
+          <div className="mt-4 w-full max-w-xs space-y-1.5 md:ml-auto md:text-right">
             <Label htmlFor="mfa_setup_password" className="md:justify-end">Confirm password</Label>
             <Input
               id="mfa_setup_password"
