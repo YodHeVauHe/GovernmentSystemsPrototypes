@@ -53,7 +53,7 @@ export function validateLoginForm(input: LoginValidationInput): LoginValidationE
   if (input.mfaRequired && !/^\d{6}$/.test(input.mfaCode)) {
     errors.mfaCode = 'Enter the 6-digit authenticator code.';
   }
-  if (!input.turnstileToken) {
+  if (!input.mfaRequired && !input.turnstileToken) {
     errors.turnstileToken = 'Complete the human verification challenge.';
   }
 

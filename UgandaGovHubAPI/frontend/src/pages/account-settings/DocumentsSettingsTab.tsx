@@ -1,4 +1,4 @@
-import { IconFileCertificate, IconFingerprint } from '@tabler/icons-react';
+import { IconCircleCheck, IconClock, IconFileCertificate, IconFingerprint } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { DocumentUploader } from './DocumentUploader';
 import { SettingsTabFrame } from './SettingsTabFrame';
@@ -18,6 +18,8 @@ export function DocumentsSettingsTab({ account, onSaveDocument, onSubmitVerifica
     ...(account.verification_progress?.missing_fields || []),
     ...(account.verification_progress?.missing_documents || []),
   ];
+  const isVerified = status === 'verified';
+  const isPendingReview = status === 'submitted_for_review';
 
   return (
     <SettingsTabFrame
@@ -50,29 +52,49 @@ export function DocumentsSettingsTab({ account, onSaveDocument, onSubmitVerifica
         })}
       </div>
 
-      <div className="flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">Submit for Review</h3>
-          <p className="mt-0.5 text-xs text-foreground-light">
-            {canSubmit
-              ? 'Once all required documents are uploaded, submit your account for administrator authorization.'
-              : missingRequirements.length > 0
-                ? `Complete missing requirements first: ${missingRequirements.slice(0, 4).join(', ')}`
-                : account.verification_progress?.message || 'This account is not currently ready for verification submission.'}
-          </p>
+      {isVerified || isPendingReview ? (
+        <div className={`flex items-start gap-3 rounded-xl border p-4 ${
+          isVerified
+            ? 'border-[#3ecf8e]/25 bg-[#3ecf8e]/5'
+            : 'border-amber-400/25 bg-amber-400/5'
+        }`}>
+          {isVerified ? (
+            <IconCircleCheck className="mt-0.5 size-5 shrink-0 text-[#3ecf8e]" />
+          ) : (
+            <IconClock className="mt-0.5 size-5 shrink-0 text-amber-300" />
+          )}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">
+              {isVerified ? 'Verification complete' : 'Verification under review'}
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-foreground-light">
+              {isVerified
+                ? 'Your identity and authority have been approved. No further document action is required.'
+                : 'Your documents have been submitted and are awaiting administrator review.'}
+            </p>
+          </div>
         </div>
-        <Button
-          disabled={!canSubmit}
-          onClick={onSubmitVerification}
-          className="shrink-0 bg-[#3ecf8e] px-5 font-semibold text-black shadow-md transition-all hover:bg-[#3ecf8e]/95 disabled:opacity-50"
-        >
-          {status === 'submitted_for_review'
-            ? 'Verification Pending Review'
-            : canSubmit
-              ? 'Submit for Admin Review'
-              : 'Complete Requirements First'}
-        </Button>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Submit for Review</h3>
+            <p className="mt-0.5 text-xs text-foreground-light">
+              {canSubmit
+                ? 'Once all required documents are uploaded, submit your account for administrator authorization.'
+                : missingRequirements.length > 0
+                  ? `Complete missing requirements first: ${missingRequirements.slice(0, 4).join(', ')}`
+                  : account.verification_progress?.message || 'This account is not currently ready for verification submission.'}
+            </p>
+          </div>
+          <Button
+            disabled={!canSubmit}
+            onClick={onSubmitVerification}
+            className="shrink-0 bg-[#3ecf8e] px-5 font-semibold text-black shadow-md transition-all hover:bg-[#3ecf8e]/95 disabled:opacity-50"
+          >
+            {canSubmit ? 'Submit for Admin Review' : 'Complete Requirements First'}
+          </Button>
+        </div>
+      )}
     </SettingsTabFrame>
   );
 }

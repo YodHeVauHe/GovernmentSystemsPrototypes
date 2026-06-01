@@ -1,4 +1,4 @@
-import { IconCheck, IconShieldCheck } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconCircleCheck, IconShieldCheck } from '@tabler/icons-react';
 import { SettingsTabFrame } from './SettingsTabFrame';
 import type { AccountPrivileges } from './types';
 
@@ -29,8 +29,13 @@ function PrivilegeList({
   items: string[];
 }) {
   const isAllowed = tone === 'allowed';
-  const headerClassName = isAllowed ? 'bg-[#3ecf8e]/10 text-[#3ecf8e]' : 'bg-destructive/10 text-destructive';
-  const dotClassName = isAllowed ? 'bg-[#3ecf8e]' : 'bg-destructive';
+  const hasItems = items.length > 0;
+  const headerClassName = isAllowed
+    ? 'bg-[#3ecf8e]/10 text-[#3ecf8e]'
+    : hasItems
+      ? 'bg-red-500/10 text-red-300'
+      : 'bg-[#3ecf8e]/10 text-[#3ecf8e]';
+  const dotClassName = isAllowed || !hasItems ? 'bg-[#3ecf8e]' : 'bg-red-400';
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-background/40 shadow-sm">
@@ -40,21 +45,25 @@ function PrivilegeList({
       </div>
       <div className="p-4">
         <p className="mb-3 text-xs text-foreground-light">
-          {isAllowed ? 'The following actions are permitted for this access tier:' : 'Safeguard boundaries currently applied to your activities:'}
+          {isAllowed
+            ? 'Approved permissions available to this account:'
+            : hasItems
+              ? 'Active restrictions currently applied to this account:'
+              : 'No safeguard restrictions are currently applied to this account.'}
         </p>
         <ul className="space-y-2.5">
-          {items.length === 0 ? (
+          {!hasItems ? (
             <li className="flex items-start gap-2.5 text-xs text-foreground">
               <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#3ecf8e]/10 text-[#3ecf8e]">
-                <IconCheck className="size-3" />
+                <IconCircleCheck className="size-3" />
               </span>
               <span>{emptyText}</span>
             </li>
           ) : (
             items.map(item => (
               <li key={item} className="flex items-start gap-2.5 text-xs text-foreground">
-                <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${isAllowed ? 'bg-[#3ecf8e]/10 text-[#3ecf8e]' : 'bg-destructive/10 text-destructive text-[9px] font-bold'}`}>
-                  {isAllowed ? <IconCheck className="size-3" /> : '!'}
+                <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${isAllowed ? 'bg-[#3ecf8e]/10 text-[#3ecf8e]' : 'bg-red-500/10 text-red-300'}`}>
+                  {isAllowed ? <IconCheck className="size-3" /> : <IconAlertTriangle className="size-3" />}
                 </span>
                 <span>{item}</span>
               </li>

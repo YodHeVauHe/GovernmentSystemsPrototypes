@@ -67,7 +67,7 @@ function AccountSettingsLoadingState() {
 
 export function AccountSettingsPage() {
   const { user, refreshUser } = useUser();
-  const { notifications, unreadCount, markAllRead, clearNotifications } = useNotifications();
+  const { notifications, unreadCount, addNotification, markAllRead, clearNotifications } = useNotifications();
   const [searchParams, setSearchParams] = useSearchParams();
   const [account, setAccount] = useState<AccountSnapshot | null>(null);
   const [activeTab, setActiveTab] = useState<AccountSettingsTabId>(() => readAccountSettingsTabId(searchParams.get('tab')));
@@ -171,7 +171,15 @@ export function AccountSettingsPage() {
       body: JSON.stringify({ code: mfaCode }),
     })
       .then(() => {
-        toast.success('Multi-factor authentication enabled');
+        toast.success('Multi-factor authentication enabled', {
+          description: 'Future sign-ins will require your authenticator code.',
+        });
+        addNotification({
+          dedupeKey: `mfa-enabled:${Date.now()}`,
+          type: 'account',
+          title: 'Multi-factor authentication enabled',
+          message: 'Future sign-ins will require your password and a six-digit authenticator code.',
+        });
         setMfaSetup(null);
         setMfaCode('');
         return refreshUser();
@@ -188,7 +196,15 @@ export function AccountSettingsPage() {
       body: JSON.stringify({ password: mfaPassword, code: mfaCode }),
     })
       .then(() => {
-        toast.success('Multi-factor authentication disabled');
+        toast.success('Multi-factor authentication disabled', {
+          description: 'Your account now signs in with password only.',
+        });
+        addNotification({
+          dedupeKey: `mfa-disabled:${Date.now()}`,
+          type: 'account',
+          title: 'Multi-factor authentication disabled',
+          message: 'Authenticator-code protection was removed from your account.',
+        });
         setMfaPassword('');
         setMfaCode('');
         return refreshUser();
