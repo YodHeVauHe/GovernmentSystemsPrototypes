@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useUser } from '../context/UserContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -36,10 +36,12 @@ import {
   toDateTimeLocalValue,
   useDashboardViewModePreference,
 } from './page-components/dashboard-page-helpers';
+import { isAdminMfaRequiredError } from './page-components/dashboard-api-error';
 import { MatrixPanel } from './page-components/MatrixPanel';
 
 export default function DashboardPage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user, role, mdaId, mdas } = useUser();
   const { addNotification, notifications } = useNotifications();
   const [requests, setRequests] = useState<any[]>([]);
@@ -153,12 +155,19 @@ export default function DashboardPage() {
       })
       .catch(err => {
         console.error(err);
+        if (isAdminMfaRequiredError(err)) {
+          toast.info('Enable administrator MFA', {
+            description: 'Open Security settings, confirm your password, then enable MFA to use privileged workflows.',
+          });
+          navigate('/account/settings?tab=security', { replace: true });
+          return;
+        }
         setDashboardError(err instanceof Error ? err.message : 'Failed to load dashboard data.');
       })
       .finally(() => {
         if (showLoading) setDashboardLoading(false);
       });
-  }, [claimPendingOneTimeApiKey, isCurrentConsumerRequest, role]);
+  }, [claimPendingOneTimeApiKey, isCurrentConsumerRequest, navigate, role]);
 
   useEffect(() => {
     fetchDashboardData(true);
