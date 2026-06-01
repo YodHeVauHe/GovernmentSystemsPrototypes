@@ -45,7 +45,7 @@ export function AccountSettingsShell({
       <div className="mx-auto flex min-h-full w-full max-w-[1200px] flex-col p-3 lg:h-full lg:min-h-0 lg:p-5">
         <AccountSettingsHeader account={account} />
         <VerificationPrompt account={account} onSelectTab={onSelectTab} />
-        <AdminMfaPrompt user={user} onSelectTab={onSelectTab} />
+        <MfaPrompt user={user} onSelectTab={onSelectTab} />
 
         <div className="grid grid-cols-1 gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:overflow-hidden">
           <aside className="space-y-6 lg:col-span-3 lg:overflow-hidden">
@@ -127,20 +127,34 @@ function VerificationPrompt({ account, onSelectTab }: { account: AccountSnapshot
   );
 }
 
-function AdminMfaPrompt({ user, onSelectTab }: { user: AuthUser | null; onSelectTab: (tab: AccountSettingsTabId) => void }) {
-  if (user?.role !== 'admin' || user.mfa_enabled) return null;
+function MfaPrompt({ user, onSelectTab }: { user: AuthUser | null; onSelectTab: (tab: AccountSettingsTabId) => void }) {
+  if (!user || user.mfa_enabled) return null;
+
+  const isAdmin = user.role === 'admin';
 
   return (
-    <div className="mb-6 rounded-lg border border-amber-400/25 bg-amber-400/5 p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="text-sm font-semibold text-foreground">Administrator MFA is not enabled</div>
-          <div className="mt-1 text-xs leading-5 text-foreground-light">
-            Platform administrators authenticate with password and session controls. Enable MFA before demoing privileged account approval and catalog management.
+    <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex min-w-0 items-start gap-3">
+        <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-300" />
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-amber-200">
+            {isAdmin ? 'Administrator MFA is not enabled' : 'Multi-factor authentication is not enabled'}
+          </div>
+          <div className="mt-1 text-xs leading-5 text-amber-300/80">
+            {isAdmin
+              ? 'Enable MFA to use privileged admin workflows.'
+              : 'Enable MFA to protect your account sign-ins.'}
           </div>
         </div>
-        <Button size="sm" variant="outline" onClick={() => onSelectTab('security')}>Open security</Button>
       </div>
+      <Button
+        size="xs"
+        variant="outline"
+        className="shrink-0 border-amber-400/30 text-amber-200 hover:bg-amber-400/10 hover:text-amber-100"
+        onClick={() => onSelectTab('security')}
+      >
+        Open security
+      </Button>
     </div>
   );
 }

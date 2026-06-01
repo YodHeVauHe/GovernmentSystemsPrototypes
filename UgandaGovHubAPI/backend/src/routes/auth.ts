@@ -587,14 +587,15 @@ export function authRouter(db: Db) {
   });
 
   router.post('/login', async (req, res) => {
-    const turnstile = await verifyHumanRequest(db, req, 'login');
-    if (sendTurnstileError(res, turnstile)) return;
-
     const loginInput = validateLoginCredentials(req.body || {});
     if (!loginInput.ok) {
       return res.status(400).json({ error: loginInput.message, code: 'INVALID_LOGIN_INPUT' });
     }
     const { password, mfa_code } = loginInput;
+    if (!mfa_code) {
+      const turnstile = await verifyHumanRequest(db, req, 'login');
+      if (sendTurnstileError(res, turnstile)) return;
+    }
     const normalizedEmail = normalizeEmail(loginInput.email);
     const attemptKey = `${req.ip || 'unknown'}:${normalizedEmail}`;
     const quota = await consumeRateLimit(db, 'login', attemptKey, LOGIN_LIMIT, LOGIN_WINDOW_MS);
