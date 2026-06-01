@@ -7,6 +7,8 @@ type DocumentUploaderProps = {
   label: string;
   accepts: string;
   submittedDoc?: AccountDocument;
+  readOnly?: boolean;
+  statusLabel?: string;
   onUploadComplete: (fileName: string, mimeType: string) => void;
 };
 
@@ -14,6 +16,8 @@ export function DocumentUploader({
   label,
   accepts,
   submittedDoc,
+  readOnly = false,
+  statusLabel = 'Submitted',
   onUploadComplete,
 }: DocumentUploaderProps) {
   const [uploading, setUploading] = useState(false);
@@ -44,6 +48,22 @@ export function DocumentUploader({
     }, 100);
   };
 
+  if (readOnly && !submittedDoc) {
+    return (
+      <div className="rounded-lg border border-border bg-background/20 p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-foreground-light">
+            <IconFileText className="size-5" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-foreground">{label}</div>
+            <div className="mt-0.5 text-xs text-foreground-light">No submitted file is recorded for this requirement.</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (submittedDoc && !uploading) {
     return (
       <div className="rounded-lg border border-border bg-background/40 p-4 transition-all hover:bg-background/60">
@@ -62,12 +82,14 @@ export function DocumentUploader({
           <div className="mt-2 flex shrink-0 items-center justify-between gap-3 sm:mt-0 sm:justify-end">
             <span className="inline-flex items-center gap-1 rounded-full bg-[#3ecf8e]/10 px-2.5 py-0.5 text-xs font-semibold text-[#3ecf8e]">
               <IconCheck className="size-3.5" />
-              Submitted
+              {statusLabel}
             </span>
-            <label className="inline-flex cursor-pointer items-center justify-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background">
-              <input type="file" className="hidden" accept={accepts} onChange={handleFileChange} />
-              Replace File
-            </label>
+            {!readOnly && (
+              <label className="inline-flex cursor-pointer items-center justify-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background">
+                <input type="file" className="hidden" accept={accepts} onChange={handleFileChange} />
+                Replace File
+              </label>
+            )}
           </div>
         </div>
       </div>
