@@ -95,14 +95,18 @@ function AppShell() {
   const landingPage = location.pathname === '/';
   const publicAppRoute = isPublicAppRoute(location.pathname);
   const dashboardPage = location.pathname === '/dashboard';
+  const platformAdminDashboard = dashboardPage && role === 'admin';
   const knownAppRoute = isKnownAppRoute(location.pathname);
   const [sidebarOpen, setSidebarOpen] = useState(!publicAppRoute);
 
   useEffect(() => {
-    if (publicAppRoute || (dashboardPage && role === 'admin')) {
+    if (publicAppRoute || platformAdminDashboard) {
       setSidebarOpen(false);
+      return;
     }
-  }, [dashboardPage, publicAppRoute, role]);
+
+    setSidebarOpen(true);
+  }, [platformAdminDashboard, publicAppRoute]);
 
   if (authPage) {
     return (
