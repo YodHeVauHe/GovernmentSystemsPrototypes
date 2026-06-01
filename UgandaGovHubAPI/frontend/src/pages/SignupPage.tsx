@@ -88,7 +88,6 @@ const accountTypes: Array<{
   },
 ];
 
-const LOGIN_REDIRECT_DELAY_MS = 1400;
 const DEFAULT_MDA_ID = 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3';
 
 export function SignupPage() {
@@ -161,9 +160,9 @@ export function SignupPage() {
         turnstileToken,
       });
       toast.success('Account request submitted', {
-        description: 'Your account was created. Sign in to complete verification from account settings.',
+        description: 'Your account was created. Complete verification from account settings.',
       });
-      setTimeout(() => navigate('/login'), LOGIN_REDIRECT_DELAY_MS);
+      navigate('/account/settings');
     } catch (err: any) {
       setError(err.message || 'Unable to create account.');
       resetTurnstile();

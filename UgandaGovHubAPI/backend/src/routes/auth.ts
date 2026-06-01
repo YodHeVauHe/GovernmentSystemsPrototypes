@@ -583,6 +583,8 @@ export function authRouter(db: Db) {
     ]);
     await ensureUserProfile(db, id, accountType, req.body.requested_organization.trim());
 
+    const token = await createSession(db, id);
+    setSessionCookie(res, token);
     res.status(201).json({ user: sanitizeUser(await getUserById(db, id)) });
   });
 

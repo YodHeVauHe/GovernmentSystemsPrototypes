@@ -141,6 +141,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...signupInput, turnstile_token: turnstileToken }),
     }));
+    setUser(body.user);
     return body.user as AuthUser;
   };
 
