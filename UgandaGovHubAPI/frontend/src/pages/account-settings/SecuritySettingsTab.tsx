@@ -1,4 +1,5 @@
-import { IconLock } from '@tabler/icons-react';
+import { IconCopy, IconExternalLink, IconLock } from '@tabler/icons-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +32,17 @@ export function SecuritySettingsTab({
   onEnableMfa,
   onDisableMfa,
 }: SecuritySettingsTabProps) {
+  const copyMfaValue = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error('Copy failed', {
+        description: 'Your browser blocked clipboard access.',
+      });
+    }
+  };
+
   return (
     <SettingsTabFrame
       icon={<IconLock className="size-5 text-[#3ecf8e]" />}
@@ -70,13 +82,75 @@ export function SecuritySettingsTab({
         {!user?.mfa_enabled && mfaSetup && (
           <div className="mt-5 space-y-4 border-t border-border pt-5">
             <div className="rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wider text-[#3ecf8e]">Authenticator secret</div>
-              <div className="mt-2 break-all font-mono text-sm text-foreground">{mfaSetup.secret}</div>
-              <div className="mt-2 break-all font-mono text-[11px] text-foreground-light">{mfaSetup.otpauth_url}</div>
+              <div className="text-sm font-semibold text-foreground">Set up your authenticator app</div>
+              <ol className="mt-3 space-y-2 text-xs leading-5 text-foreground-light">
+                <li><span className="font-semibold text-foreground">1.</span> Open Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden, Authy, or another TOTP authenticator app.</li>
+                <li><span className="font-semibold text-foreground">2.</span> Add a new account. If your app supports setup links, use the link below. Otherwise choose manual setup and paste the setup key.</li>
+                <li><span className="font-semibold text-foreground">3.</span> Your app will show a changing six-digit code. Enter that code in the verification field, then enable MFA.</li>
+              </ol>
             </div>
-            <div className="max-w-xs space-y-2">
-              <Label htmlFor="mfa_enable_code">Verification code</Label>
-              <Input id="mfa_enable_code" inputMode="numeric" value={mfaCode} onChange={event => onSetMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))} />
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-lg border border-border bg-card p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#3ecf8e]">Manual setup key</div>
+                <p className="mt-1 text-xs leading-5 text-foreground-light">
+                  Use this when your authenticator app asks for a setup key or secret.
+                </p>
+                <div className="mt-3 break-all rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground">
+                  {mfaSetup.secret}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => copyMfaValue(mfaSetup.secret, 'Setup key')}
+                >
+                  <IconCopy className="size-4" />
+                  Copy setup key
+                </Button>
+              </div>
+
+              <div className="rounded-lg border border-border bg-card p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#3ecf8e]">Authenticator setup link</div>
+                <p className="mt-1 text-xs leading-5 text-foreground-light">
+                  On phones or password managers, this link can open the authenticator setup screen directly.
+                </p>
+                <div className="mt-3 max-h-20 overflow-auto break-all rounded-md border border-border bg-background px-3 py-2 font-mono text-[11px] leading-5 text-foreground-light">
+                  {mfaSetup.otpauth_url}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" asChild>
+                    <a href={mfaSetup.otpauth_url}>
+                      <IconExternalLink className="size-4" />
+                      Open setup link
+                    </a>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => copyMfaValue(mfaSetup.otpauth_url, 'Setup link')}
+                  >
+                    <IconCopy className="size-4" />
+                    Copy link
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="max-w-sm space-y-2">
+              <Label htmlFor="mfa_enable_code">Six-digit code from your authenticator app</Label>
+              <Input
+                id="mfa_enable_code"
+                inputMode="numeric"
+                placeholder="123456"
+                value={mfaCode}
+                onChange={event => onSetMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              />
+              <p className="text-xs leading-5 text-foreground-light">
+                The code changes every 30 seconds. Use the current code shown in your authenticator app.
+              </p>
             </div>
             <Button onClick={onEnableMfa} disabled={mfaBusy || mfaCode.length !== 6} className="bg-[#3ecf8e] text-black hover:bg-[#3ecf8e]/95">
               {mfaBusy && <Spinner className="size-4" />}
