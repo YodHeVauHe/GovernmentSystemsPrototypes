@@ -1,4 +1,5 @@
 import { Pool, PoolClient, QueryResultRow } from 'pg';
+import { positiveIntegerEnv } from './env';
 
 export type DbClient = {
   query<T extends QueryResultRow = any>(sql: string, params?: unknown[]): Promise<{ rows: T[]; rowCount: number | null }>;
@@ -24,6 +25,7 @@ export function createDb(): Db {
   const pool = new Pool({
     connectionString: requireDatabaseUrl(),
     ssl: resolveDatabaseSslConfig(process.env),
+    ...resolveDatabaseTimeoutConfig(process.env),
   });
 
   return {
@@ -56,6 +58,17 @@ export function createDb(): Db {
 export function resolveDatabaseSslConfig(env: NodeJS.ProcessEnv = process.env): DatabaseSslConfig {
   if (env.DATABASE_SSL === 'false') return false;
   return { rejectUnauthorized: env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false' };
+}
+
+export function resolveDatabaseTimeoutConfig(env: NodeJS.ProcessEnv = process.env) {
+  const connectionTimeoutMillis = positiveIntegerEnv('DATABASE_CONNECTION_TIMEOUT_MS', 5_000, env);
+  const queryTimeoutMillis = positiveIntegerEnv('DATABASE_QUERY_TIMEOUT_MS', 10_000, env);
+
+  return {
+    connectionTimeoutMillis,
+    query_timeout: queryTimeoutMillis,
+    statement_timeout: queryTimeoutMillis,
+  };
 }
 
 export async function one<T extends QueryResultRow = any>(db: DbClient, sql: string, params: unknown[] = []) {

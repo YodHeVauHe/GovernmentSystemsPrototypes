@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { TurnstileWidget } from '@/components/TurnstileWidget';
 import { API_BASE } from '@/lib/api-base';
+import { fetchHumanVerification } from '@/lib/human-verification';
 import {
   HUMAN_VERIFICATION_STORAGE_KEY,
   shouldBypassTurnstileServerVerification,
@@ -53,15 +54,7 @@ export function HumanVerificationGate({ children }: { children: React.ReactNode 
     setVerifying(true);
 
     try {
-      const response = await fetch(`${API_BASE}/api/auth/human-verification`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ turnstile_token: token }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(body.error || 'Human verification failed. Please retry the challenge.');
-      }
+      await fetchHumanVerification({ apiBase: API_BASE, token });
       storeVerification();
       setIsVerified(true);
     } catch (err) {
