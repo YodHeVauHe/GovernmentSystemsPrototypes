@@ -1,11 +1,12 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconInnerShadowTop } from '@tabler/icons-react';
+import { IconInfoCircle, IconInnerShadowTop } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { FieldError } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { TurnstileWidget } from '@/components/TurnstileWidget';
@@ -88,6 +89,7 @@ const accountTypes: Array<{
 ];
 
 const LOGIN_REDIRECT_DELAY_MS = 1400;
+const DEFAULT_MDA_ID = 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3';
 
 export function SignupPage() {
   const navigate = useNavigate();
@@ -112,6 +114,10 @@ export function SignupPage() {
     () => accountTypes.find(type => type.value === form.account_type) || accountTypes[0],
     [form.account_type]
   );
+  const selectedMda = useMemo(
+    () => MDAS_LIST.find(mda => mda.id === (form.requested_mda_id || DEFAULT_MDA_ID)),
+    [form.requested_mda_id]
+  );
 
   const clearFieldError = (field: keyof SignupValidationErrors) => {
     setFieldErrors(current => ({ ...current, [field]: undefined }));
@@ -135,7 +141,7 @@ export function SignupPage() {
       ...current,
       account_type: value,
       requested_role: nextType.roleOptions[0],
-      requested_mda_id: nextType.requiresMda ? current.requested_mda_id || 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3' : '',
+      requested_mda_id: nextType.requiresMda ? current.requested_mda_id || DEFAULT_MDA_ID : '',
     }));
     clearFieldError('requested_mda_id');
   };
@@ -167,20 +173,20 @@ export function SignupPage() {
 
   return (
     <main className="auth-page-background flex min-h-dvh items-center justify-center px-4 py-8 text-[#ededed]">
-      <form onSubmit={submit} noValidate className="relative z-10 w-full max-w-2xl space-y-5 rounded-lg border border-[#2e2e2e]/80 bg-[#141414]/95 p-6 shadow-2xl shadow-black/35 backdrop-blur">
+      <form onSubmit={submit} noValidate className="relative z-10 w-full max-w-xl space-y-3 rounded-lg border border-[#2e2e2e]/80 bg-[#141414]/95 p-6 shadow-2xl shadow-black/35 backdrop-blur">
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
             <IconInnerShadowTop className="size-5" />
           </div>
           <div>
             <h1 className="text-lg font-semibold text-white">Request account access</h1>
-            <p className="text-sm text-[#8b8b8b]">Choose the account category that matches your legal identity or organization.</p>
+            <p className="text-xs text-[#8b8b8b]">Select the account category that fits you.</p>
           </div>
         </div>
 
         {error && <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div>}
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label htmlFor="account_type">Account category</Label>
           <select
             id="account_type"
@@ -193,8 +199,8 @@ export function SignupPage() {
           <p className="text-xs text-[#8b8b8b]">{selectedType.description}</p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
             <Label htmlFor="full_name">Full legal name</Label>
             <Input
               id="full_name"
@@ -206,7 +212,7 @@ export function SignupPage() {
             />
             <FieldError id="full-name-error">{fieldErrors.full_name}</FieldError>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
@@ -219,7 +225,7 @@ export function SignupPage() {
             />
             <FieldError id="email-error">{fieldErrors.email}</FieldError>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label htmlFor="password">Password</Label>
             <Input
               id="password"
@@ -233,7 +239,7 @@ export function SignupPage() {
             />
             <FieldError id="password-error">{fieldErrors.password}</FieldError>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label htmlFor="requested_role">Requested privilege</Label>
             <select
               id="requested_role"
@@ -249,22 +255,29 @@ export function SignupPage() {
             </select>
           </div>
           {selectedType.requiresMda && (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="requested_mda_id">Assigned MDA</Label>
-              <select
-                id="requested_mda_id"
-                value={form.requested_mda_id || 'mda-moict-1adc5ae5-f0f3-4121-bbc8-825065ec8fd3'}
-                onChange={event => update('requested_mda_id', event.target.value)}
-                className="h-9 w-full rounded-md border border-[#2e2e2e] bg-[#181818] px-3 text-sm"
-                aria-invalid={Boolean(fieldErrors.requested_mda_id)}
-                aria-describedby={fieldErrors.requested_mda_id ? 'requested-mda-error' : undefined}
-              >
-                {MDAS_LIST.map(mda => <option key={mda.id} value={mda.id}>{mda.name} ({mda.shortName})</option>)}
-              </select>
+              <Select value={form.requested_mda_id || DEFAULT_MDA_ID} onValueChange={value => update('requested_mda_id', value)}>
+                <SelectTrigger
+                  id="requested_mda_id"
+                  className="w-full border-[#2e2e2e] bg-[#181818] text-[#ededed]"
+                  aria-invalid={Boolean(fieldErrors.requested_mda_id)}
+                  aria-describedby={fieldErrors.requested_mda_id ? 'requested-mda-error' : undefined}
+                >
+                  <SelectValue>{selectedMda?.shortName || 'Select MDA'}</SelectValue>
+                </SelectTrigger>
+                <SelectContent className="border-[#2e2e2e] bg-[#181818] text-[#ededed]">
+                  {MDAS_LIST.map(mda => (
+                    <SelectItem key={mda.id} value={mda.id}>
+                      {mda.name} ({mda.shortName})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FieldError id="requested-mda-error">{fieldErrors.requested_mda_id}</FieldError>
             </div>
           )}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label htmlFor="requested_organization">{selectedType.organizationLabel}</Label>
             <Input
               id="requested_organization"
@@ -278,43 +291,48 @@ export function SignupPage() {
           </div>
         </div>
 
-        <div className="rounded-md border border-[#2e2e2e] bg-[#181818] p-4 text-sm text-[#b5b5b5]">
-          After account creation, you will complete verification in Account Settings. Public developers submit NIN and National ID images. Companies and businesses submit URSB/BRN/TIN evidence. Government employees submit staff and authorization details.
+        <div className="space-y-1.5">
+          <p className="flex items-start gap-2 text-xs leading-relaxed text-[#3ecf8e]">
+            <IconInfoCircle className="mt-0.5 size-3.5 shrink-0" />
+            <span>Finish verification in Account Settings with NIN/ID, URSB/BRN/TIN, or staff authorization evidence.</span>
+          </p>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="requested_purpose">Access purpose</Label>
+            <Textarea
+              id="requested_purpose"
+              value={form.requested_purpose}
+              aria-invalid={Boolean(fieldErrors.requested_purpose)}
+              aria-describedby={fieldErrors.requested_purpose ? 'requested-purpose-error' : undefined}
+              onChange={event => update('requested_purpose', event.target.value)}
+              required
+            />
+            <FieldError id="requested-purpose-error">{fieldErrors.requested_purpose}</FieldError>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="requested_purpose">Access purpose</Label>
-          <Textarea
-            id="requested_purpose"
-            value={form.requested_purpose}
-            aria-invalid={Boolean(fieldErrors.requested_purpose)}
-            aria-describedby={fieldErrors.requested_purpose ? 'requested-purpose-error' : undefined}
-            onChange={event => update('requested_purpose', event.target.value)}
-            required
-          />
-          <FieldError id="requested-purpose-error">{fieldErrors.requested_purpose}</FieldError>
-        </div>
+        <div className="space-y-1.5">
+          <div className="space-y-1.5">
+            <Label>Human verification</Label>
+            <TurnstileWidget
+              action="signup"
+              resetSignal={turnstileResetSignal}
+              onToken={token => {
+                setTurnstileToken(token);
+                if (token) clearFieldError('turnstileToken');
+              }}
+              onError={message => setFieldErrors(current => ({ ...current, turnstileToken: message }))}
+            />
+            <FieldError>{fieldErrors.turnstileToken}</FieldError>
+          </div>
 
-        <div className="space-y-2">
-          <Label>Human verification</Label>
-          <TurnstileWidget
-            action="signup"
-            resetSignal={turnstileResetSignal}
-            onToken={token => {
-              setTurnstileToken(token);
-              if (token) clearFieldError('turnstileToken');
-            }}
-            onError={message => setFieldErrors(current => ({ ...current, turnstileToken: message }))}
-          />
-          <FieldError>{fieldErrors.turnstileToken}</FieldError>
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Button type="submit" disabled={submitting}>
-            {submitting && <Spinner className="size-4" />}
-            Create account for review
-          </Button>
-          <Link className="text-sm text-[#3ecf8e] hover:text-white" to="/login">Already have an account?</Link>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Button type="submit" disabled={submitting}>
+              {submitting && <Spinner className="size-4" />}
+              Create account for review
+            </Button>
+            <Link className="text-sm text-[#3ecf8e] hover:text-white" to="/login">Already have an account?</Link>
+          </div>
         </div>
       </form>
     </main>
