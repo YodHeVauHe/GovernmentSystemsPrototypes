@@ -88,14 +88,17 @@ export async function buildAccessRequestList(
       r.status, r.api_key_preview, r.api_key_status, r.api_key_expires_at, r.api_key_revoked_at,
       (r.api_key IS NOT NULL) as api_key_pending_reveal,
       r.requested_fields, r.volume_tier, r.legal_basis, r.environment, r.created_at,
+      r.reviewed_by, r.reviewed_at, r.review_notes,
       a.name as api_name,
       a.owning_mda_id,
       COALESCE(m.name, consumer.requested_organization, consumer.full_name, r.consumer_user_id) as mda_name,
-      COALESCE(m.short_name, consumer.requested_organization, consumer.full_name, r.consumer_user_id) as consumer_name
+      COALESCE(m.short_name, consumer.requested_organization, consumer.full_name, r.consumer_user_id) as consumer_name,
+      reviewer.full_name as reviewer_name
     FROM access_requests r
     JOIN apis a ON r.api_id = a.id
     LEFT JOIN mdas m ON r.consumer_mda_id = m.id
     LEFT JOIN users consumer ON r.consumer_user_id = consumer.id
+    LEFT JOIN users reviewer ON r.reviewed_by = reviewer.id
   `;
 
   const safeLimit = boundedPositiveInteger(limit, ACCESS_REQUEST_LIST_DEFAULT_LIMIT, ACCESS_REQUEST_LIST_MAX_LIMIT);

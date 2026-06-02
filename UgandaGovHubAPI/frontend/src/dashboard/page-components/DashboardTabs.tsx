@@ -37,7 +37,7 @@ export function DashboardTabs({ role, activeTab, setActiveTab, pendingApprovals,
               </button>
             )}
 
-            {(role === 'developer' || role === 'admin') && (
+            {role === 'developer' && (
               <button
                 onClick={() => setActiveTab('credentials')}
                 className={`h-9 px-4 rounded-md text-[13px] font-medium transition-colors flex items-center gap-2 ${

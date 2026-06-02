@@ -1,11 +1,16 @@
-import { IconX } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCalendarTime, IconCircleCheck, IconClock, IconFileText, IconX } from '@tabler/icons-react';
+import { Hourglass } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
 import {
   AccessRequestStatusBadge,
   AccountStatusBadge,
+  ExpiryDatePicker,
   accountCategoryLabel,
   accountVerificationStatus,
+  canRunAccountApproval,
   formatDashboardLabel,
   roleLabel,
+  toDateTimeLocalValue,
   verificationStatusLabel,
 } from './dashboard-page-helpers';
 import { formatAuditLogDetails, getAuditLogEndpoint, getAuditLogResponseStatus, getAuditLogResponseStatusLabel } from '../view-helpers';
@@ -18,6 +23,12 @@ function formatDateTime(value?: string | null) {
   if (!value) return 'Not provided';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'Not provided' : date.toLocaleString();
+}
+
+function formatReviewDateTime(value?: string | null, fallback = 'Not provided') {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date.toLocaleString();
 }
 
 function DetailField({ label, value, className = '' }: { label: string; value: unknown; className?: string }) {
@@ -52,6 +63,42 @@ function InlineList({ values, emptyLabel }: { values?: unknown[]; emptyLabel: st
   );
 }
 
+function VerificationDocumentCard({ document }: { document: any }) {
+  const statusLabel = formatDashboardLabel(document.status);
+  const documentType = document.mime_type || 'Not Provided';
+  const uploadedAt = formatDateTime(document.uploaded_at);
+
+  return (
+    <div className="grid gap-3 rounded-md border border-[#2e2e2e] bg-[#1c1c1c] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+      <div className="flex min-w-0 gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#2e2e2e] bg-[#141414] text-[#3ecf8e]">
+          <IconFileText className="h-4.5 w-4.5" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-semibold text-white" title={document.label || document.type}>
+            {document.label || formatDashboardLabel(document.type)}
+          </div>
+          <div className="mt-1 truncate font-mono text-[11px] text-[#8b8b8b]" title={document.file_name}>
+            {document.file_name}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-2 sm:min-w-[150px] sm:justify-items-end sm:text-right">
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 px-2 py-0.5 text-[10px] font-mono uppercase text-[#3ecf8e]">
+          <IconCircleCheck className="h-3 w-3" />
+          {statusLabel}
+        </span>
+        <span className="font-mono text-[11px] text-[#ededed]">{documentType}</span>
+        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-[#8b8b8b]">
+          <IconCalendarTime className="h-3.5 w-3.5" />
+          {uploadedAt}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function DashboardDrawers({
   selectedAccessRequest,
   setSelectedAccessRequest,
@@ -60,6 +107,19 @@ export function DashboardDrawers({
   mdas = [],
   selectedLog,
   setSelectedLog,
+  keyExpiryInputs = {},
+  setKeyExpiryInputs,
+  handleApprove,
+  approving,
+  openAccessReviewDialog,
+  accountRoleInputs = {},
+  setAccountRoleInputs,
+  accountMdaInputs = {},
+  setAccountMdaInputs,
+  accountReviewing,
+  handleApproveAccount,
+  handleNeedsInfoAccount,
+  handleRejectAccount,
 }: any) {
   const selectedAccountProfile = selectedAccount?.account?.profile;
   const selectedAccountRequirements = selectedAccount?.account?.requirements;
@@ -74,6 +134,21 @@ export function DashboardDrawers({
     return requirement?.label || missingDocument;
   });
   const selectedAccountMissingFields = selectedAccountProgress?.missing_fields || [];
+  const selectedAccountRole = selectedAccount ? accountRoleInputs[selectedAccount.id] || selectedAccount.role || selectedAccount.requested_role || 'developer' : 'developer';
+  const selectedAccountNeedsMda = selectedAccountRole === 'admin'
+    || selectedAccountRole === 'api_owner'
+    || ['government_employee', 'mda_api_owner', 'admin'].includes(String(selectedAccountProfile?.account_category || selectedAccount?.account_type || ''));
+  const selectedAccountMdaInput = selectedAccount ? accountMdaInputs[selectedAccount.id] || selectedAccount.mda_id || selectedAccount.requested_mda_id || '' : '';
+  const selectedAccountReadyForReview = selectedAccount ? canRunAccountApproval(selectedAccount) : false;
+  const selectedAccessMissingInformation = selectedAccessRequest ? [
+    !selectedAccessRequest.consumer_name && !selectedAccessRequest.mda_name ? 'Requester identity' : '',
+    !selectedAccessRequest.consumer_mda_id && selectedAccessRequest.consumer_type === 'mda' ? 'Consumer MDA' : '',
+    !selectedAccessRequest.legal_basis ? 'Lawful basis' : '',
+    !selectedAccessRequest.purpose ? 'Purpose statement' : '',
+    !selectedAccessRequest.requested_fields ? 'Requested fields' : '',
+    !selectedAccessRequest.volume_tier ? 'Volume tier' : '',
+    !selectedAccessRequest.environment ? 'Environment' : '',
+  ].filter(Boolean) : [];
 
   return (
     <>
@@ -183,16 +258,16 @@ export function DashboardDrawers({
                   </div>
 
                   <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5 text-[12px]">
-                    <div className="grid gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Submitted At</span>
-                        <span className="font-mono text-[#ededed]">{formatDateTime(selectedAccountProfile?.submitted_at)}</span>
+                        <span className="font-mono text-[#ededed]">{formatReviewDateTime(selectedAccountProfile?.submitted_at, 'Not submitted yet')}</span>
                       </div>
                       <div>
                         <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Reviewed At</span>
-                        <span className="font-mono text-[#ededed]">{formatDateTime(selectedAccountProfile?.reviewed_at)}</span>
+                        <span className="font-mono text-[#ededed]">{formatReviewDateTime(selectedAccount.reviewed_at, 'Not reviewed yet')}</span>
                       </div>
-                      <div>
+                      <div className="col-span-2">
                         <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Review Notes</span>
                         <span className="text-[#ededed]">{formatValue(selectedAccountProfile?.review_notes, 'No review notes')}</span>
                       </div>
@@ -206,15 +281,7 @@ export function DashboardDrawers({
                     ) : (
                       <div className="space-y-2">
                         {selectedAccountDocuments.map((document: any) => (
-                          <div key={`${document.type}-${document.file_name}`} className="rounded-md border border-[#2e2e2e] bg-[#1c1c1c] p-2">
-                            <div className="font-medium text-white">{document.label || document.type}</div>
-                            <div className="mt-0.5 truncate font-mono text-[11px] text-[#8b8b8b]" title={document.file_name}>{document.file_name}</div>
-                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#8b8b8b]">
-                              <span>Status: <span className="text-[#ededed]">{formatDashboardLabel(document.status)}</span></span>
-                              <span>Type: <span className="font-mono text-[#ededed]">{document.mime_type || 'Not Provided'}</span></span>
-                              <span>Uploaded: <span className="font-mono text-[#ededed]">{formatDateTime(document.uploaded_at)}</span></span>
-                            </div>
-                          </div>
+                          <VerificationDocumentCard key={`${document.type}-${document.file_name}`} document={document} />
                         ))}
                       </div>
                     )}
@@ -238,6 +305,101 @@ export function DashboardDrawers({
                       </div>
                     </div>
                   </div>
+
+                  {selectedAccount.status === 'PENDING_REVIEW' && (
+                    <div className="rounded-lg border border-[#3ecf8e]/25 bg-[#102018] p-3.5 text-[12px]">
+                      <SectionTitle title="Admin Review Decision" aside={verificationStatusLabel(accountVerificationStatus(selectedAccount))} />
+                      <div className="grid gap-3">
+                        <div className="grid gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] p-3 text-[#ededed]">
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Verification package submitted</span>
+                            {selectedAccountReadyForReview ? (
+                              <IconCircleCheck className="h-4 w-4 text-[#3ecf8e]" />
+                            ) : (
+                              <IconAlertTriangle className="h-4 w-4 text-orange-300" />
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Required documents uploaded</span>
+                            {selectedAccountMissingDocuments?.length ? (
+                              <IconAlertTriangle className="h-4 w-4 text-orange-300" />
+                            ) : (
+                              <IconCircleCheck className="h-4 w-4 text-[#3ecf8e]" />
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Required profile fields completed</span>
+                            {selectedAccountMissingFields.length ? (
+                              <IconAlertTriangle className="h-4 w-4 text-orange-300" />
+                            ) : (
+                              <IconCircleCheck className="h-4 w-4 text-[#3ecf8e]" />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <select
+                            value={selectedAccountRole}
+                            onChange={event => setAccountRoleInputs?.((current: Record<string, string>) => ({ ...current, [selectedAccount.id]: event.target.value }))}
+                            className="h-[34px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:border-[#3ecf8e] focus:outline-none"
+                          >
+                            <option value="developer">Developer</option>
+                            <option value="api_owner">API Owner</option>
+                            <option value="reviewer">Reviewer</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          <select
+                            value={selectedAccountMdaInput}
+                            disabled={!selectedAccountNeedsMda}
+                            onChange={event => setAccountMdaInputs?.((current: Record<string, string>) => ({ ...current, [selectedAccount.id]: event.target.value }))}
+                            className="h-[34px] rounded-md border border-[#2e2e2e] bg-[#141414] px-2 text-[12px] text-white focus:border-[#3ecf8e] focus:outline-none disabled:opacity-40"
+                          >
+                            {!selectedAccountNeedsMda && <option value="">Not applicable</option>}
+                            {mdas.map((mda: any) => <option key={mda.id} value={mda.id}>{mda.shortName}</option>)}
+                          </select>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleApproveAccount?.(selectedAccount)}
+                            disabled={accountReviewing === selectedAccount.id || !selectedAccountReadyForReview}
+                            title={selectedAccountReadyForReview ? undefined : 'User must submit verification before approval.'}
+                            className="inline-flex h-[34px] items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-2 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {accountReviewing === selectedAccount.id && <Spinner className="h-3.5 w-3.5 text-black" />}
+                            {!selectedAccountReadyForReview && accountReviewing !== selectedAccount.id && <Hourglass className="h-3.5 w-3.5" />}
+                            {selectedAccountReadyForReview ? 'Approve' : 'Waiting'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNeedsInfoAccount?.(selectedAccount)}
+                            disabled={!selectedAccountReadyForReview}
+                            title={selectedAccountReadyForReview ? undefined : 'User must submit verification before requesting more information.'}
+                            className="inline-flex h-[34px] items-center justify-center gap-1.5 rounded-md border border-orange-400/30 px-2 text-[12px] font-semibold text-orange-200 transition-colors hover:bg-orange-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <IconClock className="h-3.5 w-3.5" />
+                            Need Info
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRejectAccount?.(selectedAccount)}
+                            disabled={!selectedAccountReadyForReview}
+                            title={selectedAccountReadyForReview ? undefined : 'User must submit verification before rejection.'}
+                            className="inline-flex h-[34px] items-center justify-center gap-1.5 rounded-md border border-red-400/30 px-2 text-[12px] font-semibold text-red-200 transition-colors hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <IconX className="h-3.5 w-3.5" />
+                            Reject
+                          </button>
+                        </div>
+                        {!selectedAccountReadyForReview && (
+                          <p className="rounded-md border border-orange-400/20 bg-orange-400/5 px-3 py-2 text-[12px] leading-5 text-orange-200">
+                            This applicant is still in Draft Profile. Review decisions unlock after the user submits verification.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -279,6 +441,18 @@ export function DashboardDrawers({
                     </div>
                   </div>
 
+                  <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5 text-[12px]">
+                    <SectionTitle title="Requester" aside={formatDashboardLabel(selectedAccessRequest.consumer_type || 'mda')} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <DetailField label="Requesting Party" value={selectedAccessRequest.consumer_name || selectedAccessRequest.mda_name} />
+                      <DetailField label="Consumer MDA" value={selectedAccessRequest.mda_name} />
+                      <DetailField label="Consumer User ID" value={selectedAccessRequest.consumer_user_id} />
+                      <DetailField label="Consumer MDA ID" value={selectedAccessRequest.consumer_mda_id} />
+                      <DetailField label="Submitted At" value={formatDateTime(selectedAccessRequest.created_at)} />
+                      <DetailField label="Environment" value={formatDashboardLabel(selectedAccessRequest.environment || 'sandbox')} />
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4 text-[13px]">
                     <div>
                       <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Consumer MDA</span>
@@ -303,7 +477,96 @@ export function DashboardDrawers({
                   </div>
 
                   <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5 text-[12px]">
-                    <div className="grid gap-3">
+                    <SectionTitle
+                      title="Missing Information"
+                      aside={selectedAccessMissingInformation.length ? `${selectedAccessMissingInformation.length} item${selectedAccessMissingInformation.length === 1 ? '' : 's'} missing` : 'Complete'}
+                    />
+                    <InlineList values={selectedAccessMissingInformation} emptyLabel="No Missing Information" />
+                  </div>
+
+                  {selectedAccessRequest.status === 'PENDING' && (
+                    <div className="rounded-lg border border-[#3ecf8e]/25 bg-[#102018] p-3.5 text-[12px]">
+                      <SectionTitle title="Access Review Decision" aside="Pending reviewer action" />
+                      <div className="grid gap-3">
+                        <div className="grid gap-2 rounded-md border border-[#2e2e2e] bg-[#141414] p-3 text-[#ededed]">
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Lawful basis provided</span>
+                            {selectedAccessRequest.legal_basis ? (
+                              <IconCircleCheck className="h-4 w-4 text-[#3ecf8e]" />
+                            ) : (
+                              <IconAlertTriangle className="h-4 w-4 text-orange-300" />
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Purpose statement provided</span>
+                            {selectedAccessRequest.purpose ? (
+                              <IconCircleCheck className="h-4 w-4 text-[#3ecf8e]" />
+                            ) : (
+                              <IconAlertTriangle className="h-4 w-4 text-orange-300" />
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span>Requested data scope declared</span>
+                            {selectedAccessRequest.requested_fields ? (
+                              <IconCircleCheck className="h-4 w-4 text-[#3ecf8e]" />
+                            ) : (
+                              <IconAlertTriangle className="h-4 w-4 text-orange-300" />
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">Sandbox Key Expiry</span>
+                          <ExpiryDatePicker
+                            value={keyExpiryInputs[selectedAccessRequest.id] ?? toDateTimeLocalValue()}
+                            onChange={value => setKeyExpiryInputs?.((current: Record<string, string>) => ({ ...current, [selectedAccessRequest.id]: value }))}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleApprove?.(selectedAccessRequest.id, 'Approved after reviewing lawful basis, purpose, and requested data scope.')}
+                            disabled={approving === selectedAccessRequest.id}
+                            className="inline-flex h-[34px] items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-2 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:opacity-50"
+                          >
+                            {approving === selectedAccessRequest.id && <Spinner className="h-3.5 w-3.5 text-black" />}
+                            {approving !== selectedAccessRequest.id && <IconCircleCheck className="h-3.5 w-3.5" />}
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openAccessReviewDialog?.('needs-info', selectedAccessRequest)}
+                            className="inline-flex h-[34px] items-center justify-center gap-1.5 rounded-md border border-orange-400/30 px-2 text-[12px] font-semibold text-orange-200 transition-colors hover:bg-orange-400/10"
+                          >
+                            <IconClock className="h-3.5 w-3.5" />
+                            Need Info
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openAccessReviewDialog?.('reject', selectedAccessRequest)}
+                            className="inline-flex h-[34px] items-center justify-center gap-1.5 rounded-md border border-red-400/30 px-2 text-[12px] font-semibold text-red-200 transition-colors hover:bg-red-400/10"
+                          >
+                            <IconX className="h-3.5 w-3.5" />
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedAccessRequest.status !== 'PENDING' && (
+                    <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-3.5 text-[12px]">
+                      <SectionTitle title="Review Outcome" aside={selectedAccessRequest.reviewer_name || selectedAccessRequest.reviewed_by} />
+                      <div className="grid gap-3">
+                        <DetailField label="Reviewed At" value={formatDateTime(selectedAccessRequest.reviewed_at)} />
+                        <DetailField label="Reviewer Notes" value={selectedAccessRequest.review_notes || 'No reviewer notes'} />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border-t border-[#2e2e2e] pt-4 text-[12px]">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
                         <span className="block font-mono text-[10px] uppercase tracking-wider text-[#8b8b8b]">API ID</span>
                         <span className="font-mono text-[#ededed]">{selectedAccessRequest.api_id || 'Unavailable'}</span>

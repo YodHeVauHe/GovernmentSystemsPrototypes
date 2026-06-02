@@ -21,6 +21,7 @@ import { AdminDashboardSideMenu } from './page-components/AdminDashboardSideMenu
 import { AnalyticsPanel } from './page-components/AnalyticsPanel';
 import { AuditPanel } from './page-components/AuditPanel';
 import { createAccountReviewActions, type AccountActionDialogState } from './page-components/account-review-actions';
+import { sanitizeAccessReviewText } from './page-components/access-review-validation';
 import { CredentialsPanel } from './page-components/CredentialsPanel';
 import { DashboardDialogs } from './page-components/DashboardDialogs';
 import { DashboardDrawers } from './page-components/DashboardDrawers';
@@ -72,6 +73,9 @@ export default function DashboardPage() {
   const [keyExpiryInputs, setKeyExpiryInputs] = useState<Record<string, string>>({});
   const [keyActionConfirmation, setKeyActionConfirmation] = useState<{ action: 'revoke' | 'delete'; request: any } | null>(null);
   const [keyActionBusy, setKeyActionBusy] = useState(false);
+  const [accessReviewDialog, setAccessReviewDialog] = useState<{ action: 'needs-info' | 'reject'; request: any } | null>(null);
+  const [accessReviewText, setAccessReviewText] = useState('');
+  const [accessReviewBusy, setAccessReviewBusy] = useState(false);
   const [oneTimeApiKey, setOneTimeApiKey] = useState<{
     requestId: string;
     apiName: string;
@@ -91,7 +95,7 @@ export default function DashboardPage() {
   ), [mdaId, user?.id]);
 
   const claimPendingOneTimeApiKey = useCallback((request: any) => {
-    if (role !== 'developer' || !hasPendingOneTimeApiKeyReveal(request) || oneTimeApiKeyOpenRef.current) return;
+    if (!isCurrentConsumerRequest(request) || !hasPendingOneTimeApiKeyReveal(request) || oneTimeApiKeyOpenRef.current) return;
 
     const requestId = String(request.id || '');
     if (!requestId || pendingKeyRevealClaims.current.has(requestId)) return;
@@ -120,13 +124,12 @@ export default function DashboardPage() {
         setOneTimeApiKeyCopied(false);
       })
       .catch(err => {
-        pendingKeyRevealClaims.current.delete(requestId);
         if ((err as { code?: string }).code === 'ONE_TIME_KEY_UNAVAILABLE') return;
         toast.error('API key reveal failed', {
           description: err instanceof Error ? err.message : 'Failed to reveal API key',
         });
       });
-  }, [role]);
+  }, [isCurrentConsumerRequest]);
 
   const fetchDashboardData = useCallback((showLoading = false) => {
     if (showLoading) {
@@ -205,13 +208,16 @@ export default function DashboardPage() {
     });
   }, [addNotification, notifications, requests, role]);
 
-  const handleApprove = (id: string) => {
+  const handleApprove = (id: string, reviewNotes = '') => {
     const request = requests.find(req => req.id === id);
     setApproving(id);
     fetch(`${API_BASE}/api/access/${id}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key_expires_at: fromDateTimeLocalValue(keyExpiryInputs[id]) })
+      body: JSON.stringify({
+        api_key_expires_at: fromDateTimeLocalValue(keyExpiryInputs[id]),
+        review_notes: reviewNotes,
+      })
     })
       .then(async res => {
         const result = await res.json();
@@ -241,6 +247,7 @@ export default function DashboardPage() {
           });
         }
         fetchDashboardData();
+        setSelectedAccessRequest(null);
       })
       .catch(err => {
         toast.error('Approval failed', {
@@ -248,6 +255,75 @@ export default function DashboardPage() {
         });
       })
       .finally(() => setApproving(null));
+  };
+
+  const openAccessReviewDialog = (action: 'needs-info' | 'reject', request: any) => {
+    setAccessReviewDialog({ action, request });
+    setAccessReviewText(request.review_notes || '');
+  };
+
+  const closeAccessReviewDialog = () => {
+    if (accessReviewBusy) return;
+    setAccessReviewDialog(null);
+    setAccessReviewText('');
+  };
+
+  const confirmAccessReviewAction = () => {
+    if (!accessReviewDialog || accessReviewBusy) return;
+    const sanitizedText = sanitizeAccessReviewText(accessReviewText);
+    if (sanitizedText === null) {
+      toast.error('Invalid review notes', {
+        description: 'Use plain text under 2000 characters without unsupported control characters.',
+      });
+      return;
+    }
+
+    const { action, request } = accessReviewDialog;
+    const endpoint = action === 'reject'
+      ? `${API_BASE}/api/access/${request.id}/reject`
+      : `${API_BASE}/api/access/${request.id}/needs-more-information`;
+    const body = action === 'reject' ? { reason: sanitizedText } : { notes: sanitizedText };
+    setAccessReviewBusy(true);
+    setApproving(request.id);
+
+    fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(async res => {
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || 'Failed to complete access review');
+        return result;
+      })
+      .then(() => {
+        toast.success(action === 'reject' ? 'Access request rejected' : 'More information requested', {
+          description: action === 'reject'
+            ? 'The request was closed with reviewer notes.'
+            : 'The requester can submit a corrected access request.',
+        });
+        addNotification({
+          type: 'access',
+          title: action === 'reject' ? 'Access request rejected' : 'More information requested',
+          message: sanitizedText || (action === 'reject'
+            ? 'Your access request was rejected by a reviewer.'
+            : 'Your access request needs more information before approval.'),
+          recipientUserId: request.consumer_user_id,
+        });
+        setAccessReviewDialog(null);
+        setAccessReviewText('');
+        setSelectedAccessRequest(null);
+        fetchDashboardData();
+      })
+      .catch(err => {
+        toast.error('Review failed', {
+          description: err instanceof Error ? err.message : 'Failed to complete access review',
+        });
+      })
+      .finally(() => {
+        setAccessReviewBusy(false);
+        setApproving(null);
+      });
   };
 
 
@@ -440,11 +516,17 @@ export default function DashboardPage() {
     filterMda,
     search: dashboardSearch,
   });
-  const visibleApiCallLogs = filterPersonalApiCallLogs(apiCallLogs, {
-    userId: user?.id,
-    mdaId,
-    search: dashboardSearch,
-  });
+  const visibleApiCallLogs = role === 'admin'
+    ? filterDashboardAuditLogs(apiCallLogs, {
+      role,
+      filterMda,
+      search: dashboardSearch,
+    })
+    : filterPersonalApiCallLogs(apiCallLogs, {
+      userId: user?.id,
+      mdaId,
+      search: dashboardSearch,
+    });
 
   const filteredAccountRequests = accountRequests.filter(user => {
     if (accountStatusFilter === 'ALL') return true;
@@ -520,7 +602,6 @@ export default function DashboardPage() {
           setSelectedAccessRequest={setSelectedAccessRequest}
           keyExpiryInputs={keyExpiryInputs}
           setKeyExpiryInputs={setKeyExpiryInputs}
-          handleApprove={handleApprove}
           approving={approving}
           handleUpdateExpiry={handleUpdateExpiry}
           openKeyActionConfirmation={openKeyActionConfirmation}
@@ -554,7 +635,7 @@ export default function DashboardPage() {
       );
     }
 
-    if (activeTab === 'credentials') {
+    if (activeTab === 'credentials' && role === 'developer') {
       return (
         <CredentialsPanel
           filteredCredentialRequests={filteredCredentialRequests}
@@ -654,6 +735,12 @@ export default function DashboardPage() {
         accountActionBusy={accountActionBusy}
         closeAccountActionDialog={closeAccountActionDialog}
         confirmAccountAction={confirmAccountAction}
+        accessReviewDialog={accessReviewDialog}
+        accessReviewText={accessReviewText}
+        setAccessReviewText={setAccessReviewText}
+        accessReviewBusy={accessReviewBusy}
+        closeAccessReviewDialog={closeAccessReviewDialog}
+        confirmAccessReviewAction={confirmAccessReviewAction}
       />
       <DashboardDrawers
         selectedAccessRequest={selectedAccessRequest}
@@ -663,6 +750,19 @@ export default function DashboardPage() {
         mdas={mdas}
         selectedLog={selectedLog}
         setSelectedLog={setSelectedLog}
+        keyExpiryInputs={keyExpiryInputs}
+        setKeyExpiryInputs={setKeyExpiryInputs}
+        handleApprove={handleApprove}
+        approving={approving}
+        openAccessReviewDialog={openAccessReviewDialog}
+        accountRoleInputs={accountRoleInputs}
+        setAccountRoleInputs={setAccountRoleInputs}
+        accountMdaInputs={accountMdaInputs}
+        setAccountMdaInputs={setAccountMdaInputs}
+        accountReviewing={accountReviewing}
+        handleApproveAccount={handleApproveAccount}
+        handleNeedsInfoAccount={handleNeedsInfoAccount}
+        handleRejectAccount={handleRejectAccount}
       />
     </>
   );

@@ -150,6 +150,9 @@ export async function ensureAdminSchema(db: DbClient) {
       volume_tier TEXT,
       legal_basis TEXT,
       environment TEXT,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      review_notes TEXT,
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (consumer_mda_id) REFERENCES mdas (id),
       FOREIGN KEY (consumer_user_id) REFERENCES users (id),
@@ -181,6 +184,9 @@ export async function ensureAdminSchema(db: DbClient) {
   await addColumn('api_key_revoked_at', 'TEXT');
   await addColumn('consumer_user_id', 'TEXT');
   await addColumn('consumer_type', "TEXT DEFAULT 'mda'");
+  await addColumn('reviewed_by', 'TEXT');
+  await addColumn('reviewed_at', 'TEXT');
+  await addColumn('review_notes', 'TEXT');
 
   const plaintextKeys = await many<{ id: string; api_key: string }>(db, 'SELECT id, api_key FROM access_requests WHERE api_key IS NOT NULL AND api_key_hash IS NULL');
   for (const row of plaintextKeys) {

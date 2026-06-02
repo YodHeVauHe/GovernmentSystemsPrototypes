@@ -1,4 +1,5 @@
 import { IconBan, IconCircleCheck, IconClock, IconDotsVertical, IconGridDots, IconList, IconTrash, IconX } from '@tabler/icons-react';
+import { Hourglass } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -117,6 +118,7 @@ export function AccountsPanel({
                             const adminRoleBlocked = selectedRole === 'admin' && !canPromoteAccountToAdmin(account);
                             const actionDisabled = accountReviewing === account.id || !canRunAccountApproval(account) || adminRoleBlocked;
                             const primaryActionLabel = adminRoleBlocked ? 'Gov/MDA only' : accountActionLabel(account, accountReviewing === account.id);
+                            const PrimaryActionIcon = canRunAccountApproval(account) && !adminRoleBlocked ? IconCircleCheck : Hourglass;
 
                             return (
                               <div key={account.id} className="flex min-h-[236px] flex-col rounded-lg border border-[#2e2e2e] bg-[#181818] p-4">
@@ -167,7 +169,7 @@ export function AccountsPanel({
                                     title={canRunAccountApproval(account) ? undefined : 'User must submit verification before approval.'}
                                     className="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:opacity-50"
                                   >
-                                    {accountReviewing === account.id ? <Spinner className="h-3.5 w-3.5 text-black" /> : <IconCircleCheck className="h-3.5 w-3.5" />}
+                                    {accountReviewing === account.id ? <Spinner className="h-3.5 w-3.5 text-black" /> : <PrimaryActionIcon className="h-3.5 w-3.5" />}
                                     {primaryActionLabel}
                                   </button>
                                   <DropdownMenu>
@@ -225,6 +227,7 @@ export function AccountsPanel({
                           const adminRoleBlocked = selectedRole === 'admin' && !canPromoteAccountToAdmin(user);
                           const actionDisabled = accountReviewing === user.id || !canRunAccountApproval(user) || adminRoleBlocked;
                           const primaryActionLabel = adminRoleBlocked ? 'Gov/MDA only' : accountActionLabel(user, accountReviewing === user.id);
+                          const PrimaryActionIcon = canRunAccountApproval(user) && !adminRoleBlocked ? IconCircleCheck : Hourglass;
 
                           return (
                             <TableRow key={user.id} className="border-b border-[#2e2e2e] hover:bg-[#2e2e2e]/30 transition-colors">
@@ -289,7 +292,7 @@ export function AccountsPanel({
                                     title={canRunAccountApproval(user) ? undefined : 'User must submit verification before approval.'}
                                     className="inline-flex h-[28px] items-center gap-1.5 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-semibold text-black transition-colors hover:bg-[#3ecf8e]/90 disabled:opacity-50"
                                   >
-                                    {accountReviewing === user.id ? <Spinner className="h-3.5 w-3.5 text-black" /> : <IconCircleCheck className="h-3.5 w-3.5" />}
+                                    {accountReviewing === user.id ? <Spinner className="h-3.5 w-3.5 text-black" /> : <PrimaryActionIcon className="h-3.5 w-3.5" />}
                                     {primaryActionLabel}
                                   </button>
                                   <DropdownMenu>

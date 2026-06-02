@@ -37,6 +37,12 @@ export function DashboardDialogs({
   accountActionBusy,
   closeAccountActionDialog,
   confirmAccountAction,
+  accessReviewDialog,
+  accessReviewText,
+  setAccessReviewText,
+  accessReviewBusy,
+  closeAccessReviewDialog,
+  confirmAccessReviewAction,
 }: any) {
   const accountActionUser = accountActionDialog?.user;
   const accountActionType = accountActionDialog?.type;
@@ -62,6 +68,13 @@ export function DashboardDialogs({
         ? 'Suspend account'
         : 'Delete permanently';
   const isDestructiveAccountAction = accountActionType === 'reject' || accountActionType === 'suspend' || accountActionType === 'delete';
+  const accessReviewAction = accessReviewDialog?.action;
+  const accessReviewRequest = accessReviewDialog?.request;
+  const accessReviewTitle = accessReviewAction === 'reject' ? 'Reject access request' : 'Request access changes';
+  const accessReviewDescription = accessReviewAction === 'reject'
+    ? 'Record why this access request cannot be approved. The requester will see the reviewer notes.'
+    : 'Tell the requester what lawful basis, purpose, scope, or volume detail must be corrected before approval.';
+  const accessReviewButtonLabel = accessReviewAction === 'reject' ? 'Reject request' : 'Request changes';
 
   return (
     <>
@@ -219,6 +232,61 @@ export function DashboardDialogs({
                   >
                     {accountActionBusy && <Spinner className="size-4" />}
                     {accountActionButtonLabel}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog
+              open={Boolean(accessReviewDialog)}
+              onOpenChange={open => {
+                if (!open) closeAccessReviewDialog();
+              }}
+            >
+              <AlertDialogContent className="border-[#2e2e2e] bg-[#1c1c1c] text-[#ededed]">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{accessReviewTitle}</AlertDialogTitle>
+                  <AlertDialogDescription className="text-[#b5b5b5]">
+                    {accessReviewDescription}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+
+                {accessReviewRequest && (
+                  <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-3 text-[12px]">
+                    <div className="font-semibold text-white">{accessReviewRequest.api_name}</div>
+                    <div className="mt-1 text-[#8b8b8b]">{accessReviewRequest.consumer_name || accessReviewRequest.mda_name}</div>
+                  </div>
+                )}
+
+                <Textarea
+                  value={accessReviewText}
+                  onChange={event => setAccessReviewText(event.target.value)}
+                  rows={4}
+                  placeholder={accessReviewAction === 'reject' ? 'Reason for rejection' : 'Information needed before approval'}
+                  className="min-h-[96px] border-[#2e2e2e] bg-[#141414] text-[#ededed] placeholder:text-[#8b8b8b] focus-visible:border-[#3ecf8e] focus-visible:ring-[#3ecf8e]/30"
+                />
+
+                <AlertDialogFooter>
+                  <AlertDialogCancel
+                    disabled={accessReviewBusy}
+                    className="border-[#2e2e2e] bg-[#141414] text-[#ededed] hover:bg-[#2e2e2e] hover:text-white"
+                  >
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={event => {
+                      event.preventDefault();
+                      confirmAccessReviewAction();
+                    }}
+                    disabled={accessReviewBusy}
+                    className={`inline-flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
+                      accessReviewAction === 'reject'
+                        ? 'bg-red-500 text-white hover:bg-red-400'
+                        : 'bg-orange-400 text-black hover:bg-orange-300'
+                    }`}
+                  >
+                    {accessReviewBusy && <Spinner className="size-4" />}
+                    {accessReviewButtonLabel}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

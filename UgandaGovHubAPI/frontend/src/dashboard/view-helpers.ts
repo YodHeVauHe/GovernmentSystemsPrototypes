@@ -183,7 +183,7 @@ export function getVisibleDashboardTabs(role: string, canViewAuditLogs: boolean)
   return [
     ...(role !== 'developer' && role !== 'reviewer' ? ['approvals' as const] : []),
     ...(role === 'admin' ? ['accounts' as const] : []),
-    ...(role === 'developer' || role === 'admin' ? ['credentials' as const] : []),
+    ...(role === 'developer' ? ['credentials' as const] : []),
     ...(role === 'admin' ? ['apiLogs' as const] : []),
     ...(canViewAuditLogs ? [
       'audit' as const,
