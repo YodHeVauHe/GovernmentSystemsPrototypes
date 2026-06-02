@@ -9,6 +9,7 @@ import {
   canCopyOneTimeApiKey,
   canViewAuditLogsTab,
   filterDashboardAuditLogs,
+  filterGovernanceAuditLogs,
   filterPersonalApiCallLogs,
   getVisibleDashboardTabs,
   hasActiveApprovedApiKey,
@@ -511,7 +512,7 @@ export default function DashboardPage() {
     ].some(value => String(value || '').toLowerCase().includes(dashboardSearch));
   });
 
-  const visibleLogs = filterDashboardAuditLogs(auditLogs, {
+  const visibleLogs = filterGovernanceAuditLogs(auditLogs, {
     role,
     filterMda,
     search: dashboardSearch,

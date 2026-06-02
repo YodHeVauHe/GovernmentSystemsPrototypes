@@ -36,6 +36,7 @@ import type { Db, DbClient } from '../db';
 import { many, one, run, tableExists } from '../db';
 import { positiveIntegerEnv } from '../env';
 import { configuredTurnstileSecret, validateTurnstileToken } from '../turnstile';
+import { logAuditEvent } from '../audit';
 
 async function getUserByEmail(db: DbClient, email: string) {
   return one(db, 'SELECT * FROM users WHERE email = $1', [normalizeEmail(email)]);
@@ -43,6 +44,26 @@ async function getUserByEmail(db: DbClient, email: string) {
 
 async function getUserById(db: DbClient, id: string) {
   return one(db, 'SELECT * FROM users WHERE id = $1', [id]);
+}
+
+function auditRequestId(prefix: string) {
+  return `${prefix}_${crypto.randomUUID()}`;
+}
+
+function userAuditScope(user: any) {
+  return user?.mda_id || user?.requested_mda_id || null;
+}
+
+function userAuditDetails(target: any, actor: any = null, extra: Record<string, unknown> = {}) {
+  return {
+    target_user_id: target?.id || null,
+    target_email: target?.email || null,
+    target_role: target?.role || target?.requested_role || null,
+    target_status: target?.status || null,
+    actor_user_id: actor?.id || null,
+    actor_role: actor?.role || null,
+    ...extra,
+  };
 }
 
 function approvalRequiresMda(accountType: string | null | undefined, role: string) {
@@ -582,6 +603,13 @@ export function authRouter(db: Db) {
       req.body.requested_purpose.trim()
     ]);
     await ensureUserProfile(db, id, accountType, req.body.requested_organization.trim());
+    await logAuditEvent(db, 'ACCOUNT_SIGNUP_SUBMITTED', requestedMdaId, null, auditRequestId('signup'), {
+      target_user_id: id,
+      target_email: email,
+      requested_role: req.body.requested_role,
+      account_type: accountType,
+      requested_organization: req.body.requested_organization.trim(),
+    });
 
     const token = await createSession(db, id);
     setSessionCookie(res, token);
@@ -602,14 +630,27 @@ export function authRouter(db: Db) {
     const attemptKey = `${req.ip || 'unknown'}:${normalizedEmail}`;
     const quota = await consumeRateLimit(db, 'login', attemptKey, LOGIN_LIMIT, LOGIN_WINDOW_MS);
     if (!quota.allowed) {
+      await logAuditEvent(db, 'LOGIN_RATE_LIMITED', null, null, auditRequestId('login'), {
+        email: normalizedEmail,
+        ip: req.ip || null,
+      });
       return res.status(429).json({ error: 'Too many login attempts. Try again later.', code: 'LOGIN_RATE_LIMITED' });
     }
 
     const user = await getUserByEmail(db, normalizedEmail);
     if (!user || !verifyPassword(password, user.password_hash)) {
+      await logAuditEvent(db, 'LOGIN_FAILED', userAuditScope(user), null, auditRequestId('login'), {
+        target_user_id: user?.id || null,
+        target_email: normalizedEmail,
+        reason: 'invalid_credentials',
+        ip: req.ip || null,
+      });
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
     if (user.status === 'SUSPENDED') {
+      await logAuditEvent(db, 'LOGIN_BLOCKED_SUSPENDED_ACCOUNT', userAuditScope(user), null, auditRequestId('login'), userAuditDetails(user, null, {
+        ip: req.ip || null,
+      }));
       return res.status(403).json({ error: 'This account has been suspended.', code: 'ACCOUNT_SUSPENDED' });
     }
     if (user.mfa_enabled_at) {
@@ -623,6 +664,10 @@ export function authRouter(db: Db) {
       const mfaQuota = await consumeMfaRateLimit(db, user.id, 'login');
       if (sendMfaRateLimitError(res, mfaQuota)) return;
       if (!verifyTotpCode(secret, mfaCodeFromBody(mfa_code))) {
+        await logAuditEvent(db, 'MFA_LOGIN_FAILED', userAuditScope(user), null, auditRequestId('mfa'), userAuditDetails(user, null, {
+          reason: 'invalid_mfa_code',
+          ip: req.ip || null,
+        }));
         return res.status(401).json({ error: 'Invalid multi-factor authentication code.', code: 'INVALID_MFA_CODE' });
       }
       await clearMfaRateLimit(db, user.id, 'login');
@@ -632,6 +677,10 @@ export function authRouter(db: Db) {
 
     const token = await createSession(db, user.id);
     setSessionCookie(res, token);
+    await logAuditEvent(db, 'LOGIN_SUCCEEDED', userAuditScope(user), null, auditRequestId('login'), userAuditDetails(user, null, {
+      mfa_used: Boolean(user.mfa_enabled_at),
+      ip: req.ip || null,
+    }));
     res.json({ user: sanitizeUser(user) });
   });
 
@@ -650,7 +699,11 @@ export function authRouter(db: Db) {
 
   router.post('/logout', async (req, res) => {
     const token = getBearerToken(req);
+    const user = token ? await getSessionUser(db, token) : null;
     if (token) await revokeSession(db, token);
+    if (user) {
+      await logAuditEvent(db, 'LOGOUT_SUCCEEDED', userAuditScope(user), null, auditRequestId('logout'), userAuditDetails(user));
+    }
     clearSessionCookie(res);
     res.json({ success: true });
   });
@@ -673,6 +726,7 @@ export function authRouter(db: Db) {
     const secret = generateTotpSecret();
     await setUserMfaSecret(db, req.user!.id, secret);
     await clearMfaRateLimit(db, req.user!.id, 'setup');
+    await logAuditEvent(db, 'MFA_SETUP_STARTED', userAuditScope(user), null, auditRequestId('mfa'), userAuditDetails(user));
     const issuer = encodeURIComponent('Uganda GovHub API');
     const label = encodeURIComponent(`${req.user!.email}`);
     res.json({
@@ -694,6 +748,7 @@ export function authRouter(db: Db) {
     }
     await enableUserMfa(db, req.user!.id);
     await clearMfaRateLimit(db, req.user!.id, 'enable');
+    await logAuditEvent(db, 'MFA_ENABLED', userAuditScope(user), null, auditRequestId('mfa'), userAuditDetails(user));
     res.json({ user: sanitizeUser(await getUserById(db, req.user!.id)) });
   });
 
@@ -712,6 +767,7 @@ export function authRouter(db: Db) {
     }
     await run(db, 'UPDATE users SET mfa_enabled_at = NULL, mfa_secret_encrypted = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [req.user!.id]);
     await clearMfaRateLimit(db, req.user!.id, 'disable');
+    await logAuditEvent(db, 'MFA_DISABLED', userAuditScope(user), null, auditRequestId('mfa'), userAuditDetails(user));
     res.json({ user: sanitizeUser(await getUserById(db, req.user!.id)) });
   });
 
@@ -804,6 +860,10 @@ export function authRouter(db: Db) {
         if (await markVerificationChanged(client, req.user!.id, latestVerificationStatus)) {
           await revokeUserApiKeys(client, req.user!.id);
         }
+        await logAuditEvent(client, 'ACCOUNT_PROFILE_UPDATED', userAuditScope(current.user), null, auditRequestId('account'), userAuditDetails(current.user, current.user, {
+          changed_fields: Object.keys(profileInput.value),
+          verification_reset: ['submitted_for_review', 'verified'].includes(latestVerificationStatus || ''),
+        }));
       });
     } catch (err: any) {
       if (sendVerificationStateChangedError(res, err)) return;
@@ -836,6 +896,11 @@ export function authRouter(db: Db) {
         if (await markVerificationChanged(client, req.user!.id, latestVerificationStatus)) {
           await revokeUserApiKeys(client, req.user!.id);
         }
+        await logAuditEvent(client, 'ACCOUNT_DOCUMENT_UPLOADED', userAuditScope(current.user), null, auditRequestId('account'), userAuditDetails(current.user, current.user, {
+          document_type: documentInput.value.type,
+          document_label: documentInput.value.label,
+          verification_reset: ['submitted_for_review', 'verified'].includes(latestVerificationStatus || ''),
+        }));
       });
     } catch (err: any) {
       if (sendVerificationStateChangedError(res, err)) return;
@@ -866,6 +931,9 @@ export function authRouter(db: Db) {
         if (submitUpdate.changes !== 1) {
           throw verificationStateChangedError();
         }
+        await logAuditEvent(client, 'ACCOUNT_VERIFICATION_SUBMITTED', userAuditScope(snapshot.user), null, auditRequestId('account'), userAuditDetails(snapshot.user, snapshot.user, {
+          account_category: snapshot.profile.account_category,
+        }));
       });
     } catch (err: any) {
       if (sendVerificationStateChangedError(res, err)) return;
@@ -993,6 +1061,11 @@ export function adminUsersRouter(db: Db) {
         if (profileUpdate.changes === 0) {
           throw verificationAlreadyFinalizedError();
         }
+        await logAuditEvent(client, 'ACCOUNT_APPROVED', approvedMdaId, null, auditRequestId('account'), userAuditDetails(existing, req.user, {
+          assigned_role: role,
+          assigned_mda_id: approvedMdaId,
+          account_category: snapshot.profile.account_category,
+        }));
       });
     } catch (err: any) {
       if (sendAdminMutationError(res, err)) return;
@@ -1042,6 +1115,9 @@ export function adminUsersRouter(db: Db) {
         if (profileUpdate.changes === 0) {
           throw verificationAlreadyFinalizedError();
         }
+        await logAuditEvent(client, 'ACCOUNT_NEEDS_MORE_INFORMATION', userAuditScope(existing), null, auditRequestId('account'), userAuditDetails(existing, req.user, {
+          review_notes_present: Boolean(notes),
+        }));
       });
     } catch (err: any) {
       if (sendAdminMutationError(res, err)) return;
@@ -1099,6 +1175,10 @@ export function adminUsersRouter(db: Db) {
           throw verificationAlreadyFinalizedError();
         }
         await revokeUserApiKeys(client, req.params.id);
+        await logAuditEvent(client, 'ACCOUNT_REJECTED', userAuditScope(existing), null, auditRequestId('account'), userAuditDetails(existing, req.user, {
+          reason_present: Boolean(reason),
+          api_keys_revoked: true,
+        }));
       });
     } catch (err: any) {
       if (sendAdminMutationError(res, err)) return;
@@ -1125,6 +1205,10 @@ export function adminUsersRouter(db: Db) {
         await run(client, "UPDATE user_profiles SET verification_status = 'suspended', updated_at = CURRENT_TIMESTAMP WHERE user_id = $1", [req.params.id]);
         await run(client, 'UPDATE sessions SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL', [new Date().toISOString(), mutationDecision.target.id]);
         await revokeUserApiKeys(client, req.params.id);
+        await logAuditEvent(client, 'ACCOUNT_SUSPENDED', userAuditScope(mutationDecision.target), null, auditRequestId('account'), userAuditDetails(mutationDecision.target, req.user, {
+          sessions_revoked: true,
+          api_keys_revoked: true,
+        }));
       });
     } catch (err: any) {
       if (sendAdminMutationError(res, err)) return;
@@ -1152,6 +1236,10 @@ export function adminUsersRouter(db: Db) {
         await run(client, 'DELETE FROM user_profiles WHERE user_id = $1', [mutationDecision.target.id]);
         await run(client, 'DELETE FROM sessions WHERE user_id = $1', [mutationDecision.target.id]);
         await run(client, 'DELETE FROM users WHERE id = $1', [mutationDecision.target.id]);
+        await logAuditEvent(client, 'ACCOUNT_DELETED', userAuditScope(mutationDecision.target), null, auditRequestId('account'), userAuditDetails(mutationDecision.target, req.user, {
+          sessions_deleted: true,
+          api_keys_deleted: true,
+        }));
       });
     } catch (err: any) {
       if (sendAdminMutationError(res, err)) return;

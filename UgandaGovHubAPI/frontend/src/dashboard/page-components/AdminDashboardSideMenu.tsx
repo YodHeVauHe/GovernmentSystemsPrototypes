@@ -38,7 +38,7 @@ const adminMenuSections: AdminDashboardMenuGroup[] = [
     title: 'Governance',
     items: [
       { key: 'apiLogs', name: 'API Usage Logs', icon: IconListDetails },
-      { key: 'audit', name: 'Audit Trails', icon: IconListDetails },
+      { key: 'audit', name: 'Governance Audit Trails', icon: IconListDetails },
       { key: 'matrix', name: 'Interoperability Matrix', icon: IconGridPattern },
       { key: 'analytics', name: 'Analytics', icon: IconChartBar },
     ],
