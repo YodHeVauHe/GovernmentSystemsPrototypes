@@ -11,7 +11,6 @@ export function AccessApprovalsPanel({
   setSelectedAccessRequest,
   keyExpiryInputs,
   setKeyExpiryInputs,
-  handleApprove,
   approving,
   handleUpdateExpiry,
   openKeyActionConfirmation,
@@ -40,17 +39,19 @@ export function AccessApprovalsPanel({
       if (req.status === 'PENDING') {
         return (
           <div className={wrapperClass}>
-            <ExpiryDatePicker
-              value={keyExpiryInputs[req.id] ?? toDateTimeLocalValue()}
-              onChange={value => setKeyExpiryInputs((current: Record<string, string>) => ({ ...current, [req.id]: value }))}
-            />
+            {variant === 'card' && (
+              <div className="min-w-0 flex-1 truncate font-mono text-[11px] text-[#ededed]" title={req.id}>
+                Request ID: {req.id}
+              </div>
+            )}
             <button
-              onClick={() => handleApprove(req.id)}
+              type="button"
+              onClick={() => setSelectedAccessRequest(req)}
               disabled={approving === req.id}
               className="inline-flex h-[28px] items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-3 text-[12px] font-semibold text-black transition-all hover:bg-[#3ecf8e]/95 disabled:opacity-50"
             >
               {approving === req.id && <Spinner className="size-3.5 text-black" />}
-              Approve key
+              Review request
             </button>
           </div>
         );

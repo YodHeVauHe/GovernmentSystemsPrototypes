@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { logAuditEvent } from '../audit';
 import { generateApiKey, generatePublicId } from '../ids';
 import { computeApiKeyHash, getApiKeyPreview, normalizeExpiryInput } from '../admin';
-import { requireAuth } from '../auth';
+import { requireAuth, USER_ROLES } from '../auth';
 import { buildAccessMatrix, buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, findBlockingAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
 import { decryptAtRest, encryptAtRest } from '../crypto-at-rest';
 import type { DbClient } from '../db';
@@ -57,6 +57,8 @@ const ACCESS_REQUEST_CONSUMER_MDA_ID_MAX_LENGTH = 200;
 const ACCESS_REQUEST_PURPOSE_MAX_LENGTH = 2000;
 const ACCESS_REQUEST_REQUESTED_FIELDS_MAX_LENGTH = 1000;
 const ACCESS_REQUEST_LEGAL_BASIS_MAX_LENGTH = 2000;
+const ACCESS_REVIEW_NOTES_MAX_LENGTH = 2000;
+const TEXT_CONTROL_PATTERN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 const ACCESS_REQUEST_VOLUME_TIERS = new Set([
   'Low (< 1,000 / month)',
   'Medium (1,000 - 10,000 / month)',
@@ -77,6 +79,23 @@ function requiredBoundedString(value: unknown, maxLength: number, fieldName: str
   if (typeof value !== 'string' || !value.trim()) return { ok: false, message: `${fieldName} is required.` };
   const trimmed = value.trim();
   if (trimmed.length > maxLength) return { ok: false, message: `${fieldName} must be ${maxLength} characters or fewer.` };
+  return { ok: true, value: trimmed };
+}
+
+function optionalReviewNotesFromBody(body: any, fieldName = 'review_notes'): { ok: true; value: string } | { ok: false; message: string; code: string } {
+  const value = body?.[fieldName];
+  if (value === undefined || value === null || value === '') return { ok: true, value: '' };
+  if (typeof value !== 'string') {
+    return { ok: false, message: `${fieldName} must be a string.`, code: 'INVALID_REVIEW_NOTES' };
+  }
+  const trimmed = value.trim();
+  if (trimmed.length > ACCESS_REVIEW_NOTES_MAX_LENGTH || TEXT_CONTROL_PATTERN.test(trimmed)) {
+    return {
+      ok: false,
+      message: `${fieldName} must be plain text with ${ACCESS_REVIEW_NOTES_MAX_LENGTH} characters or fewer.`,
+      code: 'INVALID_REVIEW_NOTES',
+    };
+  }
   return { ok: true, value: trimmed };
 }
 
@@ -284,7 +303,7 @@ router.get('/', requireAuth(db, ['admin', 'api_owner', 'reviewer', 'developer'])
   }
 });
 
-router.post('/:id/reveal-key', requireAuth(db, ['developer']), async (req, res) => {
+router.post('/:id/reveal-key', requireAuth(db, [...USER_ROLES]), async (req, res) => {
   const id = String(req.params.id);
   const consumerUserId = req.user!.id;
   const consumerMdaId = req.user!.mda_id || null;
@@ -373,6 +392,10 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req,
   const apiKeyPreview = getApiKeyPreview(apiKey);
 
   try {
+    const reviewNotes = optionalReviewNotesFromBody(req.body || {});
+    if (!reviewNotes.ok) {
+      return res.status(400).json({ error: reviewNotes.message, code: reviewNotes.code });
+    }
     const expiryInput = parseApiKeyExpiry(api_key_expires_at);
     if (!expiryInput.ok) {
       return res.status(400).json({ error: expiryInput.message, code: 'INVALID_API_KEY_EXPIRY' });
@@ -399,7 +422,10 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req,
           api_key_preview = $3,
           api_key_status = 'ACTIVE',
           api_key_expires_at = $4,
-          api_key_revoked_at = NULL
+          api_key_revoked_at = NULL,
+          reviewed_by = $9,
+          reviewed_at = $10,
+          review_notes = $11
       FROM apis a
       WHERE target.id = $5
         AND a.id = target.api_id
@@ -434,6 +460,9 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req,
       req.user!.role === 'admin',
       req.user!.mda_id,
       new Date().toISOString(),
+      req.user!.id,
+      new Date().toISOString(),
+      reviewNotes.value || 'Approved after access review.',
     ]);
     if (approvalUpdate.changes !== 1) {
       const duplicateActiveAccess = await findActiveApprovedAccessRequestExcluding(db, id);
@@ -468,6 +497,98 @@ router.post('/:id/approve', requireAuth(db, ['admin', 'api_owner']), async (req,
   } catch (err: any) {
     console.error('[access approve]', err);
     res.status(500).json({ error: 'Failed to approve request. Please try again.' });
+  }
+});
+
+router.post('/:id/needs-more-information', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
+  const id = String(req.params.id);
+  try {
+    const reviewNotes = optionalReviewNotesFromBody(req.body || {}, 'notes');
+    if (!reviewNotes.ok) {
+      return res.status(400).json({ error: reviewNotes.message, code: reviewNotes.code });
+    }
+    const reviewDecision = await canReviewAccessRequest(db, req.user!, id);
+    if (reviewDecision.allowed === false) {
+      return res.status(statusForAccessReviewDecision(reviewDecision.code)).json({ error: reviewDecision.message, code: reviewDecision.code });
+    }
+    const requestRecord = await one(db, 'SELECT consumer_mda_id, consumer_user_id, api_id FROM access_requests WHERE id = $1', [id]);
+    if (!requestRecord) {
+      return res.status(404).json({ error: 'Access request not found.', code: 'NOT_FOUND' });
+    }
+
+    const reviewedAt = new Date().toISOString();
+    const update = await run(db, `
+      UPDATE access_requests
+      SET status = 'NEEDS_INFO',
+          reviewed_by = $1,
+          reviewed_at = $2,
+          review_notes = $3
+      WHERE id = $4
+        AND status = 'PENDING'
+        AND api_key_hash IS NULL
+        AND api_key IS NULL
+    `, [req.user!.id, reviewedAt, reviewNotes.value || 'More information is required before this access request can be approved.', id]);
+    if (update.changes !== 1) {
+      return res.status(409).json({
+        error: 'This access request was already finalized before review could complete.',
+        code: 'REQUEST_ALREADY_FINALIZED',
+      });
+    }
+    await logAuditEvent(db, 'ACCESS_NEEDS_INFO', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+      consumer_user_id: requestRecord.consumer_user_id,
+      review_notes: reviewNotes.value,
+    });
+
+    res.json({ id, status: 'NEEDS_INFO', reviewed_by: req.user!.id, reviewed_at: reviewedAt, review_notes: reviewNotes.value });
+  } catch (err: any) {
+    console.error('[access needs info]', err);
+    res.status(500).json({ error: 'Failed to request more information. Please try again.' });
+  }
+});
+
+router.post('/:id/reject', requireAuth(db, ['admin', 'api_owner']), async (req, res) => {
+  const id = String(req.params.id);
+  try {
+    const reviewNotes = optionalReviewNotesFromBody(req.body || {}, 'reason');
+    if (!reviewNotes.ok) {
+      return res.status(400).json({ error: reviewNotes.message, code: reviewNotes.code });
+    }
+    const reviewDecision = await canReviewAccessRequest(db, req.user!, id);
+    if (reviewDecision.allowed === false) {
+      return res.status(statusForAccessReviewDecision(reviewDecision.code)).json({ error: reviewDecision.message, code: reviewDecision.code });
+    }
+    const requestRecord = await one(db, 'SELECT consumer_mda_id, consumer_user_id, api_id FROM access_requests WHERE id = $1', [id]);
+    if (!requestRecord) {
+      return res.status(404).json({ error: 'Access request not found.', code: 'NOT_FOUND' });
+    }
+
+    const reviewedAt = new Date().toISOString();
+    const update = await run(db, `
+      UPDATE access_requests
+      SET status = 'REJECTED',
+          reviewed_by = $1,
+          reviewed_at = $2,
+          review_notes = $3
+      WHERE id = $4
+        AND status = 'PENDING'
+        AND api_key_hash IS NULL
+        AND api_key IS NULL
+    `, [req.user!.id, reviewedAt, reviewNotes.value || 'Access request rejected by reviewer.', id]);
+    if (update.changes !== 1) {
+      return res.status(409).json({
+        error: 'This access request was already finalized before review could complete.',
+        code: 'REQUEST_ALREADY_FINALIZED',
+      });
+    }
+    await logAuditEvent(db, 'ACCESS_REJECTED', requestRecord.consumer_mda_id, requestRecord.api_id, id, {
+      consumer_user_id: requestRecord.consumer_user_id,
+      review_notes: reviewNotes.value,
+    });
+
+    res.json({ id, status: 'REJECTED', reviewed_by: req.user!.id, reviewed_at: reviewedAt, review_notes: reviewNotes.value });
+  } catch (err: any) {
+    console.error('[access reject]', err);
+    res.status(500).json({ error: 'Failed to reject access request. Please try again.' });
   }
 });
 

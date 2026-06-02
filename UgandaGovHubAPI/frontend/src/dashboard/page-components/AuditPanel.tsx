@@ -18,8 +18,21 @@ export function AuditPanel({
   logScope = 'governance',
 }: any) {
   const isApiCallPanel = logScope === 'api-calls' || role === 'developer';
-  const emptyMessage = isApiCallPanel
+  const isDeveloperApiCallPanel = role === 'developer';
+  const panelTitle = isDeveloperApiCallPanel
+    ? 'My API Call Logs'
+    : isApiCallPanel
+      ? 'API Usage Logs'
+      : 'Platform Governance Audit Log';
+  const panelDescription = isDeveloperApiCallPanel
+    ? 'Shows sandbox calls made with your approved API keys, including allowed and denied outcomes.'
+    : isApiCallPanel
+      ? 'Shows sandbox API calls across approved consumers for administrator oversight.'
+      : 'Audits compliance actions and records API calls with strict cryptographic correlation IDs.';
+  const emptyMessage = isDeveloperApiCallPanel
     ? 'No API call logs recorded for your approved keys yet.'
+    : isApiCallPanel
+      ? 'No API usage logs recorded yet.'
     : 'No compliance audit entries recorded.';
 
   return (
@@ -28,12 +41,10 @@ export function AuditPanel({
                   <div className="p-4 border-b border-[#2e2e2e] bg-[#141414] flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <h2 className="text-[15px] font-semibold text-white">
-                        {isApiCallPanel ? 'My API Call Logs' : 'Platform Governance Audit Log'}
+                        {panelTitle}
                       </h2>
                       <p className="text-[12px] text-[#8b8b8b] mt-0.5">
-                        {isApiCallPanel
-                          ? 'Shows sandbox calls made with your approved API keys, including allowed and denied outcomes.'
-                          : 'Audits compliance actions and records API calls with strict cryptographic correlation IDs.'}
+                        {panelDescription}
                       </p>
                     </div>
 
@@ -50,7 +61,7 @@ export function AuditPanel({
                           <option value="30d">Last 30 Days</option>
                         </select>
                       </div>
-                      {!isApiCallPanel && (
+                      {role !== 'developer' && (
                         <div className="flex items-center gap-2">
                           <span className="text-[12px] text-[#8b8b8b] font-mono">Filter Consumer:</span>
                           <select

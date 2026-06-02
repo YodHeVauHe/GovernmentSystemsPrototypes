@@ -2,7 +2,6 @@ import {
   IconChartBar,
   IconCircleCheck,
   IconGridPattern,
-  IconKey,
   IconListDetails,
   IconShield,
 } from '@tabler/icons-react';
@@ -36,15 +35,9 @@ const adminMenuSections: AdminDashboardMenuGroup[] = [
     ],
   },
   {
-    title: 'Credentials',
-    items: [
-      { key: 'credentials', name: 'My Agency Credentials', icon: IconKey },
-      { key: 'apiLogs', name: 'API Call Logs', icon: IconListDetails },
-    ],
-  },
-  {
     title: 'Governance',
     items: [
+      { key: 'apiLogs', name: 'API Usage Logs', icon: IconListDetails },
       { key: 'audit', name: 'Audit Trails', icon: IconListDetails },
       { key: 'matrix', name: 'Interoperability Matrix', icon: IconGridPattern },
       { key: 'analytics', name: 'Analytics', icon: IconChartBar },
