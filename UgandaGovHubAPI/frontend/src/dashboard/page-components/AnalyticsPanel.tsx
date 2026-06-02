@@ -161,7 +161,7 @@ export function AnalyticsPanel({
                   <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
 
                     {/* Traffic Chart */}
-                    <div className="flex min-h-[340px] flex-col rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] p-6 shadow-lg">
+                    <div className="flex flex-col rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] p-6 shadow-lg">
                       <div className="mb-4 flex items-center justify-between gap-3">
                         <h3 className="text-[14px] font-semibold text-white">Audited Sandbox Hits</h3>
                         <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">{getTimeRangeLabel(timeRange)}</span>
@@ -169,7 +169,7 @@ export function AnalyticsPanel({
 
                       <ChartContainer
                         config={auditHitsChartConfig}
-                        className="min-h-0 flex-1 aspect-auto w-full font-mono text-[11px]"
+                        className="aspect-auto h-[260px] w-full font-mono text-[11px]"
                       >
                         <BarChart
                           accessibilityLayer
@@ -222,7 +222,7 @@ export function AnalyticsPanel({
                     </div>
 
                     {/* Endpoint Distribution */}
-                    <div className="flex min-h-[340px] flex-col rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] p-6 shadow-lg">
+                    <div className="flex flex-col rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] p-6 shadow-lg">
                       <div className="mb-4 flex items-center justify-between gap-3">
                         <h3 className="text-[14px] font-semibold text-white">Request Distribution by Registry</h3>
                         <span className="text-[11px] font-mono text-[#8b8b8b]">{analyticsDistribution.length} registries</span>
