@@ -11,6 +11,7 @@ test-results/
 docs/
 tests/
 doc/superpowers/
+*.test.*
 
 # Generated knowledge graph output
 graphify-out/

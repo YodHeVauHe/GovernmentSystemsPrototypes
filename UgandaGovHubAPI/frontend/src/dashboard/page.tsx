@@ -95,7 +95,7 @@ export default function DashboardPage() {
   ), [mdaId, user?.id]);
 
   const claimPendingOneTimeApiKey = useCallback((request: any) => {
-    if (!isCurrentConsumerRequest(request) || !hasPendingOneTimeApiKeyReveal(request) || oneTimeApiKeyOpenRef.current) return;
+    if (role !== 'developer' || !isCurrentConsumerRequest(request) || !hasPendingOneTimeApiKeyReveal(request) || oneTimeApiKeyOpenRef.current) return;
 
     const requestId = String(request.id || '');
     if (!requestId || pendingKeyRevealClaims.current.has(requestId)) return;
@@ -129,7 +129,7 @@ export default function DashboardPage() {
           description: err instanceof Error ? err.message : 'Failed to reveal API key',
         });
       });
-  }, [isCurrentConsumerRequest]);
+  }, [isCurrentConsumerRequest, role]);
 
   const fetchDashboardData = useCallback((showLoading = false) => {
     if (showLoading) {
@@ -582,8 +582,6 @@ export default function DashboardPage() {
   const analyticsSuccessRate = analyticsLogs.length > 0
     ? Math.round((analyticsAllowed / analyticsLogs.length) * 100)
     : 0;
-  const maxTrafficCount = Math.max(1, ...analyticsTraffic.map(bucket => bucket.count));
-  const distributionColors = ['bg-[#3ecf8e]', 'bg-blue-500', 'bg-orange-400', 'bg-purple-400', 'bg-yellow-400', 'bg-red-400'];
   const keyActionRequest = keyActionConfirmation?.request;
   const keyActionIsDelete = keyActionConfirmation?.action === 'delete';
   const keyActionTitle = keyActionIsDelete ? 'Delete API key?' : 'Revoke API key?';
@@ -703,9 +701,7 @@ export default function DashboardPage() {
         analyticsDenied={analyticsDenied}
         analyticsSuccessRate={analyticsSuccessRate}
         analyticsTraffic={analyticsTraffic}
-        maxTrafficCount={maxTrafficCount}
         analyticsDistribution={analyticsDistribution}
-        distributionColors={distributionColors}
       />
     );
   };

@@ -1,4 +1,50 @@
-import { getTimeRangeLabel } from './dashboard-page-helpers';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  LabelList,
+  PolarGrid,
+  RadialBar,
+  RadialBarChart,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
+import { getTimeRangeLabel, type DistributionRow, type TrafficBucket } from './dashboard-page-helpers';
+
+const auditHitsChartConfig = {
+  hits: {
+    label: 'Sandbox hits',
+    color: 'var(--color-primary)',
+  },
+} satisfies ChartConfig;
+
+const registryChartColors = [
+  'var(--color-primary)',
+  'hsl(217 91% 60%)',
+  'hsl(var(--warning-default))',
+  'hsl(272 90% 72%)',
+  'hsl(48 96% 53%)',
+  'hsl(var(--destructive-default))',
+] as const;
+
+type AnalyticsPanelProps = {
+  timeRange: string;
+  setTimeRange: (value: string) => void;
+  analyticsLogs: unknown[];
+  analyticsAllowed: number;
+  analyticsDenied: number;
+  analyticsSuccessRate: number;
+  analyticsTraffic: TrafficBucket[];
+  analyticsDistribution: DistributionRow[];
+};
 
 export function AnalyticsPanel({
   timeRange,
@@ -8,10 +54,25 @@ export function AnalyticsPanel({
   analyticsDenied,
   analyticsSuccessRate,
   analyticsTraffic,
-  maxTrafficCount,
   analyticsDistribution,
-  distributionColors,
-}: any) {
+}: AnalyticsPanelProps) {
+  const registryChartRows = analyticsDistribution.slice(0, registryChartColors.length).map((row, index) => ({
+    ...row,
+    registry: `registry${index}`,
+    fill: `var(--color-registry${index})`,
+  }));
+  const registryChartConfig = registryChartRows.reduce<ChartConfig>((config, row, index) => {
+    config[row.registry] = {
+      label: row.label,
+      color: registryChartColors[index],
+    };
+    return config;
+  }, {
+    count: {
+      label: 'Requests',
+    },
+  });
+
   return (
               <div className="flex h-full min-h-0 flex-col gap-6 text-left">
                 <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -60,22 +121,62 @@ export function AnalyticsPanel({
                         <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">{getTimeRangeLabel(timeRange)}</span>
                       </div>
 
-                      <div className="h-64 flex items-end justify-between gap-2 overflow-x-auto border-b border-[#2e2e2e] pb-1.5 pt-6 font-mono text-[11px] text-[#8b8b8b]">
-                        {analyticsTraffic.map((bucket: any) => (
-                          <div key={bucket.key} className="flex min-w-[28px] flex-1 flex-col items-center gap-2">
-                            <span className="text-[10px] text-[#ededed]">{bucket.count}</span>
-                            <div
-                              className={`w-full min-w-[22px] rounded-t-sm border-t transition-all ${
-                                bucket.count > 0
-                                  ? 'border-[#3ecf8e] bg-gradient-to-t from-[#3ecf8e]/20 to-[#3ecf8e]/80'
-                                  : 'border-[#2e2e2e] bg-[#141414]'
-                              }`}
-                              style={{ height: `${Math.max(6, (bucket.count / maxTrafficCount) * 92)}%` }}
+                      <ChartContainer
+                        config={auditHitsChartConfig}
+                        className="aspect-auto h-64 w-full font-mono text-[11px]"
+                      >
+                        <BarChart
+                          accessibilityLayer
+                          data={analyticsTraffic}
+                          margin={{
+                            top: 24,
+                            right: 8,
+                            bottom: 0,
+                            left: 8,
+                          }}
+                        >
+                          <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="label"
+                            tickLine={false}
+                            axisLine={false}
+                            tickMargin={10}
+                            interval={0}
+                            tickFormatter={(value) => value}
+                          />
+                          <YAxis hide dataKey="count" domain={[0, 'dataMax + 4']} />
+                          <ChartTooltip
+                            cursor={{ fill: 'var(--muted)', fillOpacity: 0.18 }}
+                            content={
+                              <ChartTooltipContent
+                                indicator="line"
+                                labelFormatter={(value) => String(value)}
+                              />
+                            }
+                          />
+                          <Bar
+                            dataKey="count"
+                            name="hits"
+                            radius={[3, 3, 0, 0]}
+                            minPointSize={4}
+                            activeBar={{ fillOpacity: 1 }}
+                          >
+                            {analyticsTraffic.map((bucket: any) => (
+                              <Cell
+                                key={bucket.key}
+                                fill={bucket.count > 0 ? 'var(--color-hits)' : 'var(--muted)'}
+                                fillOpacity={bucket.label === 'Today' ? 0.95 : bucket.count > 0 ? 0.78 : 0.35}
+                              />
+                            ))}
+                            <LabelList
+                              dataKey="count"
+                              position="top"
+                              offset={8}
+                              className="fill-foreground text-[10px]"
                             />
-                            <span className={bucket.label === 'Today' ? 'font-bold text-[#3ecf8e]' : ''}>{bucket.label}</span>
-                          </div>
-                        ))}
-                      </div>
+                          </Bar>
+                        </BarChart>
+                      </ChartContainer>
                     </div>
 
                     {/* Endpoint Distribution */}
@@ -85,26 +186,46 @@ export function AnalyticsPanel({
                         <span className="text-[11px] font-mono text-[#8b8b8b]">{analyticsDistribution.length} registries</span>
                       </div>
 
-                      <div className="flex flex-col gap-4 mt-2">
-                        {analyticsDistribution.length === 0 ? (
-                          <div className="flex min-h-[190px] items-center justify-center rounded-lg border border-dashed border-[#2e2e2e] bg-[#141414] px-4 text-center text-[13px] text-[#8b8b8b]">
-                            No sandbox traffic has been audited for {getTimeRangeLabel(timeRange).toLowerCase()}.
-                          </div>
-                        ) : analyticsDistribution.map((row: any, index: number) => (
-                          <div key={row.id}>
-                            <div className="flex justify-between gap-4 text-[12px] mb-1 font-medium text-white">
-                              <span className="min-w-0 truncate" title={row.label}>{row.label}</span>
-                              <span className="shrink-0 font-mono text-[#8b8b8b]">{row.count} / {row.percentage}%</span>
-                            </div>
-                            <div className="h-2 w-full bg-[#141414] rounded-full overflow-hidden border border-[#2e2e2e]">
-                              <div
-                                className={`h-full rounded-full ${distributionColors[index % distributionColors.length]}`}
-                                style={{ width: `${Math.max(2, row.percentage)}%` }}
+                      {registryChartRows.length === 0 ? (
+                        <div className="flex min-h-[250px] items-center justify-center rounded-lg border border-dashed border-[#2e2e2e] bg-[#141414] px-4 text-center text-[13px] text-[#8b8b8b]">
+                          No sandbox traffic has been audited for {getTimeRangeLabel(timeRange).toLowerCase()}.
+                        </div>
+                      ) : (
+                        <div className="flex flex-1 flex-col gap-4">
+                          <ChartContainer
+                            config={registryChartConfig}
+                            className="mx-auto aspect-square h-[250px] max-h-[250px] w-full"
+                          >
+                            <RadialBarChart
+                              accessibilityLayer
+                              data={registryChartRows}
+                              innerRadius={30}
+                              outerRadius={104}
+                            >
+                              <ChartTooltip
+                                cursor={false}
+                                content={<ChartTooltipContent hideLabel nameKey="registry" />}
                               />
-                            </div>
+                              <PolarGrid gridType="circle" />
+                              <RadialBar dataKey="count" background />
+                            </RadialBarChart>
+                          </ChartContainer>
+
+                          <div className="grid gap-2">
+                            {registryChartRows.map((row) => (
+                              <div key={row.id} className="flex items-center justify-between gap-3 text-[12px]">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="size-2 shrink-0 rounded-[2px]" style={{ backgroundColor: row.fill }} />
+                                  <span className="min-w-0 truncate font-medium text-white" title={row.label}>
+                                    {row.label}
+                                  </span>
+                                </div>
+                                <span className="shrink-0 font-mono text-[#8b8b8b]">{row.count} / {row.percentage}%</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      )}
                     </div>
 
                   </div>

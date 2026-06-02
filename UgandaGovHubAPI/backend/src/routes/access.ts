@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { logAuditEvent } from '../audit';
 import { generateApiKey, generatePublicId } from '../ids';
 import { computeApiKeyHash, getApiKeyPreview, normalizeExpiryInput } from '../admin';
-import { requireAuth, USER_ROLES } from '../auth';
+import { requireAuth } from '../auth';
 import { buildAccessMatrix, buildAccessRequestList, canReviewAccessRequest, canSubmitAccessRequest, findBlockingAccessRequest, listAuditLogs, resolveConsumerMdaForRequest } from '../access-control';
 import { decryptAtRest, encryptAtRest } from '../crypto-at-rest';
 import type { DbClient } from '../db';
@@ -303,7 +303,7 @@ router.get('/', requireAuth(db, ['admin', 'api_owner', 'reviewer', 'developer'])
   }
 });
 
-router.post('/:id/reveal-key', requireAuth(db, [...USER_ROLES]), async (req, res) => {
+router.post('/:id/reveal-key', requireAuth(db, ['developer']), async (req, res) => {
   const id = String(req.params.id);
   const consumerUserId = req.user!.id;
   const consumerMdaId = req.user!.mda_id || null;
