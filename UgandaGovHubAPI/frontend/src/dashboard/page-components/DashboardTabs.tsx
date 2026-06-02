@@ -58,7 +58,7 @@ export function DashboardTabs({ role, activeTab, setActiveTab, pendingApprovals,
                   }`}
                 >
                   <IconListDetails className="w-4 h-4" />
-                  {role === 'developer' ? 'API Call Logs' : 'Audit Trails'}
+                  {role === 'developer' ? 'API Call Logs' : 'Governance Audit Trails'}
                 </button>
                 {(role === 'reviewer' || role === 'admin') && (
                   <button

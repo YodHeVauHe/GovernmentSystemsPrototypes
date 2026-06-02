@@ -3,6 +3,42 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { AuditEventBadge, ViewModeToggle } from './dashboard-page-helpers';
 import { getAuditLogEndpoint, getAuditLogResponseStatus, getAuditLogResponseStatusLabel } from '../view-helpers';
 
+function parseAuditDetails(details: unknown) {
+  if (!details) return {};
+  if (typeof details === 'object') return details as Record<string, any>;
+  if (typeof details !== 'string') return {};
+  try {
+    const parsed = JSON.parse(details);
+    return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, any> : {};
+  } catch {
+    return {};
+  }
+}
+
+function getGovernanceCategory(eventType: string) {
+  if (eventType.startsWith('LOGIN') || eventType.startsWith('LOGOUT') || eventType.startsWith('MFA')) return 'Authentication';
+  if (eventType.startsWith('ACCOUNT')) return 'Account Lifecycle';
+  if (eventType.startsWith('ACCESS')) return 'Access Governance';
+  if (eventType.startsWith('API_KEY')) return 'API Key Lifecycle';
+  if (eventType.startsWith('API_VERSION') || eventType.startsWith('API_')) return 'Catalog Management';
+  if (eventType.includes('SECURITY') || eventType.includes('DENIED') || eventType.includes('BLOCKED')) return 'Security';
+  return 'Platform Event';
+}
+
+function getGovernanceActor(log: any) {
+  const details = parseAuditDetails(log.details);
+  return details.actor_user_id || details.actor_role || details.target_email || details.target_user_id || log.mda_name || 'SYSTEM';
+}
+
+function getGovernanceTarget(log: any) {
+  const details = parseAuditDetails(log.details);
+  return log.api_name || details.api_name || details.target_email || details.requested_organization || log.mda_name || 'Platform';
+}
+
+function getGovernanceEventId(log: any) {
+  return log.request_id || log.correlation_id || log.id;
+}
+
 export function AuditPanel({
   role,
   timeRange,
@@ -23,12 +59,12 @@ export function AuditPanel({
     ? 'My API Call Logs'
     : isApiCallPanel
       ? 'API Usage Logs'
-      : 'Platform Governance Audit Log';
+      : 'Governance Audit Trails';
   const panelDescription = isDeveloperApiCallPanel
     ? 'Shows sandbox calls made with your approved API keys, including allowed and denied outcomes.'
     : isApiCallPanel
       ? 'Shows sandbox API calls across approved consumers for administrator oversight.'
-      : 'Audits compliance actions and records API calls with strict cryptographic correlation IDs.';
+      : 'Tracks platform-wide governance, security, account, access, catalog, and API key lifecycle events.';
   const emptyMessage = isDeveloperApiCallPanel
     ? 'No API call logs recorded for your approved keys yet.'
     : isApiCallPanel
@@ -89,12 +125,12 @@ export function AuditPanel({
                         <TableHeader>
                           <TableRow className="border-b border-[#2e2e2e] hover:bg-transparent bg-[#141414]">
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Timestamp</TableHead>
-                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Event Type</TableHead>
-                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Consumer</TableHead>
-                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Registry Target</TableHead>
-                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Endpoint</TableHead>
-                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Response</TableHead>
-                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">Correlation ID</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Event Type' : 'Category'}</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Consumer' : 'Actor / Subject'}</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Registry Target' : 'Platform Target'}</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Endpoint' : 'Event Type'}</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Response' : 'Scope'}</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Correlation ID' : 'Event ID'}</TableHead>
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4 text-right">Details</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -117,30 +153,40 @@ export function AuditPanel({
                                 {new Date(log.created_at).toLocaleTimeString()}
                               </TableCell>
                               <TableCell className="py-3 px-4 text-left">
-                                <AuditEventBadge eventType={log.event_type} />
+                                {isApiCallPanel ? <AuditEventBadge eventType={log.event_type} /> : (
+                                  <span className="inline-flex rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide text-[#3ecf8e]">
+                                    {getGovernanceCategory(log.event_type)}
+                                  </span>
+                                )}
                               </TableCell>
                               <TableCell className="py-3 px-4 text-left text-[13px] text-white font-medium">
-                                {log.mda_name || <span className="text-[#555] font-mono">ANONYMOUS</span>}
+                                {isApiCallPanel
+                                  ? log.mda_name || <span className="text-[#555] font-mono">ANONYMOUS</span>
+                                  : getGovernanceActor(log)}
                               </TableCell>
                               <TableCell className="py-3 px-4 text-left text-[13px] text-[#8b8b8b]">
-                                {log.api_name || <span className="text-[#555] font-mono">SYSTEM</span>}
+                                {isApiCallPanel
+                                  ? log.api_name || <span className="text-[#555] font-mono">SYSTEM</span>
+                                  : getGovernanceTarget(log)}
                               </TableCell>
                               <TableCell className="max-w-[260px] py-3 px-4 text-left font-mono text-[11px] text-[#ededed]">
-                                <span className="block truncate" title={getAuditLogEndpoint(log) || undefined}>
-                                  {getAuditLogEndpoint(log) || <span className="text-[#555]">Unavailable</span>}
+                                <span className="block truncate" title={isApiCallPanel ? getAuditLogEndpoint(log) || undefined : log.event_type}>
+                                  {isApiCallPanel ? getAuditLogEndpoint(log) || <span className="text-[#555]">Unavailable</span> : log.event_type}
                                 </span>
                               </TableCell>
                               <TableCell className="py-3 px-4 text-left font-mono text-[11px]">
-                                {getAuditLogResponseStatus(log) !== null ? (
+                                {isApiCallPanel ? getAuditLogResponseStatus(log) !== null ? (
                                   <span className={getAuditLogResponseStatus(log)! < 400 ? 'text-[#3ecf8e]' : 'text-red-400'}>
                                     {getAuditLogResponseStatusLabel(log)}
                                   </span>
                                 ) : (
                                   <span className="text-[#555]">Unavailable</span>
+                                ) : (
+                                  <span className="text-[#8b8b8b]">{log.api_name ? 'Registry' : log.mda_name ? 'Account/MDA' : 'Platform'}</span>
                                 )}
                               </TableCell>
                               <TableCell className="py-3 px-4 text-left font-mono text-[11px] text-[#8b8b8b]">
-                                {log.request_id}
+                                {isApiCallPanel ? log.request_id : getGovernanceEventId(log)}
                               </TableCell>
                               <TableCell className="py-3 px-4 text-right">
                                 <span className="inline-flex items-center justify-end gap-1.5 font-mono text-[12.5px] text-[#3ecf8e] hover:underline">
@@ -171,36 +217,40 @@ export function AuditPanel({
                               }`}
                             >
                               <div className="flex items-start justify-between gap-3">
-                                <AuditEventBadge eventType={log.event_type} />
+                                {isApiCallPanel ? <AuditEventBadge eventType={log.event_type} /> : (
+                                  <span className="inline-flex rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide text-[#3ecf8e]">
+                                    {getGovernanceCategory(log.event_type)}
+                                  </span>
+                                )}
                                 <span className="font-mono text-[11px] text-[#8b8b8b]">{new Date(log.created_at).toLocaleTimeString()}</span>
                               </div>
                               <div className="mt-4 grid gap-3 text-[12px] sm:grid-cols-2">
                                 <div>
-                                  <div className="font-mono uppercase tracking-wide text-[#8b8b8b]">Consumer</div>
-                                  <div className="mt-1 font-medium text-white">{log.mda_name || 'ANONYMOUS'}</div>
+                                  <div className="font-mono uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Consumer' : 'Actor / Subject'}</div>
+                                  <div className="mt-1 font-medium text-white">{isApiCallPanel ? log.mda_name || 'ANONYMOUS' : getGovernanceActor(log)}</div>
                                 </div>
                                 <div>
-                                  <div className="font-mono uppercase tracking-wide text-[#8b8b8b]">Registry Target</div>
-                                  <div className="mt-1 text-[#ededed]">{log.api_name || 'SYSTEM'}</div>
+                                  <div className="font-mono uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Registry Target' : 'Platform Target'}</div>
+                                  <div className="mt-1 text-[#ededed]">{isApiCallPanel ? log.api_name || 'SYSTEM' : getGovernanceTarget(log)}</div>
                                 </div>
                               </div>
                               <div className="mt-4 rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
-                                <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Endpoint</div>
-                                <div className="mt-1 truncate font-mono text-[12px] text-[#ededed]" title={getAuditLogEndpoint(log) || undefined}>
-                                  {getAuditLogEndpoint(log) || 'Unavailable'}
+                                <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Endpoint' : 'Event Type'}</div>
+                                <div className="mt-1 truncate font-mono text-[12px] text-[#ededed]" title={isApiCallPanel ? getAuditLogEndpoint(log) || undefined : log.event_type}>
+                                  {isApiCallPanel ? getAuditLogEndpoint(log) || 'Unavailable' : log.event_type}
                                 </div>
                               </div>
                               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
                                 <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
-                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Response Code</div>
-                                  <div className={`mt-1 font-mono text-[12px] ${getAuditLogResponseStatus(log) !== null && getAuditLogResponseStatus(log)! < 400 ? 'text-[#3ecf8e]' : 'text-red-400'}`}>
-                                    {getAuditLogResponseStatusLabel(log) || 'Unavailable'}
+                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Response Code' : 'Scope'}</div>
+                                  <div className={`mt-1 font-mono text-[12px] ${isApiCallPanel && getAuditLogResponseStatus(log) !== null && getAuditLogResponseStatus(log)! < 400 ? 'text-[#3ecf8e]' : isApiCallPanel ? 'text-red-400' : 'text-[#8b8b8b]'}`}>
+                                    {isApiCallPanel ? getAuditLogResponseStatusLabel(log) || 'Unavailable' : log.api_name ? 'Registry' : log.mda_name ? 'Account/MDA' : 'Platform'}
                                   </div>
                                 </div>
                                 <div className="min-w-0 rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
-                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Correlation ID</div>
-                                  <div className="mt-1 truncate font-mono text-[12px] text-[#ededed]" title={log.request_id || log.correlation_id}>
-                                    {log.request_id || log.correlation_id || 'Unavailable'}
+                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Correlation ID' : 'Event ID'}</div>
+                                  <div className="mt-1 truncate font-mono text-[12px] text-[#ededed]" title={isApiCallPanel ? log.request_id || log.correlation_id : getGovernanceEventId(log)}>
+                                    {isApiCallPanel ? log.request_id || log.correlation_id || 'Unavailable' : getGovernanceEventId(log)}
                                   </div>
                                 </div>
                               </div>

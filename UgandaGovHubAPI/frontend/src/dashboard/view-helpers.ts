@@ -193,7 +193,7 @@ export function getVisibleDashboardTabs(role: string, canViewAuditLogs: boolean)
   ];
 }
 
-function isSandboxCallLog(log: { event_type?: string }) {
+export function isSandboxCallLog(log: { event_type?: string }) {
   return String(log.event_type || '').startsWith('SANDBOX_CALL');
 }
 
@@ -238,6 +238,16 @@ export function filterDashboardAuditLogs(
       log.details,
     ].some(value => String(value || '').toLowerCase().includes(normalizedSearch));
   });
+}
+
+export function filterGovernanceAuditLogs(
+  logs: any[],
+  options: { role: string; filterMda: string; search: string }
+) {
+  return filterDashboardAuditLogs(
+    logs.filter(log => !isSandboxCallLog(log)),
+    options
+  );
 }
 
 export function isMatrixChannelActive(
