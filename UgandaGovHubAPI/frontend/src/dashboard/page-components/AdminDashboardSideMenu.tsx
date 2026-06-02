@@ -5,6 +5,7 @@ import {
   IconListDetails,
   IconShield,
 } from '@tabler/icons-react';
+import { Logs } from 'lucide-react';
 import type { DashboardViewTab } from '../view-helpers';
 
 type AdminDashboardSideMenuProps = {
@@ -17,7 +18,7 @@ type AdminDashboardSideMenuProps = {
 type AdminDashboardMenuItem = {
   key: DashboardViewTab;
   name: string;
-  icon: typeof IconShield;
+  icon: typeof IconShield | typeof Logs;
   countKey?: 'pendingApprovals' | 'pendingAccountCount';
 };
 
@@ -38,7 +39,7 @@ const adminMenuSections: AdminDashboardMenuGroup[] = [
     title: 'Governance',
     items: [
       { key: 'apiLogs', name: 'API Usage Logs', icon: IconListDetails },
-      { key: 'audit', name: 'Governance Audit Trails', icon: IconListDetails },
+      { key: 'audit', name: 'Governance Audit Trails', icon: Logs },
       { key: 'matrix', name: 'Interoperability Matrix', icon: IconGridPattern },
       { key: 'analytics', name: 'Analytics', icon: IconChartBar },
     ],

@@ -266,7 +266,7 @@ export function AuditPanel({
                               key={log.id}
                               type="button"
                               onClick={() => setSelectedLog(log)}
-                              className={`relative overflow-hidden rounded-lg border p-4 text-left transition-colors hover:bg-[#202020] ${
+                              className={`relative overflow-hidden rounded-lg border p-3 text-left transition-colors hover:bg-[#202020] ${
                                 selectedLog?.id === log.id ? 'border-[#3ecf8e]/40 bg-[#202020]' : 'border-[#2e2e2e] bg-[#181818]'
                               }`}
                             >
@@ -275,39 +275,68 @@ export function AuditPanel({
                                 {isApiCallPanel ? <AuditEventBadge eventType={log.event_type} /> : <GovernanceCategoryBadge eventType={log.event_type} />}
                                 <span className="font-mono text-[11px] text-[#8b8b8b]">{new Date(log.created_at).toLocaleTimeString()}</span>
                               </div>
-                              <div className="mt-4 grid gap-3 text-[12px] sm:grid-cols-2">
+                              <div className="mt-3 grid gap-3 text-[12px] sm:grid-cols-2">
                                 <div>
                                   <div className="font-mono uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Consumer' : 'Actor / Subject'}</div>
-                                  <div className="mt-1 font-medium text-white">{isApiCallPanel ? log.mda_name || 'ANONYMOUS' : getGovernanceActor(log)}</div>
+                                  <div className="mt-0.5 font-medium text-white">{isApiCallPanel ? log.mda_name || 'ANONYMOUS' : getGovernanceActor(log)}</div>
                                 </div>
                                 <div>
                                   <div className="font-mono uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Registry Target' : 'Platform Target'}</div>
-                                  <div className="mt-1 text-[#ededed]">{isApiCallPanel ? log.api_name || 'SYSTEM' : getGovernanceTarget(log)}</div>
+                                  <div className="mt-0.5 text-[#ededed]">{isApiCallPanel ? log.api_name || 'SYSTEM' : getGovernanceTarget(log)}</div>
                                 </div>
                               </div>
-                              <div className="mt-4 rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
-                                <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Endpoint' : 'Event Type'}</div>
-                                <div className="mt-1 truncate font-mono text-[12px] text-[#ededed]" title={isApiCallPanel ? getAuditLogEndpoint(log) || undefined : log.event_type}>
-                                  {isApiCallPanel ? getAuditLogEndpoint(log) || 'Unavailable' : log.event_type}
-                                </div>
-                              </div>
-                              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
-                                <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
-                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Response Code' : 'Outcome'}</div>
-                                  <div className={`mt-1 font-mono text-[12px] ${isApiCallPanel && getAuditLogResponseStatus(log) !== null && getAuditLogResponseStatus(log)! < 400 ? 'text-[#3ecf8e]' : isApiCallPanel ? 'text-red-400' : 'text-[#8b8b8b]'}`}>
-                                    {isApiCallPanel ? getAuditLogResponseStatusLabel(log) || 'Unavailable' : getGovernanceOutcome(log.event_type)}
+                              {isApiCallPanel ? (
+                                <>
+                                  <div className="mt-3 rounded-md border border-[#2e2e2e] bg-[#141414] p-2.5">
+                                    <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Endpoint</div>
+                                    <div className="mt-0.5 truncate font-mono text-[12px] text-[#ededed]" title={getAuditLogEndpoint(log) || undefined}>
+                                      {getAuditLogEndpoint(log) || 'Unavailable'}
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="min-w-0 rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
-                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Correlation ID' : 'Event ID'}</div>
-                                  <div className="mt-1 truncate font-mono text-[12px] text-[#ededed]" title={isApiCallPanel ? log.request_id || log.correlation_id : getGovernanceEventId(log)}>
-                                    {isApiCallPanel ? log.request_id || log.correlation_id || 'Unavailable' : getGovernanceEventId(log)}
+                                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                                    <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-2.5">
+                                      <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Response Code</div>
+                                      <div className={`mt-0.5 font-mono text-[12px] ${getAuditLogResponseStatus(log) !== null && getAuditLogResponseStatus(log)! < 400 ? 'text-[#3ecf8e]' : 'text-red-400'}`}>
+                                        {getAuditLogResponseStatusLabel(log) || 'Unavailable'}
+                                      </div>
+                                    </div>
+                                    <div className="min-w-0 rounded-md border border-[#2e2e2e] bg-[#141414] p-2.5">
+                                      <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Correlation ID</div>
+                                      <div className="mt-0.5 truncate font-mono text-[12px] text-[#ededed]" title={log.request_id || log.correlation_id}>
+                                        {log.request_id || log.correlation_id || 'Unavailable'}
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                              </div>
-                              <div className="mt-4 inline-flex items-center gap-1.5 font-mono text-[12.5px] text-[#3ecf8e]">
+                                </>
+                              ) : (
+                                <>
+                                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+                                    <div className="min-w-0 rounded-md border border-[#2e2e2e] bg-[#141414] p-2.5">
+                                      <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Event Type</div>
+                                      <div className="mt-0.5 truncate font-mono text-[12px] text-[#ededed]" title={log.event_type}>
+                                        {log.event_type}
+                                      </div>
+                                    </div>
+                                    <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-2.5">
+                                      <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Outcome</div>
+                                      <div className="mt-0.5 font-mono text-[12px] text-[#8b8b8b]">
+                                        {getGovernanceOutcome(log.event_type)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 min-w-0 rounded-md border border-[#2e2e2e] bg-[#141414] p-2.5">
+                                    <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">Event ID</div>
+                                    <div className="mt-0.5 truncate font-mono text-[12px] text-[#ededed]" title={getGovernanceEventId(log)}>
+                                      {getGovernanceEventId(log)}
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                              <div className="mt-3 flex justify-end">
+                                <span className="inline-flex items-center gap-1.5 font-mono text-[12.5px] text-[#3ecf8e]">
                                 {isApiCallPanel ? 'Inspect' : 'Review'}
                                 <IconExternalLink className="h-3.5 w-3.5" />
+                                </span>
                               </div>
                             </button>
                             );
