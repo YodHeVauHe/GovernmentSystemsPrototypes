@@ -13,7 +13,14 @@ import {
   toDateTimeLocalValue,
   verificationStatusLabel,
 } from './dashboard-page-helpers';
-import { formatAuditLogDetails, getAuditLogEndpoint, getAuditLogResponseStatus, getAuditLogResponseStatusLabel } from '../view-helpers';
+import {
+  formatAuditLogDetails,
+  getAuditLogEndpoint,
+  getAuditLogResponseStatus,
+  getAuditLogResponseStatusLabel,
+  isSandboxCallLog,
+  parseAuditLogDetails,
+} from '../view-helpers';
 
 function formatValue(value: unknown, fallback = 'Not provided') {
   return value ? String(value) : fallback;
@@ -61,6 +68,73 @@ function InlineList({ values, emptyLabel }: { values?: unknown[]; emptyLabel: st
       ))}
     </div>
   );
+}
+
+function getGovernanceCategory(eventType: string) {
+  if (eventType.startsWith('LOGIN') || eventType.startsWith('LOGOUT') || eventType.startsWith('MFA')) return 'Authentication';
+  if (eventType.startsWith('ACCOUNT')) return 'Account Lifecycle';
+  if (eventType.startsWith('ACCESS')) return 'Access Governance';
+  if (eventType.startsWith('API_KEY')) return 'API Key Lifecycle';
+  if (eventType.startsWith('API_VERSION') || eventType.startsWith('API_')) return 'Catalog Management';
+  if (eventType.includes('SECURITY') || eventType.includes('DENIED') || eventType.includes('BLOCKED')) return 'Security';
+  return 'Platform Event';
+}
+
+function getGovernanceOutcome(eventType: string) {
+  if (eventType.includes('FAILED') || eventType.includes('REJECTED') || eventType.includes('DENIED') || eventType.includes('BLOCKED')) return 'Blocked / Failed';
+  if (eventType.includes('APPROVED') || eventType.includes('SUCCEEDED') || eventType.includes('ENABLED')) return 'Completed';
+  if (eventType.includes('SUBMITTED') || eventType.includes('STARTED')) return 'Submitted';
+  if (eventType.includes('SUSPENDED') || eventType.includes('DISABLED') || eventType.includes('DELETED') || eventType.includes('REVOKED')) return 'Changed';
+  return 'Recorded';
+}
+
+function getGovernanceActor(log: any, details: Record<string, unknown>) {
+  return details.actor_email || details.actor_user_id || details.actor_role || log.mda_name || 'System';
+}
+
+function getGovernanceTarget(log: any, details: Record<string, unknown>) {
+  return details.target_email || details.target_user_id || details.api_name || details.requested_organization || log.api_name || log.mda_name || 'Platform';
+}
+
+function getGovernanceScope(log: any, details: Record<string, unknown>) {
+  if (details.api_id || log.api_name) return 'Registry / API Catalog';
+  if (details.target_user_id || details.target_email || details.requested_organization || log.mda_name) return 'Account / Organization';
+  return 'Platform';
+}
+
+function getGovernanceReason(details: Record<string, unknown>) {
+  return details.reason || details.review_notes || details.notes || details.message || 'No reason captured';
+}
+
+function getGovernanceChangedFields(details: Record<string, unknown>) {
+  const value = details.changed_fields || details.updated_fields || details.fields;
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim()) return [value];
+  return [];
+}
+
+function formatAuditDetailValue(value: unknown) {
+  if (value === null || value === undefined || value === '') return 'Not captured';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (Array.isArray(value)) {
+    return value.length ? value.map(item => formatDashboardLabel(String(item))).join(', ') : 'None';
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function getGovernanceAuditDetailEntries(details: Record<string, unknown>) {
+  return Object.entries(details).map(([key, value]) => ({
+    key,
+    label: formatDashboardLabel(key),
+    value: formatAuditDetailValue(value),
+  }));
 }
 
 function VerificationDocumentCard({ document }: { document: any }) {
@@ -594,67 +668,119 @@ export function DashboardDrawers({
             )}
 
             {/* Slide-over Detail Panel for Audit Logs Drill-down */}
-            {selectedLog && (
-              <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-[#1c1c1c] border-l border-[#2e2e2e] shadow-2xl flex flex-col text-left">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-[#2e2e2e] bg-[#141414]">
-                  <div>
-                    <h3 className="text-[15px] font-semibold text-white">Inspect Correlation Link</h3>
-                    <p className="text-[12px] text-[#8b8b8b] mt-0.5">Correlation ID: <span className="font-mono text-white select-all">{selectedLog.request_id}</span></p>
-                  </div>
-                  <button
-                    onClick={() => setSelectedLog(null)}
-                    className="p-1 rounded hover:bg-[#2e2e2e] text-[#8b8b8b] hover:text-white transition-all"
-                  >
-                    <IconX className="w-5 h-5" />
-                  </button>
-                </div>
+            {selectedLog && (() => {
+              const isApiUsageLog = isSandboxCallLog(selectedLog);
+              const details = parseAuditLogDetails(selectedLog.details);
+              const eventId = selectedLog.request_id || selectedLog.correlation_id || selectedLog.id;
+              const changedFields = getGovernanceChangedFields(details);
+              const governanceDetailEntries = getGovernanceAuditDetailEntries(details);
 
-                <div className="p-5 flex-1 overflow-y-auto flex flex-col gap-5">
-                  {/* Event Header info */}
-                  <div className="p-3.5 bg-[#141414] border border-[#2e2e2e] rounded-lg">
-                    <span className="text-[10px] font-mono text-[#8b8b8b] uppercase tracking-wider block mb-1">Event Type</span>
-                    <span className={`text-[14px] font-mono font-bold uppercase ${
-                      selectedLog.event_type.includes('DENIED') ? 'text-red-400' : 'text-[#3ecf8e]'
-                    }`}>
-                      {selectedLog.event_type}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-[13px]">
+              return (
+                <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-[#1c1c1c] border-l border-[#2e2e2e] shadow-2xl flex flex-col text-left">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-[#2e2e2e] bg-[#141414]">
                     <div>
-                      <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Timestamp</span>
-                      <span className="text-white font-medium">{new Date(selectedLog.created_at).toLocaleString()}</span>
+                      <h3 className="text-[15px] font-semibold text-white">
+                        {isApiUsageLog ? 'Inspect API Usage' : 'Review Governance Event'}
+                      </h3>
+                      <p className="text-[12px] text-[#8b8b8b] mt-0.5">
+                        {isApiUsageLog ? 'Correlation ID' : 'Event ID'}:{' '}
+                        <span className="font-mono text-white select-all">{eventId || 'Unavailable'}</span>
+                      </p>
                     </div>
-                    <div>
-                      <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Caller Agency</span>
-                      <span className="text-white font-medium">{selectedLog.mda_name || 'Anonymous (No Auth Key)'}</span>
-                    </div>
-                    <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
-                      <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Target Registry</span>
-                      <span className="text-white font-medium">{selectedLog.api_name || 'System Access Layer'}</span>
-                    </div>
-                    <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
-                      <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Attempted Endpoint</span>
-                      <span className="font-mono text-white break-all">{getAuditLogEndpoint(selectedLog) || 'Unavailable'}</span>
-                    </div>
-                    <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
-                      <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Response Code</span>
-                      <span className={`font-mono ${getAuditLogResponseStatus(selectedLog) !== null && getAuditLogResponseStatus(selectedLog)! < 400 ? 'text-[#3ecf8e]' : 'text-red-400'}`}>
-                        {getAuditLogResponseStatusLabel(selectedLog) || 'Unavailable'}
-                      </span>
-                    </div>
+                    <button
+                      onClick={() => setSelectedLog(null)}
+                      className="p-1 rounded hover:bg-[#2e2e2e] text-[#8b8b8b] hover:text-white transition-all"
+                    >
+                      <IconX className="w-5 h-5" />
+                    </button>
                   </div>
 
-                  {/* JSON Metadata Payload */}
-                  <div className="flex-1 flex flex-col gap-2 mt-2">
-                    <span className="text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Captured Logs payload (metadata)</span>
-                    <div className="bg-[#0a0a0a] rounded-lg p-4 font-mono text-[12.5px] border border-[#2e2e2e] overflow-auto flex-1 leading-relaxed text-[#3ecf8e]">
-                      <pre>{formatAuditLogDetails(selectedLog.details)}</pre>
+                  {isApiUsageLog ? (
+                    <div className="p-5 flex-1 overflow-y-auto flex flex-col gap-5">
+                      <div className="p-3.5 bg-[#141414] border border-[#2e2e2e] rounded-lg">
+                        <span className="text-[10px] font-mono text-[#8b8b8b] uppercase tracking-wider block mb-1">Traffic Event</span>
+                        <span className={`text-[14px] font-mono font-bold uppercase ${
+                          selectedLog.event_type.includes('DENIED') ? 'text-red-400' : 'text-[#3ecf8e]'
+                        }`}>
+                          {selectedLog.event_type}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 text-[13px]">
+                        <DetailField label="Timestamp" value={new Date(selectedLog.created_at).toLocaleString()} />
+                        <DetailField label="Caller Agency" value={selectedLog.mda_name || 'Anonymous (No Auth Key)'} />
+                        <DetailField className="col-span-2 border-t border-[#2e2e2e] pt-3.5" label="Target Registry" value={selectedLog.api_name || 'System Access Layer'} />
+                        <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
+                          <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Attempted Endpoint</span>
+                          <span className="font-mono text-white break-all">{getAuditLogEndpoint(selectedLog) || 'Unavailable'}</span>
+                        </div>
+                        <div className="col-span-2 border-t border-[#2e2e2e] pt-3.5">
+                          <span className="block text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Response Code</span>
+                          <span className={`font-mono ${getAuditLogResponseStatus(selectedLog) !== null && getAuditLogResponseStatus(selectedLog)! < 400 ? 'text-[#3ecf8e]' : 'text-red-400'}`}>
+                            {getAuditLogResponseStatusLabel(selectedLog) || 'Unavailable'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 flex flex-col gap-2 mt-2">
+                        <span className="text-[11px] font-mono text-[#8b8b8b] uppercase tracking-wider">Technical Request Metadata</span>
+                        <div className="bg-[#0a0a0a] rounded-lg p-4 font-mono text-[12.5px] border border-[#2e2e2e] overflow-auto flex-1 leading-relaxed text-[#3ecf8e]">
+                          <pre>{formatAuditLogDetails(selectedLog.details)}</pre>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="p-5 flex-1 overflow-y-auto flex flex-col gap-5">
+                      <div className="p-3.5 bg-[#141414] border border-[#2e2e2e] rounded-lg">
+                        <span className="text-[10px] font-mono text-[#8b8b8b] uppercase tracking-wider block mb-1">Governance Domain</span>
+                        <span className="text-[14px] font-mono font-bold uppercase text-[#ededed]">
+                          {getGovernanceCategory(selectedLog.event_type)}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 text-[13px]">
+                        <DetailField label="Timestamp" value={new Date(selectedLog.created_at).toLocaleString()} />
+                        <DetailField label="Outcome" value={getGovernanceOutcome(selectedLog.event_type)} />
+                        <DetailField className="col-span-2 border-t border-[#2e2e2e] pt-3.5" label="Action" value={formatDashboardLabel(selectedLog.event_type)} />
+                        <DetailField className="col-span-2 border-t border-[#2e2e2e] pt-3.5" label="Actor" value={getGovernanceActor(selectedLog, details)} />
+                        <DetailField className="col-span-2 border-t border-[#2e2e2e] pt-3.5" label="Subject / Target" value={getGovernanceTarget(selectedLog, details)} />
+                        <DetailField label="Scope" value={getGovernanceScope(selectedLog, details)} />
+                        <DetailField label="Event ID" value={eventId || 'Unavailable'} />
+                      </div>
+
+                      <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-4">
+                        <SectionTitle title="Decision Context" />
+                        <div className="grid gap-3 text-[13px]">
+                          <DetailField label="Reason / Notes" value={getGovernanceReason(details)} />
+                          <div>
+                            <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Changed Fields</span>
+                            <InlineList values={changedFields} emptyLabel="No field-level changes captured" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-[#2e2e2e] bg-[#141414] p-4">
+                        <SectionTitle title="Audit Details" aside={`${governanceDetailEntries.length} fields`} />
+                        {governanceDetailEntries.length ? (
+                          <div className="grid gap-3 text-[13px]">
+                            {governanceDetailEntries.map(entry => (
+                              <div key={entry.key} className="border-t border-[#2e2e2e] pt-3 first:border-t-0 first:pt-0">
+                                <span className="block text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">{entry.label}</span>
+                                <span className="break-words font-mono text-[12px] text-[#ededed]">{entry.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-md border border-dashed border-[#2e2e2e] bg-[#101010] p-3 text-[12px] text-[#8b8b8b]">
+                            No structured governance details were captured for this audit event.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
     </>
   );
