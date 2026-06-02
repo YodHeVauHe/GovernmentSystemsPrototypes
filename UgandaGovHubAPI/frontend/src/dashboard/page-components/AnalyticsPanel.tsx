@@ -14,7 +14,6 @@ import {
 import {
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
 import { getTimeRangeLabel, type DistributionRow, type TrafficBucket } from './dashboard-page-helpers';
@@ -46,6 +45,52 @@ type AnalyticsPanelProps = {
   analyticsDistribution: DistributionRow[];
 };
 
+type ChartTooltipPayload = {
+  payload?: {
+    count?: number;
+    label?: string;
+    percentage?: number;
+  };
+};
+
+type AnalyticsTooltipProps = {
+  active?: boolean;
+  label?: string;
+  payload?: ChartTooltipPayload[];
+};
+
+function AuditHitsTooltip({ active, label, payload }: AnalyticsTooltipProps) {
+  if (!active || !payload?.length) return null;
+
+  const count = payload[0]?.payload?.count ?? 0;
+
+  return (
+    <div className="rounded-md border border-[#2e2e2e] bg-[#141414] px-3 py-2 text-[12px] shadow-xl">
+      <div className="font-mono text-[11px] uppercase tracking-wider text-[#8b8b8b]">{label}</div>
+      <div className="mt-1 flex items-center gap-2 text-white">
+        <span className="size-2 rounded-[2px] bg-[#3ecf8e]" />
+        <span className="font-medium">{count.toLocaleString()} sandbox hits</span>
+      </div>
+    </div>
+  );
+}
+
+function RegistryTooltip({ active, payload }: AnalyticsTooltipProps) {
+  if (!active || !payload?.length) return null;
+
+  const row = payload[0]?.payload;
+  if (!row) return null;
+
+  return (
+    <div className="rounded-md border border-[#2e2e2e] bg-[#141414] px-3 py-2 text-[12px] shadow-xl">
+      <div className="max-w-[220px] truncate font-medium text-white">{row.label}</div>
+      <div className="mt-1 font-mono text-[11px] text-[#8b8b8b]">
+        {(row.count ?? 0).toLocaleString()} requests / {row.percentage ?? 0}%
+      </div>
+    </div>
+  );
+}
+
 export function AnalyticsPanel({
   timeRange,
   setTimeRange,
@@ -60,6 +105,7 @@ export function AnalyticsPanel({
     ...row,
     registry: `registry${index}`,
     fill: `var(--color-registry${index})`,
+    color: registryChartColors[index],
   }));
   const registryChartConfig = registryChartRows.reduce<ChartConfig>((config, row, index) => {
     config[row.registry] = {
@@ -112,26 +158,27 @@ export function AnalyticsPanel({
                     </div>
                   </div>
 
-                  <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
 
                     {/* Traffic Chart */}
-                    <div className="border border-[#2e2e2e] bg-[#1c1c1c] p-6 rounded-xl shadow-lg">
-                      <div className="mb-6 flex items-center justify-between gap-3">
+                    <div className="flex min-h-[340px] flex-col rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] p-6 shadow-lg">
+                      <div className="mb-4 flex items-center justify-between gap-3">
                         <h3 className="text-[14px] font-semibold text-white">Audited Sandbox Hits</h3>
                         <span className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">{getTimeRangeLabel(timeRange)}</span>
                       </div>
 
                       <ChartContainer
                         config={auditHitsChartConfig}
-                        className="aspect-auto h-64 w-full font-mono text-[11px]"
+                        className="min-h-0 flex-1 aspect-auto w-full font-mono text-[11px]"
                       >
                         <BarChart
                           accessibilityLayer
                           data={analyticsTraffic}
+                          barCategoryGap="22%"
                           margin={{
-                            top: 24,
+                            top: 22,
                             right: 8,
-                            bottom: 0,
+                            bottom: 2,
                             left: 8,
                           }}
                         >
@@ -140,19 +187,14 @@ export function AnalyticsPanel({
                             dataKey="label"
                             tickLine={false}
                             axisLine={false}
-                            tickMargin={10}
+                            tickMargin={8}
                             interval={0}
                             tickFormatter={(value) => value}
                           />
-                          <YAxis hide dataKey="count" domain={[0, 'dataMax + 4']} />
+                          <YAxis hide dataKey="count" domain={[0, 'dataMax']} />
                           <ChartTooltip
-                            cursor={{ fill: 'var(--muted)', fillOpacity: 0.18 }}
-                            content={
-                              <ChartTooltipContent
-                                indicator="line"
-                                labelFormatter={(value) => String(value)}
-                              />
-                            }
+                            cursor={{ fill: 'hsl(var(--brand-default) / 0.08)' }}
+                            content={<AuditHitsTooltip />}
                           />
                           <Bar
                             dataKey="count"
@@ -180,8 +222,8 @@ export function AnalyticsPanel({
                     </div>
 
                     {/* Endpoint Distribution */}
-                    <div className="border border-[#2e2e2e] bg-[#1c1c1c] p-6 rounded-xl shadow-lg flex flex-col">
-                      <div className="mb-6 flex items-center justify-between gap-3">
+                    <div className="flex min-h-[340px] flex-col rounded-xl border border-[#2e2e2e] bg-[#1c1c1c] p-6 shadow-lg">
+                      <div className="mb-4 flex items-center justify-between gap-3">
                         <h3 className="text-[14px] font-semibold text-white">Request Distribution by Registry</h3>
                         <span className="text-[11px] font-mono text-[#8b8b8b]">{analyticsDistribution.length} registries</span>
                       </div>
@@ -194,7 +236,7 @@ export function AnalyticsPanel({
                         <div className="flex flex-1 flex-col gap-4">
                           <ChartContainer
                             config={registryChartConfig}
-                            className="mx-auto aspect-square h-[250px] max-h-[250px] w-full"
+                            className="mx-auto aspect-square h-[220px] max-h-[220px] w-full"
                           >
                             <RadialBarChart
                               accessibilityLayer
@@ -204,7 +246,7 @@ export function AnalyticsPanel({
                             >
                               <ChartTooltip
                                 cursor={false}
-                                content={<ChartTooltipContent hideLabel nameKey="registry" />}
+                                content={<RegistryTooltip />}
                               />
                               <PolarGrid gridType="circle" />
                               <RadialBar dataKey="count" background />
@@ -215,7 +257,7 @@ export function AnalyticsPanel({
                             {registryChartRows.map((row) => (
                               <div key={row.id} className="flex items-center justify-between gap-3 text-[12px]">
                                 <div className="flex min-w-0 items-center gap-2">
-                                  <span className="size-2 shrink-0 rounded-[2px]" style={{ backgroundColor: row.fill }} />
+                                  <span className="size-2 shrink-0 rounded-[2px]" style={{ backgroundColor: row.color }} />
                                   <span className="min-w-0 truncate font-medium text-white" title={row.label}>
                                     {row.label}
                                   </span>
