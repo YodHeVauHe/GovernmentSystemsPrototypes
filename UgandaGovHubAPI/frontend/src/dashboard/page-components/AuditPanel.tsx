@@ -25,6 +25,61 @@ function getGovernanceCategory(eventType: string) {
   return 'Platform Event';
 }
 
+function getGovernanceOutcome(eventType: string) {
+  if (eventType.includes('FAILED') || eventType.includes('REJECTED') || eventType.includes('DENIED') || eventType.includes('BLOCKED')) return 'Blocked / Failed';
+  if (eventType.includes('APPROVED') || eventType.includes('SUCCEEDED') || eventType.includes('ENABLED')) return 'Completed';
+  if (eventType.includes('SUBMITTED') || eventType.includes('STARTED')) return 'Submitted';
+  if (eventType.includes('SUSPENDED') || eventType.includes('DISABLED') || eventType.includes('DELETED') || eventType.includes('REVOKED')) return 'Changed';
+  return 'Recorded';
+}
+
+const governanceCategoryStyles: Record<string, { dot: string; badge: string }> = {
+  Authentication: {
+    dot: 'bg-[#38bdf8]',
+    badge: 'border-[#38bdf8]/35 bg-[#38bdf8]/10 text-[#7dd3fc]',
+  },
+  'Account Lifecycle': {
+    dot: 'bg-[#a78bfa]',
+    badge: 'border-[#a78bfa]/35 bg-[#a78bfa]/10 text-[#c4b5fd]',
+  },
+  'Access Governance': {
+    dot: 'bg-[#3ecf8e]',
+    badge: 'border-[#3ecf8e]/35 bg-[#3ecf8e]/10 text-[#6ee7b7]',
+  },
+  'API Key Lifecycle': {
+    dot: 'bg-[#f59e0b]',
+    badge: 'border-[#f59e0b]/35 bg-[#f59e0b]/10 text-[#fbbf24]',
+  },
+  'Catalog Management': {
+    dot: 'bg-[#60a5fa]',
+    badge: 'border-[#60a5fa]/35 bg-[#60a5fa]/10 text-[#93c5fd]',
+  },
+  Security: {
+    dot: 'bg-[#fb7185]',
+    badge: 'border-[#fb7185]/40 bg-[#fb7185]/10 text-[#fda4af]',
+  },
+  'Platform Event': {
+    dot: 'bg-[#a3a3a3]',
+    badge: 'border-[#a3a3a3]/30 bg-[#a3a3a3]/10 text-[#d4d4d4]',
+  },
+};
+
+function getGovernanceCategoryStyle(eventType: string) {
+  return governanceCategoryStyles[getGovernanceCategory(eventType)] ?? governanceCategoryStyles['Platform Event'];
+}
+
+function GovernanceCategoryBadge({ eventType }: { eventType: string }) {
+  const category = getGovernanceCategory(eventType);
+  const style = getGovernanceCategoryStyle(eventType);
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide ${style.badge}`}>
+      <span className={`size-1.5 shrink-0 rounded-full ${style.dot}`} />
+      {category}
+    </span>
+  );
+}
+
 function getGovernanceActor(log: any) {
   const details = parseAuditDetails(log.details);
   return details.actor_user_id || details.actor_role || details.target_email || details.target_user_id || log.mda_name || 'SYSTEM';
@@ -129,9 +184,9 @@ export function AuditPanel({
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Consumer' : 'Actor / Subject'}</TableHead>
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Registry Target' : 'Platform Target'}</TableHead>
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Endpoint' : 'Event Type'}</TableHead>
-                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Response' : 'Scope'}</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Response' : 'Outcome'}</TableHead>
                             <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4">{isApiCallPanel ? 'Correlation ID' : 'Event ID'}</TableHead>
-                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4 text-right">Details</TableHead>
+                            <TableHead className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b] h-9 px-4 text-right">{isApiCallPanel ? 'Details' : 'Review'}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -153,11 +208,7 @@ export function AuditPanel({
                                 {new Date(log.created_at).toLocaleTimeString()}
                               </TableCell>
                               <TableCell className="py-3 px-4 text-left">
-                                {isApiCallPanel ? <AuditEventBadge eventType={log.event_type} /> : (
-                                  <span className="inline-flex rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide text-[#3ecf8e]">
-                                    {getGovernanceCategory(log.event_type)}
-                                  </span>
-                                )}
+                                {isApiCallPanel ? <AuditEventBadge eventType={log.event_type} /> : <GovernanceCategoryBadge eventType={log.event_type} />}
                               </TableCell>
                               <TableCell className="py-3 px-4 text-left text-[13px] text-white font-medium">
                                 {isApiCallPanel
@@ -182,7 +233,7 @@ export function AuditPanel({
                                 ) : (
                                   <span className="text-[#555]">Unavailable</span>
                                 ) : (
-                                  <span className="text-[#8b8b8b]">{log.api_name ? 'Registry' : log.mda_name ? 'Account/MDA' : 'Platform'}</span>
+                                  <span className="text-[#8b8b8b]">{getGovernanceOutcome(log.event_type)}</span>
                                 )}
                               </TableCell>
                               <TableCell className="py-3 px-4 text-left font-mono text-[11px] text-[#8b8b8b]">
@@ -190,7 +241,7 @@ export function AuditPanel({
                               </TableCell>
                               <TableCell className="py-3 px-4 text-right">
                                 <span className="inline-flex items-center justify-end gap-1.5 font-mono text-[12.5px] text-[#3ecf8e] hover:underline">
-                                  Inspect
+                                  {isApiCallPanel ? 'Inspect' : 'Review'}
                                   <IconExternalLink className="h-3.5 w-3.5" />
                                 </span>
                               </TableCell>
@@ -207,21 +258,21 @@ export function AuditPanel({
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                          {visibleLogs.map((log: any) => (
+                          {visibleLogs.map((log: any) => {
+                            const categoryStyle = isApiCallPanel ? null : getGovernanceCategoryStyle(log.event_type);
+
+                            return (
                             <button
                               key={log.id}
                               type="button"
                               onClick={() => setSelectedLog(log)}
-                              className={`rounded-lg border p-4 text-left transition-colors hover:bg-[#202020] ${
+                              className={`relative overflow-hidden rounded-lg border p-4 text-left transition-colors hover:bg-[#202020] ${
                                 selectedLog?.id === log.id ? 'border-[#3ecf8e]/40 bg-[#202020]' : 'border-[#2e2e2e] bg-[#181818]'
                               }`}
                             >
+                              {categoryStyle && <span className={`absolute inset-y-0 left-0 w-1 ${categoryStyle.dot}`} />}
                               <div className="flex items-start justify-between gap-3">
-                                {isApiCallPanel ? <AuditEventBadge eventType={log.event_type} /> : (
-                                  <span className="inline-flex rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide text-[#3ecf8e]">
-                                    {getGovernanceCategory(log.event_type)}
-                                  </span>
-                                )}
+                                {isApiCallPanel ? <AuditEventBadge eventType={log.event_type} /> : <GovernanceCategoryBadge eventType={log.event_type} />}
                                 <span className="font-mono text-[11px] text-[#8b8b8b]">{new Date(log.created_at).toLocaleTimeString()}</span>
                               </div>
                               <div className="mt-4 grid gap-3 text-[12px] sm:grid-cols-2">
@@ -242,9 +293,9 @@ export function AuditPanel({
                               </div>
                               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
                                 <div className="rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
-                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Response Code' : 'Scope'}</div>
+                                  <div className="font-mono text-[10px] uppercase tracking-wide text-[#8b8b8b]">{isApiCallPanel ? 'Response Code' : 'Outcome'}</div>
                                   <div className={`mt-1 font-mono text-[12px] ${isApiCallPanel && getAuditLogResponseStatus(log) !== null && getAuditLogResponseStatus(log)! < 400 ? 'text-[#3ecf8e]' : isApiCallPanel ? 'text-red-400' : 'text-[#8b8b8b]'}`}>
-                                    {isApiCallPanel ? getAuditLogResponseStatusLabel(log) || 'Unavailable' : log.api_name ? 'Registry' : log.mda_name ? 'Account/MDA' : 'Platform'}
+                                    {isApiCallPanel ? getAuditLogResponseStatusLabel(log) || 'Unavailable' : getGovernanceOutcome(log.event_type)}
                                   </div>
                                 </div>
                                 <div className="min-w-0 rounded-md border border-[#2e2e2e] bg-[#141414] p-3">
@@ -255,11 +306,12 @@ export function AuditPanel({
                                 </div>
                               </div>
                               <div className="mt-4 inline-flex items-center gap-1.5 font-mono text-[12.5px] text-[#3ecf8e]">
-                                Inspect
+                                {isApiCallPanel ? 'Inspect' : 'Review'}
                                 <IconExternalLink className="h-3.5 w-3.5" />
                               </div>
                             </button>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
