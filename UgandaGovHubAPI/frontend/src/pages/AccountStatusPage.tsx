@@ -22,9 +22,33 @@ type AccountSnapshot = {
   };
   requirements: {
     label: string;
+    requiredFields: Array<{ key: string; label: string }>;
+    requiredDocuments: Array<{ type: string; label: string; accepts: string }>;
   };
   verification_progress: AccountProgress;
 };
+
+function humanizeRequirementKey(value: string) {
+  const acronyms = new Set(['brn', 'id', 'mda', 'nin', 'tin', 'ura', 'ursb']);
+  return value
+    .split('_')
+    .map(part => acronyms.has(part.toLowerCase()) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatMissingFields(account: AccountSnapshot | null, missingFields: string[]) {
+  return missingFields.slice(0, 4).map(field => {
+    const requirement = account?.requirements.requiredFields.find(requiredField => requiredField.key === field);
+    return requirement?.label || humanizeRequirementKey(field);
+  });
+}
+
+function formatMissingDocuments(account: AccountSnapshot | null, missingDocuments: string[]) {
+  return missingDocuments.slice(0, 4).map(documentType => {
+    const requirement = account?.requirements.requiredDocuments.find(document => document.type === documentType);
+    return requirement?.label || humanizeRequirementKey(documentType);
+  });
+}
 
 async function fetchAccountSnapshot() {
   const response = await fetch(`${API_BASE}/api/auth/account`);
@@ -46,6 +70,14 @@ export function AccountStatusPage() {
   }, [user]);
 
   const progress = account?.verification_progress;
+  const missingFieldLabels = useMemo(
+    () => progress ? formatMissingFields(account, progress.missing_fields) : [],
+    [account, progress],
+  );
+  const missingDocumentLabels = useMemo(
+    () => progress ? formatMissingDocuments(account, progress.missing_documents) : [],
+    [account, progress],
+  );
   const percentComplete = useMemo(() => {
     if (!progress || progress.total_requirements === 0) return account?.profile.verification_status === 'verified' ? 100 : 0;
     return Math.round((progress.completed_requirements / progress.total_requirements) * 100);
@@ -63,7 +95,7 @@ export function AccountStatusPage() {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-[#181818] px-4 text-[#ededed]">
-      <section className="w-full max-w-lg space-y-5 rounded-lg border border-[#2e2e2e] bg-[#141414] p-6">
+      <section className="w-full max-w-xl space-y-5 rounded-lg border border-[#2e2e2e] bg-[#141414] p-7">
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
             <Icon className="size-5" />
@@ -82,7 +114,7 @@ export function AccountStatusPage() {
         </div>
 
         {user?.status === 'PENDING_REVIEW' && (
-          <div className="space-y-4 rounded-md border border-[#2e2e2e] bg-[#181818] p-4">
+          <div className="space-y-4 rounded-md border border-[#2e2e2e] bg-[#181818] p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-[11px] font-mono uppercase tracking-wider text-[#8b8b8b]">Verification Progress</div>
@@ -97,20 +129,20 @@ export function AccountStatusPage() {
             </div>
             {accountError && <div className="text-xs text-orange-300">{accountError}</div>}
             {progress && (progress.missing_fields.length > 0 || progress.missing_documents.length > 0) && (
-              <div className="grid gap-3 text-xs text-[#c9c9c9] sm:grid-cols-2">
+              <div className="grid gap-5 text-xs text-[#c9c9c9] sm:grid-cols-2">
                 <div>
                   <div className="mb-1 flex items-center gap-1.5 font-semibold text-white">
                     <ListChecks className="size-3.5 text-[#3ecf8e]" />
                     Profile fields
                   </div>
-                  {progress.missing_fields.length > 0 ? progress.missing_fields.slice(0, 4).join(', ') : 'Complete'}
+                  {missingFieldLabels.length > 0 ? missingFieldLabels.join(', ') : 'Complete'}
                 </div>
                 <div>
                   <div className="mb-1 flex items-center gap-1.5 font-semibold text-white">
                     <FileCheck2 className="size-3.5 text-[#3ecf8e]" />
                     Documents
                   </div>
-                  {progress.missing_documents.length > 0 ? progress.missing_documents.slice(0, 4).join(', ') : 'Complete'}
+                  {missingDocumentLabels.length > 0 ? missingDocumentLabels.join(', ') : 'Complete'}
                 </div>
               </div>
             )}

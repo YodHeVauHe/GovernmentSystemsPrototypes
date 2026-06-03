@@ -23,6 +23,31 @@ const tabs = [
   ['flow', IconClipboardCheck, 'Setup Flow'],
 ] as const;
 
+function humanizeRequirementKey(value: string) {
+  const acronyms = new Set(['brn', 'id', 'mda', 'nin', 'tin', 'ura', 'ursb']);
+  return value
+    .split('_')
+    .map(part => acronyms.has(part.toLowerCase()) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatMissingRequirements(account: AccountSnapshot) {
+  const progress = account.verification_progress;
+  const missingFields = progress?.missing_fields || [];
+  const missingDocuments = progress?.missing_documents || [];
+
+  return [
+    ...missingFields.map(field => {
+      const requirement = account.requirements.requiredFields.find(requiredField => requiredField.key === field);
+      return requirement?.label || humanizeRequirementKey(field);
+    }),
+    ...missingDocuments.map(documentType => {
+      const requirement = account.requirements.requiredDocuments.find(document => document.type === documentType);
+      return requirement?.label || humanizeRequirementKey(documentType);
+    }),
+  ];
+}
+
 type AccountSettingsShellProps = {
   user: AuthUser | null;
   account: AccountSnapshot;
@@ -95,21 +120,21 @@ function VerificationPrompt({ account, onSelectTab }: { account: AccountSnapshot
   if (account.profile.verification_status === 'verified') return null;
 
   const progress = account.verification_progress;
-  const missing = [...(progress?.missing_fields || []), ...(progress?.missing_documents || [])];
+  const missing = formatMissingRequirements(account);
   const nextTab = resolveNextVerificationTab(account);
 
   return (
-    <div className="mb-4 rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div className="mb-3 rounded-lg border border-[#3ecf8e]/20 bg-[#3ecf8e]/5 px-3 py-2">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="text-sm font-semibold text-foreground">Finish verification to unlock dashboard and API access</div>
-          <div className="mt-1 text-xs leading-5 text-foreground-light">
+          <div className="mt-0.5 text-xs leading-4 text-foreground-light">
             {progress?.message || 'Complete your profile, upload required documents, then submit for administrator review.'}
           </div>
           {missing.length > 0 && (
             <div
               role="alert"
-              className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold text-amber-300"
+              className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold text-amber-300"
             >
               <IconAlertTriangle className="size-3.5 shrink-0" />
               <span className="min-w-0 leading-4">
@@ -119,8 +144,8 @@ function VerificationPrompt({ account, onSelectTab }: { account: AccountSnapshot
           )}
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button size="sm" variant="outline" onClick={() => onSelectTab('flow')}>View steps</Button>
-          <Button size="sm" onClick={() => onSelectTab(nextTab)}>Continue</Button>
+          <Button size="xs" variant="outline" onClick={() => onSelectTab('flow')}>View steps</Button>
+          <Button size="xs" onClick={() => onSelectTab(nextTab)}>Continue</Button>
         </div>
       </div>
     </div>
