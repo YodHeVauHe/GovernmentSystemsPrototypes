@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  IconArrowDown,
   IconArrowRight,
   IconBuildingBank,
   IconDatabase,
@@ -61,6 +63,16 @@ const reasonIcons = {
 
 export function LandingPage() {
   const featuredSlides = landingPitchDeck.slice(0, 3);
+  const [showScrollCue, setShowScrollCue] = useState(true);
+
+  useEffect(() => {
+    const hideScrollCue = () => setShowScrollCue(false);
+    window.addEventListener('scroll', hideScrollCue, { once: true, passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', hideScrollCue);
+    };
+  }, []);
 
   return (
     <main className="min-h-dvh bg-[#101010] font-sans text-[#ededed]">
@@ -162,9 +174,20 @@ export function LandingPage() {
             </div>
           </aside>
         </div>
+
+        {showScrollCue && (
+          <a
+            href="#why-this-works"
+            onClick={() => setShowScrollCue(false)}
+            className="absolute bottom-4 left-1/2 z-10 hidden -translate-x-1/2 flex-col items-center gap-1 text-xs font-medium text-[#c7c7c7] transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3ecf8e] md:inline-flex"
+          >
+            Scroll
+            <IconArrowDown className="size-4 animate-bounce text-[#3ecf8e]" />
+          </a>
+        )}
       </section>
 
-      <section className="border-b border-white/10 bg-[#151515] px-5 py-8 lg:px-8">
+      <section id="why-this-works" className="border-b border-white/10 bg-[#151515] px-5 py-8 lg:px-8">
         <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-5 lg:grid-cols-[280px_1fr] lg:items-start">
           <div>
             <p className="text-sm font-medium text-[#3ecf8e]">Why this works</p>

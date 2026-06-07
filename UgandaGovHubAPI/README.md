@@ -83,6 +83,12 @@ GovHub API models a secure interoperability layer around government APIs:
 
 ## Platform Screenshots
 
+### Landing Pitch Deck
+
+![Uganda GovHub API landing pitch deck hero with board review path](readme-assets/screenshots/landingPitchDeckHero.png)
+
+The landing pitch deck introduces the GovHub prototype with the main value proposition, demo actions, platform stats, and a board-review path for scrolling through the proposal.
+
 ### API Catalog
 
 ![Uganda GovHub API catalog showing seeded MDA API products](readme-assets/screenshots/apiCatalog.png)
