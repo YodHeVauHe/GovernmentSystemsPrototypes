@@ -81,6 +81,8 @@ Many government systems operate in silos, which makes it difficult for one MDA t
 
 The prototype uses sandbox data only. It does not connect to live NIRA, URA, URSB, NITA-U, or other production government systems.
 
+![Uganda GovHub API landing pitch deck hero](./UgandaGovHubAPI/readme-assets/screenshots/landingPitchDeckHero.png)
+
 ![Uganda GovHub API interoperability catalog](./UgandaGovHubAPI/readme-assets/screenshots/apiCatalog.png)
 
 ## Functional Scope
