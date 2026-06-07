@@ -29,8 +29,12 @@ function storeVerification() {
   }
 }
 
+function shouldSkipLocalHumanVerificationGate() {
+  return !import.meta.env.PROD && shouldBypassTurnstileServerVerification();
+}
+
 export function HumanVerificationGate({ children }: { children: React.ReactNode }) {
-  const [isVerified, setIsVerified] = useState(readStoredVerification);
+  const [isVerified, setIsVerified] = useState(() => shouldSkipLocalHumanVerificationGate() || readStoredVerification());
   const [error, setError] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [resetSignal, setResetSignal] = useState(0);
