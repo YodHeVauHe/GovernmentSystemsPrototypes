@@ -183,7 +183,10 @@ DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>
 DATABASE_SSL=false
 ```
 
-Set local `.env` values before running the demo. The checked-in `.env.example` files intentionally use placeholders and public test keys rather than reusable passwords.
+Set local `.env` values before running the demo, including
+`GOVHUB_POSTGRES_PASSWORD` for the local Postgres container (the `db:up`
+script reads it from your shell or the root `.env`, and it must match the
+password in `DATABASE_URL`). The checked-in `.env.example` files intentionally use placeholders and public test keys rather than reusable passwords.
 
 Start the local demo:
 
@@ -276,8 +279,10 @@ localhost origins in that list.
 
 - `GOVHUB_DEMO_MODE=false` means no demo users are seeded. Use the configured
   admin account and normal sign-up/approval flows.
-- `GOVHUB_DEMO_MODE=true` outside production seeds local demo users with the
-  fallback credentials below.
+- `GOVHUB_DEMO_MODE=true` outside production seeds local demo users. Each
+  demo password comes from its `GOVHUB_DEMO_*_PASSWORD` variable, or is
+  randomly generated and printed to the backend log when the account is first
+  seeded. No passwords are hardcoded in the repository.
 - `GOVHUB_DEMO_MODE=true` in production seeds demo users, but never uses
   fallback passwords. Startup requires explicit passwords for the primary demo
   accounts before auth routes are available. Production still requires the
@@ -315,14 +320,14 @@ GOVHUB_DEMO_RESEARCH_EMAIL=demo.research@example.edu
 GOVHUB_DEMO_RESEARCH_PASSWORD=...
 ```
 
-In local demo mode, these fallback credentials are available:
+In local demo mode, these accounts are seeded:
 
-| Role | Local email | Local fallback password |
+| Role | Local email | Local password |
 | --- | --- | --- |
 | Platform admin | `admin@ict.go.ug` unless `GOVHUB_ADMIN_EMAIL` is set | Generated at startup unless `GOVHUB_ADMIN_PASSWORD` is set |
-| MDA developer | `demo.developer@govhub.go.ug` | `***REMOVED***` |
-| NIRA API owner | `demo.api.owner@nira.go.ug` | `***REMOVED***` |
-| Compliance reviewer | `demo.reviewer@govhub.go.ug` | `***REMOVED***` |
+| MDA developer | `demo.developer@govhub.go.ug` | Generated at first seed unless `GOVHUB_DEMO_DEVELOPER_PASSWORD` is set |
+| NIRA API owner | `demo.api.owner@nira.go.ug` | Generated at first seed unless `GOVHUB_DEMO_API_OWNER_PASSWORD` is set |
+| Compliance reviewer | `demo.reviewer@govhub.go.ug` | Generated at first seed unless `GOVHUB_DEMO_REVIEWER_PASSWORD` is set |
 
 ## Key Routes
 

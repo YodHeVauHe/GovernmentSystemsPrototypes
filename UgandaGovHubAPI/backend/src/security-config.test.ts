@@ -5,7 +5,7 @@ function validProductionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEn
   return {
     NODE_ENV: 'production',
     GOVHUB_DATA_ENCRYPTION_KEY: 'a'.repeat(64),
-    GOVHUB_ADMIN_PASSWORD: '***REMOVED***',
+    GOVHUB_ADMIN_PASSWORD: 'test-only-admin-password',
     GOVHUB_REQUIRE_ADMIN_MFA: 'true',
     GOVHUB_TURNSTILE_SECRET_KEY: 'production-turnstile-secret',
     GOVHUB_TURNSTILE_ALLOWED_HOSTNAMES: 'govhub.example.com',
@@ -16,16 +16,16 @@ function validProductionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEn
 
 assert.doesNotThrow(() => validateProductionSecurityEnv(validProductionEnv({
   GOVHUB_DEMO_MODE: 'true',
-  GOVHUB_DEMO_DEVELOPER_PASSWORD: '***REMOVED***',
-  GOVHUB_DEMO_API_OWNER_PASSWORD: '***REMOVED***',
-  GOVHUB_DEMO_REVIEWER_PASSWORD: '***REMOVED***',
+  GOVHUB_DEMO_DEVELOPER_PASSWORD: 'test-only-demo-developer-password',
+  GOVHUB_DEMO_API_OWNER_PASSWORD: 'test-only-demo-apiowner-password',
+  GOVHUB_DEMO_REVIEWER_PASSWORD: 'test-only-demo-reviewer-password',
 })));
 
 assert.throws(
   () => validateProductionSecurityEnv(validProductionEnv({
     GOVHUB_DEMO_MODE: 'true',
-    GOVHUB_DEMO_API_OWNER_PASSWORD: '***REMOVED***',
-    GOVHUB_DEMO_REVIEWER_PASSWORD: '***REMOVED***',
+    GOVHUB_DEMO_API_OWNER_PASSWORD: 'test-only-demo-apiowner-password',
+    GOVHUB_DEMO_REVIEWER_PASSWORD: 'test-only-demo-reviewer-password',
   })),
   /GOVHUB_DEMO_DEVELOPER_PASSWORD is required when GOVHUB_DEMO_MODE=true in production\./
 );

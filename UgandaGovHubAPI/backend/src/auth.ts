@@ -237,7 +237,6 @@ export async function ensureDefaultAdmin(db: DbClient) {
 type DemoUserSeed = {
   envPrefix: string;
   fallbackEmail: string;
-  fallbackPassword: string;
   requiredForProductionDemo?: boolean;
   fullName: string;
   accountType: string;
@@ -254,7 +253,6 @@ const demoUsers: DemoUserSeed[] = [
   {
     envPrefix: 'GOVHUB_DEMO_DEVELOPER',
     fallbackEmail: 'demo.developer@govhub.go.ug',
-    fallbackPassword: '***REMOVED***',
     requiredForProductionDemo: true,
     fullName: 'Demo Developer',
     accountType: 'government_employee',
@@ -269,7 +267,6 @@ const demoUsers: DemoUserSeed[] = [
   {
     envPrefix: 'GOVHUB_DEMO_API_OWNER',
     fallbackEmail: 'demo.api.owner@nira.go.ug',
-    fallbackPassword: '***REMOVED***',
     requiredForProductionDemo: true,
     fullName: 'Demo API Owner',
     accountType: 'mda_api_owner',
@@ -284,7 +281,6 @@ const demoUsers: DemoUserSeed[] = [
   {
     envPrefix: 'GOVHUB_DEMO_REVIEWER',
     fallbackEmail: 'demo.reviewer@govhub.go.ug',
-    fallbackPassword: '***REMOVED***',
     requiredForProductionDemo: true,
     fullName: 'Demo Compliance Reviewer',
     accountType: 'government_employee',
@@ -299,7 +295,6 @@ const demoUsers: DemoUserSeed[] = [
   {
     envPrefix: 'GOVHUB_DEMO_PUBLIC_DEVELOPER',
     fallbackEmail: 'demo.public.developer@example.com',
-    fallbackPassword: '***REMOVED***',
     fullName: 'Demo Public Developer',
     accountType: 'public_developer',
     requestedRole: 'developer',
@@ -313,7 +308,6 @@ const demoUsers: DemoUserSeed[] = [
   {
     envPrefix: 'GOVHUB_DEMO_PRIVATE_COMPANY',
     fallbackEmail: 'demo.company@example.com',
-    fallbackPassword: '***REMOVED***',
     fullName: 'Demo Company Representative',
     accountType: 'private_company',
     requestedRole: 'developer',
@@ -327,7 +321,6 @@ const demoUsers: DemoUserSeed[] = [
   {
     envPrefix: 'GOVHUB_DEMO_BUSINESS',
     fallbackEmail: 'demo.business@example.com',
-    fallbackPassword: '***REMOVED***',
     fullName: 'Demo Business Owner',
     accountType: 'business_name',
     requestedRole: 'developer',
@@ -341,7 +334,6 @@ const demoUsers: DemoUserSeed[] = [
   {
     envPrefix: 'GOVHUB_DEMO_RESEARCH',
     fallbackEmail: 'demo.research@example.edu',
-    fallbackPassword: '***REMOVED***',
     fullName: 'Demo Research Lead',
     accountType: 'research_institution',
     requestedRole: 'developer',
@@ -364,7 +356,7 @@ export function shouldSeedDemoUsers(env: NodeJS.ProcessEnv = process.env) {
 }
 
 export function resolveDemoUserCredentials(
-  demoUser: Pick<DemoUserSeed, 'envPrefix' | 'fallbackEmail' | 'fallbackPassword' | 'requiredForProductionDemo'>,
+  demoUser: Pick<DemoUserSeed, 'envPrefix' | 'fallbackEmail' | 'requiredForProductionDemo'>,
   env: NodeJS.ProcessEnv = process.env
 ) {
   const email = normalizeEmail(
@@ -372,7 +364,7 @@ export function resolveDemoUserCredentials(
     || demoUser.fallbackEmail
   );
   const configuredPassword = envString(env, `${demoUser.envPrefix}_PASSWORD`);
-  if (configuredPassword) return { email, password: configuredPassword };
+  if (configuredPassword) return { email, password: configuredPassword, generated: false };
 
   if (isProductionEnv(env)) {
     if (demoUser.requiredForProductionDemo) {
@@ -381,7 +373,9 @@ export function resolveDemoUserCredentials(
     return null;
   }
 
-  return { email, password: demoUser.fallbackPassword };
+  // Local demo mode: never ship a hardcoded password. Generate a random one
+  // that is printed once when the account is first seeded.
+  return { email, password: crypto.randomBytes(18).toString('base64url'), generated: true };
 }
 
 export async function ensureDemoUsers(db: DbClient) {
@@ -390,7 +384,7 @@ export async function ensureDemoUsers(db: DbClient) {
   for (const demoUser of demoUsers) {
     const credentials = resolveDemoUserCredentials(demoUser);
     if (!credentials) continue;
-    const { email, password } = credentials;
+    const { email, password, generated } = credentials;
     const existing = await one(db, 'SELECT id FROM users WHERE email = $1', [email]);
     const reviewedAt = demoUser.status === 'APPROVED' ? new Date().toISOString() : null;
 
@@ -448,6 +442,10 @@ export async function ensureDemoUsers(db: DbClient) {
       demoUser.mdaId,
       reviewedAt
     ]);
+    if (generated) {
+      console.warn(`[GOVHUB DEMO] Generated password for ${email}: ${password}`);
+      console.warn(`[GOVHUB DEMO] Set ${demoUser.envPrefix}_PASSWORD to choose a fixed password.`);
+    }
   }
 }
 

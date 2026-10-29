@@ -2,12 +2,19 @@ import { spawn, spawnSync } from 'node:child_process';
 import { accessSync, closeSync, constants, existsSync, mkdirSync, openSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Optionally load local settings (e.g. GOVHUB_POSTGRES_PASSWORD) from the root .env.
+const rootEnvFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.env');
+if (existsSync(rootEnvFile) && typeof process.loadEnvFile === 'function') {
+  process.loadEnvFile(rootEnvFile);
+}
 
 const containerName = process.env.GOVHUB_POSTGRES_CONTAINER || 'uganda-govhub-postgres';
 const imageName = process.env.GOVHUB_POSTGRES_IMAGE || 'postgres:16-alpine';
 const databaseName = process.env.GOVHUB_POSTGRES_DB || 'govhub';
 const databaseUser = process.env.GOVHUB_POSTGRES_USER || 'govhub_admin';
-const databasePassword = process.env.GOVHUB_POSTGRES_PASSWORD || '***REMOVED***';
+const databasePassword = process.env.GOVHUB_POSTGRES_PASSWORD || '';
 const databasePort = process.env.GOVHUB_POSTGRES_PORT || '5432';
 const waitAttempts = Number.parseInt(process.env.GOVHUB_POSTGRES_WAIT_ATTEMPTS || '30', 10);
 const waitDelayMs = Number.parseInt(process.env.GOVHUB_POSTGRES_WAIT_MS || '1000', 10);
@@ -201,6 +208,9 @@ function runDocker(args, env, options = {}) {
 }
 
 function up() {
+  if (!databasePassword) {
+    throw new Error('GOVHUB_POSTGRES_PASSWORD is required to create the local Postgres container. Set it in your shell or the root .env (and use the same password in DATABASE_URL).');
+  }
   const { env } = ensureDocker();
   const startStatus = runDocker(['start', containerName], env);
   if (startStatus === 0) return;

@@ -4,7 +4,11 @@ tests/
 .worktrees/
 *.db
 .vercel
-.env*
+
+# Environment files: never commit real values; only .env.example templates
+.env
+.env.*
+!.env.example
 
 # Local security assessment reports
 API_SECURITY_ASSESSMENT_*.md
